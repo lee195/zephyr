@@ -1,0 +1,42 @@
+# Deferred abstractions
+
+Code that appears exactly twice stays duplicated until a third copy shows up, unless sharing it costs a reader nothing. This page lists each known pair, so the next person to add a third copy knows to extract it. Code repeated three or more times is already shared.
+
+Reviewed on 2026-10-19 at commit `d5b510f`.
+
+## Extract when a third copy appears
+
+| Pair | Where | Shared form when it's time |
+|---|---|---|
+| Ops validator skeleton: check the `ops` array, each op object, its `sources` array, drop ops with no known source | `src/kinds/organizer.ts` `validateOps`, `src/kinds/tasks.ts` `validateTaskOps` | `parseOps(json, (op, i) => Op \| Dropped \| Error)` in `src/kinds/common.ts`. A third ops-based kind is the trigger. |
+| Validation result types | `Validation` in `organizer.ts`, `TaskValidation` in `tasks.ts` | `OpsValidation<Op>` alongside `parseOps` |
+| `plan()` prelude: the run's entry ids and new entries | `organizer.ts` `plan`, `tasks.ts` `plan` | `runEntries(run, world)` in `common.ts`. The organizer still needs the id set for recent entries. |
+| Rank the new entries' text and keep the top N ids | `organizer.ts` open topics, `tasks.ts` open tasks | `topRanked(world, newEntries, docs, n)` in `common.ts`. It must still wait for every doc to be embedded (`rankAll`). |
+| Trimmed optional string check | `organizer.ts` title, `tasks.ts` `text` | Move `text` to `common.ts` |
+| Tolerant JSONL load that skips torn lines | `src/store.ts` `readText` + `parseJsonl`, `src/embedding.ts` `load` | Export from a small `src/jsonl.ts` |
+| A done run with timestamps | `src/zephyr.ts` `migrateCoverage`, `scripts/measure-organizer-prompt.ts` | An exported `doneRun` in `src/` |
+| Fake relevance that gives every doc one score | `test/hints.test.ts` `scoring`, `test/relevance.test.ts` `fixed` | A helper with a call counter in `test/helpers.ts` |
+| `afterEach` cleanup arrays | `test/hints.test.ts`, `test/warm.test.ts` | `useCleanup()` in `test/helpers.ts` |
+
+## Leave as two copies
+
+| Pair | Where | Why they stay apart |
+|---|---|---|
+| Sources union on update | `organizer.ts`, `tasks.ts` | The organizer orders sources by entry order, tasks by insertion order. A shared version needs a parameter for exactly that difference. |
+| Cosine similarity | `src/relevance.ts` (sparse maps), `src/embedding.ts` (dense float arrays) | Same math on different data. Sharing forces one vector representation on both. |
+| Grouping views into a map of arrays | `viewer/src/live.ts` `derivedBySource`, `viewsByKind` | Different keys and filters. They only look alike. |
+| Done-task filter and task-list lookup | `src/kinds/tasks.ts`, `viewer/src/App.vue`, `viewer/src/live.ts` | The viewer imports only types from `src/`. Importing `kinds/tasks` would pull `node:fs` into the browser bundle through relevance and embedding. |
+| Organizer corpus load | `scripts/measure-relevance.ts`, `scripts/measure-organizer-prompt.ts` | Each reads its own typed view of the fixture. A shared loader saves one line. |
+| The explicit seed in the last warm test | `test/warm.test.ts` `seeded()` and the organizer-wait test | Spelling out the seed shows the extra entry `e4` that the test depends on. |
+
+## Repeated three times or more, but deliberately not shared
+
+These are single expressions where the thing that could change already has one name, so a helper would only add a lookup.
+
+- `views.filter((v) => v.kind === kind)` where the kind is a variable (`src/zephyr.ts`, `src/kinds/visualizer.ts`). Topic lookups go through `topicsIn`.
+- The `if (!result.ok) return result` narrowing guard in the kinds.
+- The best-first sort `(a, b) => b.score - a.score`.
+- `text.slice(0, MAX_CHARS)` in `embedding.ts`. The limit is the constant.
+- The `[zephyr]` log prefix on console calls.
+- Fallback timing options in tests. Each test shows the timing it depends on.
+- Assertion code in tests.

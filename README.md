@@ -53,3 +53,7 @@ The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram nev
 | `GET /api/views`, `/api/entries`, `/api/runs` | Current state |
 | `GET /events` | SSE stream of `entry`, `run`, and `view` events |
 | `GET /` | Viewer |
+
+## Duplication
+
+Code that appears exactly twice stays duplicated until a third copy appears. [docs/deferred-abstractions.md](docs/deferred-abstractions.md) lists each pair and the shared form to extract once there are three.
