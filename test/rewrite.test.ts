@@ -276,6 +276,12 @@ test('validateRewrite fails a malformed reply, another slug, an empty body, a le
   expect(validateRewrite(reply({ body: 'venue\n\ncake\n' }), page, known)).toEqual({ ok: false, error: 'body only extends the current page' })
 })
 
+test('validateRewrite takes a stale page back unchanged, since its notes agree with it, but not one that only extends it', () => {
+  const stale: View = { ...page, bodyStale: true }
+  expect(validateRewrite(reply({ body: 'venue\n\ncake' }), stale, known)).toMatchObject({ ok: true, write: { body: 'venue\n\ncake' } })
+  expect(validateRewrite(reply({ body: 'venue\n\ncake\n\nmusic' }), stale, known)).toEqual({ ok: false, error: 'body only extends the current page' })
+})
+
 test('validateRewrite keeps exactly the page\'s sources, dropping extra ids with a reason', () => {
   expect(validateRewrite(reply({ slug: 'Party', sources: ['e3', 'e2', 'ghost', 'e1'] }), page, known)).toEqual({
     ok: true,

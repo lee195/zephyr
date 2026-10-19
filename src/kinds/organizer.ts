@@ -212,8 +212,10 @@ export type RewriteResult = { ok: true; write: ViewWrite; dropped: string[] } | 
 
 /**
  * A rewrite keeps the topic's slug and exactly its sources. It fails when malformed, for another slug, with an
- * empty body, with any of the page's sources left out, or with a body that only extends the current one. Extra
- * ids, an unusable title and a change to a pinned title are dropped with a reason; the current title then stays.
+ * empty body, with any of the page's sources left out, or with a body that only extends the current one. A stale
+ * page may come back unchanged: the model was told the notes are the truth, and found the page already agrees with
+ * them. Extra ids, an unusable title and a change to a pinned title are dropped with a reason; the current title
+ * then stays.
  */
 export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySet<EntryId>): RewriteResult {
   const r = json as any
@@ -231,7 +233,8 @@ export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySe
   const missing = topic.sources.filter((id) => !cited.has(id))
   if (missing.length > 0) return { ok: false, error: `sources left out: ${missing.join(', ')}` }
   const head = topic.body.trimEnd()
-  if (body.startsWith(head)) return { ok: false, error: 'body only extends the current page' }
+  const unchanged = topic.bodyStale && body.trimEnd() === head
+  if (body.startsWith(head) && !unchanged) return { ok: false, error: 'body only extends the current page' }
   const onPage = new Set(topic.sources)
   const extra = [...cited].filter((id) => !onPage.has(id))
   const unknown = extra.filter((id) => !knownIds.has(id))
