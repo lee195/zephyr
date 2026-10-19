@@ -189,13 +189,21 @@ export interface RewriteInput {
   notes: Entry[]
 }
 
-/** The rewrite input for this topic, or null when it does not qualify: too few appends in a row, or too big to show in full. */
-export function rewriteInput(topic: View, entries: readonly Entry[]): RewriteInput | null {
-  if ((topic.appendsSinceWrite ?? 0) < REWRITE_AFTER_APPENDS) return null
+/** What a rewrite of this topic would show the model, in characters: its body and every note it cites. */
+export function rewriteChars(topic: Pick<View, 'body' | 'sources'>, entries: readonly Entry[]): number {
   const cited = new Set(topic.sources)
-  const notes = entries.filter((e) => cited.has(e.id))
-  const chars = notes.reduce((n, e) => n + e.text.length, topic.body.length)
-  return chars <= MAX_REWRITE_CHARS ? { topic, notes } : null
+  return entries.reduce((n, e) => (cited.has(e.id) ? n + e.text.length : n), topic.body.length)
+}
+
+/**
+ * The rewrite input for this topic, or null when it does not qualify: neither stale nor grown by enough appends in
+ * a row, or too big to show in full.
+ */
+export function rewriteInput(topic: View, entries: readonly Entry[]): RewriteInput | null {
+  if (!topic.bodyStale && (topic.appendsSinceWrite ?? 0) < REWRITE_AFTER_APPENDS) return null
+  if (rewriteChars(topic, entries) > MAX_REWRITE_CHARS) return null
+  const cited = new Set(topic.sources)
+  return { topic, notes: entries.filter((e) => cited.has(e.id)) }
 }
 
 export type RewriteResult = { ok: true; write: ViewWrite; dropped: string[] } | { ok: false; error: string }
@@ -231,9 +239,14 @@ export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySe
   return { ok: true, write: { slug: topic.slug, title, sources: topic.sources, format: 'md', body }, dropped }
 }
 
-const REWRITE_SYSTEM = `You rewrite one topic page of a person's notes. The page grew by appending a section per note and now reads like a log.
+const REWRITE_REASON = {
+  log: 'The page grew by appending a section per note and now reads like a log.',
+  stale: "The person changed the page's notes: some were moved to another page, edited, removed, or merged in from another page. The body may still say what the notes no longer support.",
+}
+
+const rewriteSystem = (reason: string) => `You rewrite one topic page of a person's notes. ${reason}
 Reply with JSON only: {"slug":string,"title":string,"sources":string[],"body":string}
-The input has the page's slug, title and body, and notes: every note the page cites, oldest first.
+The input has the page's slug, title and body, and notes: every note the page cites, oldest first. The notes are the truth; where the body disagrees with them or says what none of them says, follow the notes.
 - body is the whole page rewritten as one coherent page: group related points, merge repeats, and state a later correction in place of what it corrects. Keep every fact the notes contain; add none they do not contain.
 - sources lists the id of every note in notes; none may be left out.
 - slug stays exactly as given.
@@ -241,7 +254,7 @@ The input has the page's slug, title and body, and notes: every note the page ci
 - body is markdown; do not repeat the title as a heading.`
 
 export function rewriteMessages({ topic, notes }: RewriteInput): ChatMessage[] {
-  return jsonPrompt(REWRITE_SYSTEM, { slug: topic.slug, title: topic.title, body: topic.body, notes: notes.map(promptEntry) })
+  return jsonPrompt(rewriteSystem(topic.bodyStale ? REWRITE_REASON.stale : REWRITE_REASON.log), { slug: topic.slug, title: topic.title, body: topic.body, notes: notes.map(promptEntry) })
 }
 
 /** Re-checks at run time: a topic written or rewritten since the work was queued no longer qualifies, and makes no call. */

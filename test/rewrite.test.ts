@@ -295,3 +295,33 @@ test('validateRewrite takes a usable new title and keeps the current one otherwi
   expect(titled('x'.repeat(81))).toEqual(['Party', reason])
   expect(titled(undefined)).toEqual(['Party', reason])
 })
+
+test('a stale topic is rewritten on start whatever its append count, told why, then drawn once from the new page', async () => {
+  const entries = ['venue', 'cake', 'music', 'games'].map((t, i) => entry(`e${i + 1}`, t))
+  const ids = entries.map((e) => e.id)
+  const party = { kind: 'organizer', slug: 'party', title: 'PARTY', sources: ids, format: 'md' as const, body: 'venue, cake, music, games, and a moved-away note', updatedAt: '2026-10-19T09:00:00.000Z', bodyStale: true as const }
+  const dir = await seedDataDir({ entries, runs: [doneRun('organizer', ids)], views: [party] })
+  const calls: string[] = []
+  let system = ''
+  const backend: ModelBackend = {
+    async complete(messages) {
+      const p = payloadOf(messages)
+      if ('notes' in p) {
+        calls.push('rewrite')
+        system = messages[0]!.content
+        return { json: { slug: p.slug, title: p.title, sources: p.notes.map((n: any) => n.id), body: p.notes.map((n: any) => n.text).join(', ') } }
+      }
+      calls.push(`draw ${p.body}`)
+      return { json: { format: 'ascii', body: p.body } }
+    },
+  }
+  const z = new Zephyr({ dataDir: dir, backend, kinds: { organizer: kinds.organizer!, visualizer: kinds.visualizer! }, retryDelaysMs: [] })
+  await z.start()
+  await z.idle()
+
+  expect(calls).toEqual(['rewrite', 'draw venue, cake, music, games'])
+  expect(system).toContain("The person changed the page's notes")
+  expect(topicOf(z, 'party').bodyStale).toBeUndefined()
+  expect(await metaOnDisk(dir, 'party')).not.toHaveProperty('bodyStale')
+  expect(await readFile(join(dir, 'views/organizer/.history/party', `${party.updatedAt}.md`), 'utf8')).toBe(party.body)
+})

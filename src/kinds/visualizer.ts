@@ -85,9 +85,12 @@ export function parseDiagram(json: unknown): DiagramResult {
   return { ok: false, error: 'format is neither svg nor ascii' }
 }
 
-/** A topic with enough sources whose diagram is missing or was drawn from an older version of it. */
+/**
+ * A topic with enough sources whose diagram is missing or was drawn from an older version of it. A stale topic is
+ * about to be rewritten, so it is drawn once that rewrite lands rather than twice.
+ */
 export function wantsDiagram(topic: View, diagrams: readonly View[]): boolean {
-  if (topic.sources.length < MIN_SOURCES) return false
+  if (topic.sources.length < MIN_SOURCES || topic.bodyStale) return false
   const drawn = diagrams.find((d) => d.derivedFrom?.id === topic.id)?.derivedFrom
   return !drawn || drawn.updatedAt < topic.updatedAt
 }
