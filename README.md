@@ -25,11 +25,20 @@ Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, p
 ```
 data/
   entries.jsonl                 one Entry per line, append-only
-  sessions.json                 registered transcripts and their byte offsets
+  sessions.json                 registered transcripts and where each read resumes
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
   views/<kind>/<slug>.json      view metadata: title, sources, updatedAt
   runs.jsonl                    every finished run, append-only
 ```
+
+## Harnesses
+
+A note is a user row whose text starts with `[zephyr] `, in every harness. Each harness has an adapter in `src/adapters/` that reads its transcript into rows.
+
+| Harness | Transcript (`transcriptPath`) | Capture |
+| --- | --- | --- |
+| `claude-code` | the session `.jsonl`, tailed from a byte offset | the Zephyr mod in `jlee-mods/zephyr` |
+| `opencode` | opencode's SQLite database (`opencode db path`); each read returns the session's user text again and dedupe drops repeats | the `/note` TUI plugin in `jlee-mods/zephyr-opencode` |
 
 ## Kinds
 

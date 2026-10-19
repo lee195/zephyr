@@ -1,5 +1,5 @@
-import type { Row, TranscriptAdapter } from './domain'
-import { readComplete } from './tailer'
+import type { Row, TranscriptAdapter } from '../domain'
+import { readComplete } from '../tailer'
 
 function firstText(content: unknown): string | null {
   if (typeof content === 'string') return content
@@ -34,14 +34,10 @@ export function parseClaudeCode(line: string): Row[] {
   ]
 }
 
-const claudeCode: TranscriptAdapter = {
+export const claudeCode: TranscriptAdapter = {
   harness: 'claude-code',
   async read(transcriptPath, _sessionId, offset) {
     const chunk = await readComplete(transcriptPath, offset)
     return { rows: chunk.lines.flatMap(parseClaudeCode), offset: chunk.offset }
   },
-}
-
-export const adapters: Record<string, TranscriptAdapter> = {
-  [claudeCode.harness]: claudeCode,
 }
