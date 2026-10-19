@@ -6,10 +6,28 @@ const known = new Set(['e1', 'e2'])
 
 test('a good reply yields sanitized upserts', () => {
   const result = organizer.validate(
-    { upserts: [{ slug: 'Bread Baking!', title: 'Bread', sources: ['e1'], body: '# Bread' }] },
+    { upserts: [{ slug: 'Bread Baking!', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }] },
     known,
   )
-  expect(result).toEqual({ ok: true, upserts: [{ slug: 'bread-baking', title: 'Bread', sources: ['e1'], body: '# Bread' }] })
+  expect(result).toEqual({ ok: true, upserts: [{ slug: 'bread-baking', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }] })
+})
+
+const bodyFor = (title: string, body: string) => {
+  const result = organizer.validate({ upserts: [{ slug: 'q3', title, sources: ['e1'], body }] }, known)
+  if (!result.ok) throw new Error(result.error)
+  return result.upserts[0]!.body
+}
+
+test('a leading heading that repeats the title is stripped from the body', () => {
+  expect(bodyFor('Q3 Roadmap', '# Q3 Roadmap\n\nShip the viewer.')).toBe('Ship the viewer.')
+  expect(bodyFor('Q3 Roadmap', '\n  ### q3 roadmap  \n- ship')).toBe('- ship')
+  expect(bodyFor(' Q3 Roadmap ', '## Q3 Roadmap ##\nShip.')).toBe('Ship.')
+})
+
+test('a heading that differs from the title, or no heading, leaves the body as is', () => {
+  expect(bodyFor('Q3 Roadmap', '# Q3 Risks\n\nHiring.')).toBe('# Q3 Risks\n\nHiring.')
+  expect(bodyFor('Q3 Roadmap', 'Q3 Roadmap is on track.\n# Q3 Roadmap')).toBe('Q3 Roadmap is on track.\n# Q3 Roadmap')
+  expect(bodyFor('Q3 Roadmap', '#Q3 Roadmap')).toBe('#Q3 Roadmap')
 })
 
 test('malformed replies fail', () => {

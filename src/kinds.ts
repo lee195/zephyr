@@ -8,6 +8,15 @@ export function sanitizeSlug(raw: string): string {
     .slice(0, 80)
 }
 
+const LEADING_HEADING = /^\s*#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*(?:\r?\n|$)/
+
+/** The viewer renders the title itself, so a leading heading that repeats it would show twice. */
+function stripTitleHeading(body: string, title: string): string {
+  const m = LEADING_HEADING.exec(body)
+  if (!m || m[1]!.trim().toLowerCase() !== title.trim().toLowerCase()) return body
+  return body.slice(m[0].length).replace(/^\s+/, '')
+}
+
 /** Parses `{ upserts: [{ slug, title, sources, body }] }`; drops unknown sources and upserts left with none. */
 export function validateUpserts(json: unknown, knownIds: ReadonlySet<EntryId>): Validation {
   const upserts = (json as any)?.upserts
@@ -23,7 +32,7 @@ export function validateUpserts(json: unknown, knownIds: ReadonlySet<EntryId>): 
     const sources: EntryId[] = [...new Set<EntryId>(u.sources.filter((s: unknown): s is string => typeof s === 'string' && knownIds.has(s)))]
     if (sources.length === 0) continue
     const title = typeof u.title === 'string' && u.title.trim() ? u.title.trim() : slug
-    out.set(slug, { slug, title, sources, body: u.body })
+    out.set(slug, { slug, title, sources, body: stripTitleHeading(u.body, title) })
   }
   return { ok: true, upserts: [...out.values()] }
 }
