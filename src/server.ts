@@ -1,4 +1,5 @@
 import { isAbsolute, join, normalize, resolve } from 'node:path'
+import { parseAdjustment } from './adjust'
 import type { Zephyr } from './zephyr'
 
 const json = (data: unknown, status = 200) =>
@@ -97,6 +98,20 @@ async function finishReview(zephyr: Zephyr, req: Request) {
   return closed.ok ? json({ ok: true, lastReviewedAt: closed.until }) : fail(closed.error)
 }
 
+/** 200 with the result when the op applied, 409 when the data it names does not allow it. */
+async function adjust(zephyr: Zephyr, req: Request) {
+  const parsed = await jsonBody(req)
+  if (!parsed.ok) return fail('body must be JSON')
+  const adjustment = parseAdjustment(parsed.body)
+  if (!adjustment.ok) return fail(adjustment.error)
+  try {
+    const result = await zephyr.adjust(adjustment.adjustment)
+    return json(result, result.ok ? 200 : 409)
+  } catch (err) {
+    return fail(`the adjustment failed partway and is applied again on the next start: ${(err as Error).message}`, 500)
+  }
+}
+
 async function hints(zephyr: Zephyr, params: URLSearchParams) {
   const q = params.get('q')
   if (q === null) return fail('q is required')
@@ -141,6 +156,8 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
           return registerSession(zephyr, req)
         case 'POST /api/review/done':
           return finishReview(zephyr, req)
+        case 'POST /api/adjustments':
+          return adjust(zephyr, req)
         case 'GET /api/review':
           return json(await zephyr.review())
         case 'GET /status':

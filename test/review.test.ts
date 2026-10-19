@@ -252,6 +252,7 @@ test('every mutating route refuses a foreign Origin, another local port included
     for (const [path, body, passed] of [
       ['/api/review/done', { until }, 200],
       ['/sessions', {}, 400],
+      ['/api/adjustments', { op: 'renameTopic', slug: 'nowhere', title: 'X' }, 409],
     ] as const) {
       expect((await post(path, { ...json, origin: 'http://evil.example' }, body)).status).toBe(403)
       expect((await post(path, { ...json, origin: 'http://127.0.0.1.evil.example:7317' }, body)).status).toBe(403)
@@ -263,6 +264,31 @@ test('every mutating route refuses a foreign Origin, another local port included
       expect((await post(path, { ...json, origin: s.base }, body)).status).toBe(passed)
       expect((await post(path, { 'content-type': 'application/json; charset=utf-8', origin: 'http://localhost:5173' }, body)).status).toBe(passed)
     }
+  } finally {
+    await s.close()
+  }
+})
+
+test('POST /api/adjustments answers 200 with the result, 400 for a malformed op, 409 when the data refuses it', async () => {
+  const write = { ops: [{ op: 'write', slug: 'garden', title: 'Garden', sources: ['a'], body: 'about a' }] }
+  const s = await running(scripted(write).backend)
+  try {
+    await s.z.ingest([entry('a')])
+    await s.z.idle()
+    const post = (body: unknown) => fetch(`${s.base}/api/adjustments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+    const renamed = await post({ op: 'renameTopic', slug: 'garden', title: 'Vegetable garden' })
+    expect([renamed.status, await renamed.json()]).toEqual([200, { id: expect.any(String), ok: true, written: ['organizer/garden'], deleted: [], rewrites: [], warnings: [] }])
+    expect(s.z.listViews()[0]!.title).toBe('Vegetable garden')
+
+    const malformed = await post({ op: 'renameTopic', slug: 'garden' })
+    expect([malformed.status, await malformed.json()]).toEqual([400, { ok: false, error: 'renameTopic needs non-empty strings: title' }])
+    expect((await post({ op: 'shred' })).status).toBe(400)
+
+    const refused = await post({ op: 'mergeTopics', from: 'garden', into: 'nowhere' })
+    expect([refused.status, await refused.json()]).toEqual([409, { id: expect.any(String), ok: false, error: 'no topic nowhere' }])
+    const tasks = await post({ op: 'completeTask', taskId: 't1' })
+    expect([tasks.status, (await tasks.json()).error]).toEqual([409, 'no tasks kind runs on this server'])
   } finally {
     await s.close()
   }

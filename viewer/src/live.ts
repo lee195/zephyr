@@ -106,4 +106,8 @@ export async function connect() {
       f.map.set(item.id, item)
     })
   }
+  es.addEventListener('removed', (m) => {
+    const { of, id }: Extract<ZephyrEvent, { type: 'removed' }>['data'] = JSON.parse(m.data)
+    ;(of === 'view' ? state.views : state.entries).delete(id)
+  })
 }

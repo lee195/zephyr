@@ -109,9 +109,21 @@ export function visualizerMessages(topic: View): ChatMessage[] {
   return jsonPrompt(VISUALIZER_SYSTEM, { title: topic.title, body })
 }
 
+/**
+ * Diagrams whose topic is gone, or has fallen below MIN_SOURCES because the person took notes off it. Such a topic
+ * is never redrawn, so its diagram would keep showing what the page no longer says.
+ */
+export function orphanDiagrams(views: readonly View[]): string[] {
+  const topics = new Map(views.filter((v) => v.kind === 'organizer').map((v) => [v.id, v]))
+  return views
+    .filter((d) => d.kind === 'visualizer' && d.derivedFrom && (topics.get(d.derivedFrom.id)?.sources.length ?? 0) < MIN_SOURCES)
+    .map((d) => d.id)
+}
+
 export const visualizer: AgentKind = {
   kind: 'visualizer',
   trigger: { on: 'view', kind: 'organizer', wants: wantsDiagram },
+  prune: (world) => orphanDiagrams(world.views),
   async plan(run: Run, world: World) {
     const topic = world.views.find((v) => v.id === run.viewIds?.[0])
     // The topic may have been drawn by an earlier run since this one was queued; then there is nothing to do.

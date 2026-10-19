@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Entry, Run, Session, View, ViewFormat } from './domain'
+import type { AdjustmentLine, Entry, Run, Session, View, ViewFormat } from './domain'
 
 const EXT: Record<ViewFormat, string> = { md: 'md', svg: 'svg', ascii: 'txt' }
 
@@ -117,6 +117,25 @@ export class Store {
     const dir = join(this.viewDir(view.kind), '.history', view.slug)
     await mkdir(dir, { recursive: true })
     await writeAtomic(join(dir, `${view.updatedAt}.${EXT[view.format]}`), view.body)
+  }
+
+  /** Metadata first: loadViews reads a view only through it, so a crash between the two leaves no half view. */
+  async deleteView(view: View) {
+    const dir = this.viewDir(view.kind)
+    await rm(join(dir, `${view.slug}.json`), { force: true })
+    for (const ext of Object.values(EXT)) await rm(join(dir, `${view.slug}.${ext}`), { force: true })
+  }
+
+  private get adjustmentsPath() {
+    return join(this.dir, 'adjustments.jsonl')
+  }
+
+  async loadAdjustments(): Promise<AdjustmentLine[]> {
+    return parseJsonl<AdjustmentLine>(await readText(this.adjustmentsPath))
+  }
+
+  async appendAdjustment(line: AdjustmentLine) {
+    await appendFile(this.adjustmentsPath, JSON.stringify(line) + '\n')
   }
 
   async writeView(view: View) {

@@ -195,11 +195,54 @@ export interface AgentKind {
   relevanceDocs?(views: readonly View[]): RelevanceDoc[]
   /** Ids of the kind's own views that the periodic sweep queues as view work on the kind's own queue. */
   sweep?(world: World): string[]
+  /** Ids of the kind's own views that should no longer exist; deleted after an adjustment and on start. */
+  prune?(world: World): string[]
 }
+
+/**
+ * A correction the person asked for after the fact. Topics are named by slug, notes and tasks by id. Every op is
+ * applied by a step on its owning kind's queue, so it never races that kind's runs.
+ * - moveNote: off `from`, onto `to`, which does not cite it yet. detachNote: off `from`, staying on `to`, which
+ *   already cites it. Neither may leave `from` without notes, so a note is never left on no topic.
+ * - splitTopic: `noteIds`, some but not all of the topic's notes, become the new topic `into`.
+ * - editNote and tombstoneNote are overlays on entries.jsonl, which is never rewritten.
+ */
+export type Adjustment =
+  | { op: 'renameTopic'; slug: string; title: string }
+  | { op: 'mergeTopics'; from: string; into: string }
+  | { op: 'splitTopic'; slug: string; noteIds: EntryId[]; into: { slug: string; title: string } }
+  | { op: 'moveNote'; noteId: EntryId; from: string; to: string }
+  | { op: 'detachNote'; noteId: EntryId; from: string; to: string }
+  | { op: 'editNote'; noteId: EntryId; text: string }
+  | { op: 'tombstoneNote'; noteId: EntryId }
+  | { op: 'editTask'; taskId: TaskId; text?: string; due?: string | null }
+  | { op: 'completeTask'; taskId: TaskId }
+  | { op: 'deleteTask'; taskId: TaskId }
+
+export type AdjustmentResult =
+  | {
+      id: string
+      ok: true
+      /** Ids of the views written and deleted; both empty when the state already matched. */
+      written: string[]
+      deleted: string[]
+      /** Topics queued for a rewrite of their body. */
+      rewrites: string[]
+      /** What the op could not do and the person should know, such as a page too big to rewrite. */
+      warnings: string[]
+    }
+  | { id: string; ok: false; error: string }
+
+/**
+ * A line of adjustments.jsonl. The request is logged before the op applies and the result after, so a request with
+ * no result is one a crash interrupted, and the next start applies it again.
+ */
+export type AdjustmentLine = { type: 'request'; id: string; at: string; adjustment: Adjustment } | { type: 'result'; id: string; result: AdjustmentResult }
 
 export type ZephyrEvent =
   | { type: 'entry'; data: Entry }
   | { type: 'run'; data: Run }
   | { type: 'view'; data: View }
+  | { type: 'removed'; data: { of: 'entry' | 'view'; id: string } }
 
 export const NOTE_MARKER = '[zephyr] '

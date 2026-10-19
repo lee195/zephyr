@@ -1,10 +1,10 @@
-import type { AgentKind, ChatMessage, Entry, EntryId, Run, Task, TaskId, View, World } from '../domain'
+import type { AgentKind, ChatMessage, Entry, EntryId, Run, Task, TaskId, View, ViewWrite, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
 import { inEntryOrder, jsonPrompt, knownSources, promptEntry } from './common'
 
 /** Open tasks the model sees per run, the ones most relevant to the run's entries; done tasks are never shown. */
 const OPEN_SHOWN = 30
-const MAX_DUE_LENGTH = 60
+export const MAX_DUE_LENGTH = 60
 
 export type TaskOp =
   | { op: 'add'; text: string; due?: string; sources: EntryId[] }
@@ -87,7 +87,7 @@ export function tasksMessages(openTasks: Task[], newEntries: Entry[]): ChatMessa
   })
 }
 
-const currentTasks = (views: readonly View[]): Task[] =>
+export const currentTasks = (views: readonly View[]): Task[] =>
   views.find((v): v is View & { tasks: Task[] } => v.kind === 'tasks' && v.slug === 'tasks' && !!v.tasks)?.tasks ?? []
 
 const openTasks = (tasks: Task[]) => tasks.filter((t) => !t.done)
@@ -128,6 +128,12 @@ export function renderTasks(tasks: Task[]): string {
   return [...openTasks(tasks), ...tasks.filter((t) => t.done)].map(line).join('\n')
 }
 
+/** The tasks view holding this list: the rendered body, the tasks as data, and every note a task cites. */
+export function tasksWrite(list: Task[], entries: readonly Entry[]): ViewWrite {
+  const cited = new Set(list.flatMap((t) => t.sources))
+  return { slug: 'tasks', title: 'Tasks', format: 'md', body: renderTasks(list), tasks: list, sources: inEntryOrder(entries, cited) }
+}
+
 export const tasks: AgentKind = {
   kind: 'tasks',
   trigger: { on: 'entry' },
@@ -146,10 +152,7 @@ export const tasks: AgentKind = {
         // Most notes hold no task, so a valid reply covers every entry of the run, even with no ops.
         const covered = run.entryIds
         if (result.ops.length === 0) return { ok: true, writes: [], dropped: result.dropped, covered }
-        const next = applyTaskOps(current, result.ops)
-        const cited = new Set(next.flatMap((t) => t.sources))
-        const write = { slug: 'tasks', title: 'Tasks', format: 'md' as const, body: renderTasks(next), tasks: next, sources: inEntryOrder(world.entries, cited) }
-        return { ok: true, writes: [write], dropped: result.dropped, covered }
+        return { ok: true, writes: [tasksWrite(applyTaskOps(current, result.ops), world.entries)], dropped: result.dropped, covered }
       },
     }
   },

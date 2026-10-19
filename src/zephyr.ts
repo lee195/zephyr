@@ -1,6 +1,23 @@
 import { adapters } from './adapters'
+import { effectiveEntries, OWNER, planAdjustment, withoutTombstoned, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { hintsFor, type HintReply } from './hints'
-import { isNote, noteEntry, type AgentKind, type Entry, type EntryId, type ModelBackend, type Run, type Session, type View, type ViewWrite, type World, type ZephyrEvent } from './domain'
+import {
+  isNote,
+  noteEntry,
+  type Adjustment,
+  type AdjustmentLine,
+  type AdjustmentResult,
+  type AgentKind,
+  type Entry,
+  type EntryId,
+  type ModelBackend,
+  type Run,
+  type Session,
+  type View,
+  type ViewWrite,
+  type World,
+  type ZephyrEvent,
+} from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
 import { relevanceBackends, type Compaction, type RelevanceBackend, type RelevanceDoc } from './relevance'
 import { buildDigest, closeWindow, type Digest, type WindowClose } from './review'
@@ -20,6 +37,8 @@ interface KindQueue {
    * entries, one per source view. Work of different attempts never merges, so each keeps its own retries.
    */
   waiting: Map<string, Run>
+  /** Adjustment steps, which run before any waiting run, one at a time like runs, and never call the model. */
+  steps: Array<() => Promise<void>>
   /** The run executing now, if any. */
   current: Run | null
   draining: Promise<void> | null
@@ -58,8 +77,15 @@ export class Zephyr {
   private sweepMs?: number
   private sweepTimer?: Timer
 
+  /** Every entry as entries.jsonl holds it. */
+  private raw: Entry[] = []
+  /** Edits and tombstones from adjustments.jsonl, over the raw entries. */
+  private overlay: Overlay = { edits: new Map(), tombstoned: new Set() }
+  /** The raw entries with the overlay applied: what every kind, hint and ranking reads. */
   private entries: Entry[] = []
+  /** Raw ids, tombstoned ones included, so a tombstoned note re-read from its transcript stays out. */
   private entryIds = new Set<EntryId>()
+  private adjustSeq = 0
   /** Ids whose append is in flight. Tailers run concurrently, and two can read the same rows: a re-registered session's old poke is not aborted. */
   private appending = new Set<EntryId>()
   private views = new Map<string, View>()
@@ -99,11 +125,17 @@ export class Zephyr {
     for (const e of await this.store.loadEntries()) {
       if (this.entryIds.has(e.id)) continue
       this.entryIds.add(e.id)
-      this.entries.push(e)
+      this.raw.push(e)
     }
+    const interrupted = this.foldAdjustments(await this.store.loadAdjustments())
+    this.entries = effectiveEntries(this.raw, this.overlay)
     for (const v of await this.store.loadViews()) this.views.set(v.id, v)
     const finished = await this.store.loadRuns()
     this.runs = (finished ?? []).slice(-RUN_HISTORY)
+    // Queued before any run, so on each queue they go first.
+    for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
+    for (const line of interrupted)
+      this.applyLogged(line.id, line.adjustment).catch((err) => console.error(`[zephyr] could not apply interrupted ${line.id}: ${(err as Error).message}`))
     for (const kind of this.entryKinds()) {
       const covered = finished ? doneEntryIds(finished, kind.kind) : await this.migrateCoverage(kind.kind)
       const uncovered = this.entries.filter((e) => !covered.has(e.id)).map((e) => e.id)
@@ -308,6 +340,7 @@ export class Zephyr {
       for (const e of fresh) this.appending.delete(e.id)
     }
     for (const e of fresh) this.entryIds.add(e.id)
+    this.raw.push(...fresh)
     this.entries.push(...fresh)
     for (const e of fresh) this.emit({ type: 'entry', data: e })
     this.prepareRelevance(fresh)
@@ -340,7 +373,7 @@ export class Zephyr {
   private queue(kind: string): KindQueue {
     let q = this.queues.get(kind)
     if (!q) {
-      q = { waiting: new Map(), current: null, draining: null }
+      q = { waiting: new Map(), steps: [], current: null, draining: null }
       this.queues.set(kind, q)
     }
     return q
@@ -366,11 +399,19 @@ export class Zephyr {
   }
 
   /**
-   * Waiting entry work runs before waiting view work, so a note lands on its page within one call of arriving;
-   * view work such as a rewrite waits. Note flow is human-paced, so view work cannot starve.
+   * Adjustment steps go first: they are quick and a person waits on each. Then waiting entry work runs before
+   * waiting view work, so a note lands on its page within one call of arriving; view work such as a rewrite waits.
+   * Note flow is human-paced, so view work cannot starve.
    */
   private async drain(kind: string, q: KindQueue) {
-    for (let next = nextWork(q.waiting); next; next = nextWork(q.waiting)) {
+    while (true) {
+      const step = q.steps.shift()
+      if (step) {
+        await step()
+        continue
+      }
+      const next = nextWork(q.waiting)
+      if (!next) break
       const [key, run] = next
       q.waiting.delete(key)
       q.current = run
@@ -391,7 +432,9 @@ export class Zephyr {
     run.startedAt = new Date().toISOString()
     this.emit({ type: 'run', data: run })
     try {
-      const plan = await kind.plan(run, this.world())
+      // Entry work whose every entry was tombstoned since it was queued has nothing left to file.
+      const gone = (id: EntryId) => this.overlay.tombstoned.has(id)
+      const plan = run.viewIds || !run.entryIds.every(gone) ? await kind.plan(run, this.world()) : null
       if (plan) {
         const { json: reply } = await this.backend.complete(plan.messages, { json: true })
         const result = plan.settle(reply)
@@ -401,7 +444,7 @@ export class Zephyr {
         for (const w of result.writes) await this.writeView(kind, w, { revisit })
         if (result.dropped.length > 0) run.dropped = result.dropped
         const covered = new Set(result.covered)
-        const uncovered = run.entryIds.filter((id) => !covered.has(id))
+        const uncovered = run.entryIds.filter((id) => !covered.has(id) && !gone(id))
         if (uncovered.length > 0) run.uncovered = uncovered
       }
       run.status = 'done'
@@ -446,6 +489,109 @@ export class Zephyr {
       },
     }
     this.retries.add(retry)
+  }
+
+  /**
+   * Logs the request, applies it on its owning kind's queue, and logs the result. A throw leaves the request with
+   * no result, so the next start applies it again; every op converges from whatever state a crash left.
+   */
+  async adjust(adjustment: Adjustment): Promise<AdjustmentResult> {
+    const id = `adj-${Date.now()}-${this.adjustSeq++}`
+    await this.store.appendAdjustment({ type: 'request', id, at: this.stamp(), adjustment })
+    return this.applyLogged(id, adjustment)
+  }
+
+  /** Folds the edits and tombstones of every adjustment that applied, and returns the requests a crash interrupted. */
+  private foldAdjustments(lines: AdjustmentLine[]) {
+    const results = new Map(lines.flatMap((l) => (l.type === 'result' ? [[l.id, l.result] as const] : [])))
+    const interrupted: Extract<AdjustmentLine, { type: 'request' }>[] = []
+    for (const line of lines) {
+      if (line.type !== 'request') continue
+      const result = results.get(line.id)
+      if (!result) interrupted.push(line)
+      else if (result.ok) {
+        const a = line.adjustment
+        if (a.op === 'editNote') this.foldNote({ edit: a.noteId, text: a.text.trim() })
+        if (a.op === 'tombstoneNote') this.foldNote({ tombstone: a.noteId })
+      }
+    }
+    return interrupted
+  }
+
+  private foldNote(change: NoteChange) {
+    if ('edit' in change) this.overlay.edits.set(change.edit, change.text)
+    else {
+      this.overlay.tombstoned.add(change.tombstone)
+      this.overlay.edits.delete(change.tombstone)
+    }
+  }
+
+  private applyLogged(id: string, adjustment: Adjustment): Promise<AdjustmentResult> {
+    const owner = OWNER[adjustment.op]
+    const finish = async (result: AdjustmentResult) => {
+      await this.store.appendAdjustment({ type: 'result', id, result })
+      return result
+    }
+    if (!this.kinds[owner]) return finish({ id, ok: false, error: `no ${owner} kind runs on this server` })
+    return this.step(owner, async () => {
+      const outcome = planAdjustment(adjustment, { entries: this.entries, views: this.listViews(), tombstoned: this.overlay.tombstoned })
+      return finish(outcome.ok ? await this.applyOutcome(id, outcome) : { id, ok: false, error: outcome.error })
+    })
+  }
+
+  private async applyOutcome(id: string, o: Extract<Outcome, { ok: true }>): Promise<AdjustmentResult> {
+    if (o.note) {
+      this.foldNote(o.note)
+      this.entries = effectiveEntries(this.raw, this.overlay)
+      const noteId = 'edit' in o.note ? o.note.edit : o.note.tombstone
+      const edited = this.entries.find((e) => e.id === noteId)
+      if (edited) {
+        this.emit({ type: 'entry', data: edited })
+        this.prepareRelevance([edited])
+      } else this.emit({ type: 'removed', data: { of: 'entry', id: noteId } })
+    }
+    for (const w of o.writes) await this.writeView(this.kinds[w.kind]!, w.write, { own: w.own })
+    for (const viewId of o.deletes) await this.deleteView(viewId)
+    const rewrites = o.writes.filter((w) => w.own.bodyStale).map((w) => `${w.kind}/${w.write.slug}`)
+    for (const viewId of rewrites) {
+      const kind = viewId.slice(0, viewId.indexOf('/'))
+      if (!this.busy(kind, viewId)) this.enqueue(kind, { viewId })
+    }
+    if (o.note || o.writes.length > 0 || o.deletes.length > 0) for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
+    return { id, ok: true, written: o.writes.map((w) => `${w.kind}/${w.write.slug}`), deleted: o.deletes, rewrites, warnings: o.warnings }
+  }
+
+  /** Runs fn on the kind's queue, after the run in flight and before any waiting run. */
+  private step<T>(kind: string, fn: () => Promise<T>): Promise<T> {
+    const q = this.queue(kind)
+    const done = new Promise<T>((resolve, reject) => q.steps.push(() => fn().then(resolve, reject)))
+    if (!q.draining) q.draining = this.drain(kind, q)
+    return done
+  }
+
+  /**
+   * Brings the kind's views in line with what adjustments left: no view cites a tombstoned note, and every view
+   * the kind prunes is deleted. Idempotent, so it runs on start and after every adjustment, on the kind's queue.
+   */
+  private reconcile(kind: string) {
+    const k = this.kinds[kind]!
+    this.step(kind, async () => {
+      for (const v of this.listViews()) {
+        const write = v.kind === kind && withoutTombstoned(v, this.overlay.tombstoned)
+        if (write) await this.writeView(k, write)
+      }
+      for (const id of k.prune?.(this.world()) ?? []) await this.deleteView(id)
+    }).catch((err) => console.error(`[zephyr] ${kind}: reconcile failed: ${(err as Error).message}`))
+  }
+
+  /** The view as it was goes to .history first, so a deleted page can be read back by hand. */
+  private async deleteView(id: string) {
+    const view = this.views.get(id)
+    if (!view) return
+    await this.store.archiveView(view)
+    await this.store.deleteView(view)
+    this.views.delete(id)
+    this.emit({ type: 'removed', data: { of: 'view', id } })
   }
 
   /** Strictly increasing, so updatedAt orders every write to a view even within one millisecond; derived views compare it. */

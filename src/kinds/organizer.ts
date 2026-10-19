@@ -155,7 +155,7 @@ async function viewContext(world: World, own: View[], newEntries: Entry[]): Prom
   }
 }
 
-function appendSection(body: string, section: string): string {
+export function appendSection(body: string, section: string): string {
   const [head, tail] = [body.trimEnd(), section.trim()]
   return head && tail ? `${head}\n\n${tail}` : head || tail
 }
