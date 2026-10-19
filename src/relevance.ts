@@ -95,3 +95,40 @@ function tfidf(): RelevanceBackend {
 }
 
 export const relevanceBackends: Record<string, () => RelevanceBackend> = { tfidf }
+
+export interface FallbackOptions {
+  timeoutMs: number
+  /** How long after a failure every call goes straight to the fallback. */
+  cooldownMs: number
+  now?: () => number
+}
+
+/**
+ * Answers from primary, or from fallback when primary fails or takes longer than timeoutMs. After a failure it
+ * skips primary for cooldownMs, so a down endpoint costs one timeout, not one per request. A primary call that
+ * timed out keeps running and still fills primary's caches.
+ */
+export function withFallback(primary: RelevanceBackend, fallback: RelevanceBackend, opts: FallbackOptions): RelevanceBackend {
+  const now = opts.now ?? Date.now
+  let degradedUntil = 0
+  return {
+    async rank(query, docs) {
+      if (now() < degradedUntil) return fallback.rank(query, docs)
+      const answer = primary.rank(query, docs)
+      answer.catch(() => {})
+      let timer: Timer | undefined
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no answer in ${opts.timeoutMs} ms`)), opts.timeoutMs)
+      })
+      try {
+        return await Promise.race([answer, timeout])
+      } catch (err) {
+        degradedUntil = now() + opts.cooldownMs
+        console.warn(`[zephyr] relevance: ${(err as Error).message}; using the fallback for ${opts.cooldownMs / 1000} s`)
+        return fallback.rank(query, docs)
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+  }
+}

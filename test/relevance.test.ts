@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { relevanceBackends } from '../src/relevance'
+import { relevanceBackends, withFallback, type RelevanceBackend, type RelevanceDoc } from '../src/relevance'
 
 const tfidf = relevanceBackends.tfidf!()
 
@@ -31,4 +31,60 @@ test('tfidf ignores punctuation, case, and tokens shorter than three characters'
 test('tfidf scores a doc that shares only function words with the query at zero', async () => {
   const { scored: ranked } = await tfidf.rank('Because the weather was awful, more of us stayed in after lunch with the kids.', docs)
   expect(ranked.every((r) => r.score === 0)).toBe(true)
+})
+
+const fixed = (backend: string): RelevanceBackend & { calls: number } => {
+  const b = {
+    calls: 0,
+    async rank(_query: string, ds: RelevanceDoc[]) {
+      b.calls++
+      return { backend, scored: ds.map((d) => ({ id: d.id, score: 1 })) }
+    },
+  }
+  return b
+}
+const failing = (): RelevanceBackend & { calls: number } => {
+  const b = {
+    calls: 0,
+    async rank(): Promise<never> {
+      b.calls++
+      throw new Error('endpoint down')
+    },
+  }
+  return b
+}
+const hanging = (): RelevanceBackend => ({ rank: () => new Promise(() => {}) })
+
+test('withFallback answers from the primary while it works', async () => {
+  const fb = fixed('fallback')
+  const r = withFallback(fixed('primary'), fb, { timeoutMs: 1000, cooldownMs: 30_000 })
+  expect((await r.rank('q', docs)).backend).toBe('primary')
+  expect(fb.calls).toBe(0)
+})
+
+test('withFallback answers from the fallback when the primary fails', async () => {
+  const r = withFallback(failing(), fixed('fallback'), { timeoutMs: 1000, cooldownMs: 30_000 })
+  const ranking = await r.rank('q', docs)
+  expect(ranking.backend).toBe('fallback')
+  expect(ranking.scored.map((s) => s.id).sort()).toEqual(['bread', 'deploys', 'espresso', 'running'])
+})
+
+test('withFallback answers from the fallback when the primary takes longer than the timeout', async () => {
+  const r = withFallback(hanging(), fixed('fallback'), { timeoutMs: 20, cooldownMs: 30_000 })
+  const started = performance.now()
+  expect((await r.rank('q', docs)).backend).toBe('fallback')
+  expect(performance.now() - started).toBeLessThan(500)
+})
+
+test('after a failure the primary is skipped until the cooldown ends', async () => {
+  let now = 0
+  const primary = failing()
+  const r = withFallback(primary, fixed('fallback'), { timeoutMs: 1000, cooldownMs: 30_000, now: () => now })
+  await r.rank('q', docs)
+  now = 29_999
+  expect((await r.rank('q', docs)).backend).toBe('fallback')
+  expect(primary.calls).toBe(1)
+  now = 30_000
+  await r.rank('q', docs)
+  expect(primary.calls).toBe(2)
 })

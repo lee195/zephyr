@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import type { ChatMessage, Entry, ModelBackend } from '../src/domain'
-import type { RelevanceBackend } from '../src/relevance'
+import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
 
@@ -383,4 +383,16 @@ test('a write to an existing topic that was not open is dropped; a write to an o
   expect(bySlug.b).toEqual([['e2'], 'body of b'])
   expect(bySlug.c).toEqual([['e3', 'e6'], 'rewritten'])
   expect(z.listRuns().at(-1)).toMatchObject({ status: 'done', dropped: ['write b: topic exists but was not open'] })
+})
+
+test('with the primary relevance backend down, the open set comes from the fallback', async () => {
+  const fake = scripted([])
+  const down: RelevanceBackend = { rank: async () => Promise.reject(new Error('endpoint down')) }
+  const relevance = withFallback(down, fixedRelevance(scores).relevance, { timeoutMs: 1000, cooldownMs: 30_000 })
+  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance })
+  await z.start()
+  await z.idle()
+
+  expect(JSON.parse(fake.sent[0]!.at(-1)!.content).openTopics.map((t: any) => t.slug)).toEqual(['e', 'c', 'a'])
+  expect(z.listRuns().at(-1)).toMatchObject({ status: 'done' })
 })
