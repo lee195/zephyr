@@ -18,6 +18,14 @@ export const derivedBySource = computed(() => {
   return bySource
 })
 
+/** The topic cards that cite each entry, by entry id, in title order. */
+export const topicsByEntry = computed(() => {
+  const byEntry = new Map<string, View[]>()
+  const topics = [...state.views.values()].filter((v) => v.kind === 'organizer').sort((a, b) => a.title.localeCompare(b.title))
+  for (const t of topics) for (const id of t.sources) byEntry.set(id, [...(byEntry.get(id) ?? []), t])
+  return byEntry
+})
+
 export const taskList = computed(() => [...state.views.values()].find((v) => v.tasks))
 
 /** Every view that is its own card: not the task list, and not a view shown inside its source's card. */
