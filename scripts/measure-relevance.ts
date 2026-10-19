@@ -14,6 +14,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { parseConfig } from '../src/config'
 import { embeddingBackend } from '../src/embedding'
 import { relevanceBackends, tokenize, type RelevanceBackend } from '../src/relevance'
 
@@ -36,7 +37,8 @@ const cost = { requests: 0, inputs: 0, tokens: 0 }
 
 async function makeBackend(name: string): Promise<RelevanceBackend> {
   if (name === 'embedding') {
-    const apiKey = process.env.DEEPSEEK_API_KEY
+    const config = parseConfig(process.env)
+    const apiKey = config.apiKey
     if (!apiKey) throw new Error('DEEPSEEK_API_KEY missing; run under `wick exec --only vllm --`')
     const counting = (async (url: string, init: RequestInit) => {
       const res = await fetch(url, init)
@@ -46,8 +48,8 @@ async function makeBackend(name: string): Promise<RelevanceBackend> {
       return res
     }) as typeof fetch
     return embeddingBackend({
-      baseUrl: process.env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1',
-      model: process.env.ZEPHYR_EMBED_MODEL ?? 'embeddinggemma2',
+      baseUrl: config.vllmUrl,
+      model: config.embedModel,
       apiKey,
       cacheDir: values.cache ?? (await mkdtemp(join(tmpdir(), 'zephyr-embeddings-'))),
       fetch: counting,

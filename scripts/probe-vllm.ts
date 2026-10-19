@@ -1,6 +1,6 @@
-const BASE = process.env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1'
-const MODEL = process.env.ZEPHYR_MODEL ?? 'deepseek-v4-flash-fast'
-const key = process.env.DEEPSEEK_API_KEY
+import { parseConfig } from '../src/config'
+
+const { vllmUrl: BASE, chatModel: MODEL, apiKey: key } = parseConfig(process.env)
 if (!key) throw new Error('DEEPSEEK_API_KEY missing; run with bun --env-file=.env.local')
 
 const entries = [

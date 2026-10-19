@@ -1,0 +1,36 @@
+import { resolve } from 'node:path'
+import { backends, type ModelBackendName } from './backends'
+
+export type Env = Readonly<Record<string, string | undefined>>
+
+export interface Config {
+  /** OpenAI-compatible base URL that serves both the chat and the embedding model. */
+  vllmUrl: string
+  /** Absent: model runs fail until it is set, and relevance cannot use the endpoint. */
+  apiKey?: string
+  modelBackend: ModelBackendName
+  chatModel: string
+  embedModel: string
+  relevance: string
+  dataDir: string
+  port: number
+}
+
+/** The only place that reads the environment; everything else takes the Config it returns. */
+export function parseConfig(env: Env): Config {
+  return {
+    vllmUrl: env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1',
+    apiKey: env.DEEPSEEK_API_KEY || undefined,
+    modelBackend: registered('ZEPHYR_BACKEND', env.ZEPHYR_BACKEND ?? 'vllm', backends),
+    chatModel: env.ZEPHYR_MODEL ?? 'deepseek-v4-flash-fast',
+    embedModel: env.ZEPHYR_EMBED_MODEL ?? 'embeddinggemma2',
+    relevance: env.ZEPHYR_RELEVANCE ?? 'embedding',
+    dataDir: resolve(env.ZEPHYR_DATA ?? './data'),
+    port: Number(env.ZEPHYR_PORT ?? 7317),
+  }
+}
+
+function registered<K extends string>(variable: string, value: string, registry: Readonly<Record<K, unknown>>): K {
+  if (Object.hasOwn(registry, value)) return value as K
+  throw new Error(`unknown ${variable}: ${value}; registered: ${Object.keys(registry).join(', ')}`)
+}

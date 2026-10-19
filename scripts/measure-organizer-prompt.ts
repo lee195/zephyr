@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { backends } from '../src/backends'
+import { parseConfig } from '../src/config'
 import type { ChatMessage, Entry, ModelBackend, Usage } from '../src/domain'
 import { Zephyr } from '../src/zephyr'
 
@@ -113,7 +114,8 @@ function measuring(inner: ModelBackend, calls: Call[]): ModelBackend {
 const corpus = (await Bun.file(join(import.meta.dir, 'fixtures/organizer-corpus.json')).json()) as { subjects: Subject[] }
 if (topicCount > corpus.subjects.length) throw new Error(`corpus has only ${corpus.subjects.length} subjects`)
 const fixture = await buildFixture(corpus.subjects.slice(0, topicCount))
-const model = backends.vllm!(process.env)
+const config = parseConfig(process.env)
+const model = backends.vllm(config)
 
 const results = []
 let firstMessages: ChatMessage[] | undefined
@@ -191,11 +193,10 @@ const summary = {
 console.log(JSON.stringify(summary))
 
 async function promptTokens(messages: ChatMessage[]): Promise<number> {
-  const base = process.env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1'
-  const res = await fetch(`${base}/chat/completions`, {
+  const res = await fetch(`${config.vllmUrl}/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}` },
-    body: JSON.stringify({ model: process.env.ZEPHYR_MODEL ?? 'deepseek-v4-flash-fast', max_tokens: 1, messages }),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({ model: config.chatModel, max_tokens: 1, messages }),
   })
   if (!res.ok) throw new Error(`vllm ${res.status}`)
   return ((await res.json()) as any).usage.prompt_tokens

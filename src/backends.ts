@@ -1,3 +1,4 @@
+import type { Config } from './config'
 import type { ChatMessage, ModelBackend } from './domain'
 
 export function parseModelJson(content: string): unknown {
@@ -5,17 +6,15 @@ export function parseModelJson(content: string): unknown {
   return JSON.parse(stripped)
 }
 
-function vllm(env: Record<string, string | undefined>): ModelBackend {
-  const base = env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1'
-  const model = env.ZEPHYR_MODEL ?? 'deepseek-v4-flash-fast'
+function vllm(config: Config): ModelBackend {
   return {
     async complete(messages: ChatMessage[]) {
-      const key = env.DEEPSEEK_API_KEY
+      const key = config.apiKey
       if (!key) throw new Error('DEEPSEEK_API_KEY missing; start with `wick exec --only vllm -- bun run start`')
-      const res = await fetch(`${base}/chat/completions`, {
+      const res = await fetch(`${config.vllmUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model, response_format: { type: 'json_object' }, messages }),
+        body: JSON.stringify({ model: config.chatModel, response_format: { type: 'json_object' }, messages }),
         signal: AbortSignal.timeout(180_000),
       })
       if (!res.ok) {
@@ -37,4 +36,5 @@ function vllm(env: Record<string, string | undefined>): ModelBackend {
   }
 }
 
-export const backends: Record<string, (env: Record<string, string | undefined>) => ModelBackend> = { vllm }
+export const backends = { vllm } satisfies Record<string, (config: Config) => ModelBackend>
+export type ModelBackendName = keyof typeof backends
