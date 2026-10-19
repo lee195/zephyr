@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { doneRun, entry, eventually, gate, payloadOf, scripted, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, eventually, filesUnder, gate, payloadOf, scripted, seedDataDir, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -314,6 +314,28 @@ test('append adds a section to an existing topic and unions its sources', async 
   expect(await readFile(join(dir, 'views/organizer/a.md'), 'utf8')).toBe('First section.\n\nSecond section.')
   expect(z.listRuns().at(-1)?.status).toBe('done')
   expect(z.listRuns().at(-1)?.dropped).toBeUndefined()
+})
+
+test('append with a title renames the topic and keeps its slug, file and sources', async () => {
+  const dir = await organizedDir()
+  const reply = { ops: [{ op: 'append', slug: 'a', title: '  Q3 Roadmap  ', sources: ['e3'], body: 'Second section.' }] }
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted(reply).backend })
+  await z.start()
+  await z.idle()
+  expect(z.listViews().map((v) => [v.id, v.title, v.sources, v.body])).toEqual([['organizer/a', 'Q3 Roadmap', ['e1', 'e2', 'e3'], 'First section.\n\nSecond section.']])
+  expect(await filesUnder(join(dir, 'views/organizer'))).toEqual(['a.json', 'a.md'])
+  expect(z.listRuns().at(-1)?.dropped).toBeUndefined()
+})
+
+test('an empty or overlong append title is dropped with a reason, and the append still lands', async () => {
+  for (const title of ['   ', 'x'.repeat(81), 42]) {
+    const dir = await organizedDir()
+    const z = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: [{ op: 'append', slug: 'a', title, sources: ['e3'], body: 'Second section.' }] }).backend })
+    await z.start()
+    await z.idle()
+    expect(z.listViews().map((v) => [v.title, v.sources, v.body])).toEqual([['A', ['e1', 'e2', 'e3'], 'First section.\n\nSecond section.']])
+    expect(z.listRuns().at(-1)).toMatchObject({ status: 'done', dropped: [expect.stringContaining('append a: title dropped')] })
+  }
 })
 
 test('append to an unknown topic is dropped with a reason, and the rest of the reply applies', async () => {

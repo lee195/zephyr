@@ -6,10 +6,13 @@ const RECENT_CONTEXT = 30
 /** Topics the model sees in full per run, picked by relevance to the run's entries; the rest are index lines. */
 const OPEN_VIEWS = 3
 
-/** write replaces a topic's body (new slug, or an open one); append adds a section to an existing topic. */
+/**
+ * write replaces a topic's body (new slug, or an open one); append adds a section to an existing topic and,
+ * with a title, renames it. The slug never changes: it is the view's id, file name and sources key.
+ */
 export type ViewOp =
   | { op: 'write'; slug: string; title: string; sources: EntryId[]; body: string }
-  | { op: 'append'; slug: string; sources: EntryId[]; body: string }
+  | { op: 'append'; slug: string; title?: string; sources: EntryId[]; body: string }
 
 export type Validation = { ok: true; ops: ViewOp[]; dropped: string[] } | { ok: false; error: string }
 
@@ -25,6 +28,8 @@ export interface ReplyContext {
   openSlugs: ReadonlySet<string>
 }
 
+const MAX_TITLE_CHARS = 80
+
 const LEADING_HEADING = /^\s*#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*(?:\r?\n|$)/
 
 /** The viewer renders the title itself, so a leading heading that repeats it would show twice. */
@@ -37,7 +42,7 @@ function stripTitleHeading(body: string, title: string): string {
 /**
  * Parses `{ ops: [...] }`. A malformed reply fails as a whole. A well-formed op the rules refuse is
  * dropped with a reason: a write to an existing topic the model did not see in full, an append to an
- * unknown topic, or an op left with no known sources.
+ * unknown topic, or an op left with no known sources. An append's unusable title is dropped alone; the append applies.
  */
 export function validateOps(json: unknown, ctx: ReplyContext): Validation {
   const ops = (json as any)?.ops
@@ -60,8 +65,14 @@ export function validateOps(json: unknown, ctx: ReplyContext): Validation {
       continue
     }
     if (o.op === 'append') {
-      if (!existing.has(slug)) dropped.push(`append ${slug}: no such topic`)
-      else out.push({ op: 'append', slug, sources, body: o.body })
+      if (!existing.has(slug)) {
+        dropped.push(`append ${slug}: no such topic`)
+        continue
+      }
+      const title = typeof o.title === 'string' ? o.title.trim() : ''
+      const usable = title.length > 0 && title.length <= MAX_TITLE_CHARS
+      if (o.title != null && !usable) dropped.push(`append ${slug}: title dropped, not a non-empty string of at most ${MAX_TITLE_CHARS} characters`)
+      out.push({ op: 'append', slug, ...(usable && { title }), sources, body: o.body })
       continue
     }
     if (existing.has(slug) && !writable.has(slug)) {
@@ -78,11 +89,12 @@ export function validateOps(json: unknown, ctx: ReplyContext): Validation {
 
 const ORGANIZER_SYSTEM = `You organize a person's notes into topic pages.
 Reply with JSON only: {"ops":[op, ...]} where op is one of
-  {"op":"append","slug":string,"sources":string[],"body":string}
+  {"op":"append","slug":string,"title"?:string,"sources":string[],"body":string}
   {"op":"write","slug":string,"title":string,"sources":string[],"body":string}
 The input has openTopics (full pages) and topicIndex (every other topic, one line each: "slug | title | N sources").
 - Put each new entry into exactly one topic. Use an existing topic, open or indexed, when the entry belongs there; create a topic only for a clearly different subject.
 - append adds body as a new section at the end of an existing topic. Use it for indexed topics, and for open topics when the entry adds to the page without changing what it says.
+- On append, set title only when the topic's current title no longer describes all of its notes, the new one included; otherwise leave it out. The slug stays the same.
 - write replaces the whole page. Use it to create a topic, or to rewrite an open topic when the entry changes or corrects what the page says. Never write an indexed topic.
 - sources lists the ids of the new entries the op covers.
 - slug is lowercase kebab-case. body is markdown built only from the notes; do not add facts they do not contain, and do not repeat the title as a heading.`
@@ -126,7 +138,7 @@ function applyOps(world: World, own: View[], ops: ViewOp[]): ViewWrite[] {
     const prior = pages.get(op.slug)
     // Union with prior sources: a page update should never silently orphan an entry it already cited.
     const cited = new Set([...(prior?.sources ?? []), ...op.sources])
-    const page = op.op === 'write' ? { title: op.title, body: op.body } : { title: prior!.title, body: appendSection(prior!.body, op.body) }
+    const page = op.op === 'write' ? { title: op.title, body: op.body } : { title: op.title ?? prior!.title, body: appendSection(prior!.body, op.body) }
     pages.set(op.slug, { slug: op.slug, ...page, sources: inEntryOrder(world.entries, cited), format: 'md' })
     touched.add(op.slug)
   }

@@ -13,7 +13,7 @@ const svgOf = (title: string) => `<svg viewBox="0 0 100 20"><text x="2" y="14">$
 
 /**
  * Plays both kinds. As organizer it files an entry "<slug>: text" under topic <slug>, writing or
- * appending as the page requires. As visualizer it draws the topic's title, optionally held until released.
+ * appending as the page requires; "<slug>: text => Title" appends with that new title. As visualizer it draws the topic's title, optionally held until released.
  */
 function world() {
   const drawn: string[] = []
@@ -29,8 +29,9 @@ function world() {
       }
       const known = new Set<string>([...payload.openTopics.map((t: any) => t.slug), ...payload.topicIndex.map((l: string) => l.split(' | ')[0])])
       const ops = payload.newEntries.map((e: any) => {
-        const [slug, text] = e.text.split(': ')
-        const op = known.has(slug) ? { op: 'append' } : { op: 'write', title: slug.toUpperCase() }
+        const [slug, rest] = e.text.split(': ')
+        const [text, retitle] = rest.split(' => ')
+        const op = known.has(slug) ? { op: 'append', ...(retitle && { title: retitle }) } : { op: 'write', title: slug.toUpperCase() }
         known.add(slug)
         return { ...op, slug, sources: [e.id], body: text }
       })
@@ -87,6 +88,14 @@ test('a drawn topic is redrawn when it changes, and not when another topic chang
 
   await note('party: cake')
   expect(w.drawn).toEqual(['PARTY', 'PARTY'])
+})
+
+test('a drawn topic retitled by an append is redrawn under its new title', async () => {
+  const { z, w, note } = await started()
+  for (let i = 0; i < 4; i++) await note(`party: item ${i}`)
+  await note('party: cake => Summer Party')
+  expect(w.drawn).toEqual(['PARTY', 'Summer Party'])
+  expect(diagramOf(z, 'party')).toMatchObject({ title: 'Summer Party', derivedFrom: { id: 'organizer/party' } })
 })
 
 test('changes to a topic while its diagram is drawn coalesce into one redraw; other topics get their own run', async () => {

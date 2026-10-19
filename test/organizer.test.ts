@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { organizerMessages, validateOps, type ReplyContext } from '../src/kinds/organizer'
-import { entry } from './helpers'
+import { entry, payloadOf } from './helpers'
 
 const organizer = { validate: validateOps, buildMessages: organizerMessages }
 const ctx: ReplyContext = { knownIds: new Set(['e1', 'e2']), existingSlugs: new Set(), openSlugs: new Set() }
@@ -76,4 +76,15 @@ test('the prompt shows open topics in full and every other topic as one index li
   expect(user.openTopics).toEqual([{ slug: 'a', title: 'A', body: 'open body' }])
   expect(user.topicIndex).toEqual(['b | B | 2 sources'])
   expect(messages.map((m) => m.content).join('\n')).not.toContain('hidden body')
+})
+
+test('the prompt offers append an optional title and shows every topic its current title', () => {
+  const view = (slug: string, title: string) => ({ id: `organizer/${slug}`, kind: 'organizer', slug, title, sources: ['e1'], format: 'md' as const, body: 'x', updatedAt: 't' })
+  const messages = organizer.buildMessages([entry('e2', 'new')], { open: [view('a', 'Open Title')], indexed: [view('b', 'Indexed Title')] }, [])
+  const system = messages[0]!.content
+  expect(system).toContain('{"op":"append","slug":string,"title"?:string,')
+  expect(system).toMatch(/append.*title.*no longer describes/i)
+  const user = payloadOf(messages)
+  expect(user.openTopics[0].title).toBe('Open Title')
+  expect(user.topicIndex).toEqual(['b | Indexed Title | 1 sources'])
 })
