@@ -36,7 +36,7 @@ let reciprocalRanks = 0
 const sameScores: number[] = []
 const otherScores: number[] = []
 for (const q of notes) {
-  const ranked = backend.rank(q.text, notes.filter((n) => n !== q))
+  const { scored: ranked } = await backend.rank(q.text, notes.filter((n) => n !== q))
   const firstHit = ranked.findIndex((r) => subjectOf.get(r.id) === q.subject)
   if (firstHit === 0) top1++
   if (firstHit >= 0 && firstHit < 3) at3++

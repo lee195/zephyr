@@ -120,7 +120,7 @@ export interface AgentKind {
   kind: string
   trigger: Trigger
   /** null when there is nothing to ask the model; the run is then done without a call. */
-  plan(run: Run, world: World): Plan | null
+  plan(run: Run, world: World): Promise<Plan | null>
 }
 
 export type ZephyrEvent =

@@ -336,9 +336,9 @@ test('append to an unknown topic is dropped with a reason, and the rest of the r
 function fixedRelevance(scores: Record<string, number>) {
   const queries: string[] = []
   const relevance: RelevanceBackend = {
-    rank(query, docs) {
+    async rank(query, docs) {
       queries.push(query)
-      return docs.map((d) => ({ id: d.id, score: scores[d.id] ?? 0 })).sort((a, b) => b.score - a.score)
+      return { backend: 'fixed', scored: docs.map((d) => ({ id: d.id, score: scores[d.id] ?? 0 })).sort((a, b) => b.score - a.score) }
     },
   }
   return { relevance, queries }

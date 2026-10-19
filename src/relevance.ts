@@ -8,9 +8,15 @@ export interface Scored {
   score: number
 }
 
-/** Ranks docs by relevance to a query, best first. Every doc appears once in the result. */
+/** Scores are only comparable within one backend, so a ranking names the backend that produced it. */
+export interface Ranking {
+  backend: string
+  /** Best first; every doc appears once. */
+  scored: Scored[]
+}
+
 export interface RelevanceBackend {
-  rank(query: string, docs: RelevanceDoc[]): Scored[]
+  rank(query: string, docs: RelevanceDoc[]): Promise<Ranking>
 }
 
 const MIN_TOKEN_LENGTH = 3
@@ -60,7 +66,7 @@ function termCounts(tokens: string[]): Map<string, number> {
 /** Cosine similarity of sublinear-tf, smoothed-idf vectors; idf comes from the docs alone. */
 function tfidf(): RelevanceBackend {
   return {
-    rank(query, docs) {
+    async rank(query, docs) {
       const docCounts = docs.map((d) => termCounts(tokenize(d.text)))
       const df = new Map<string, number>()
       for (const counts of docCounts) for (const t of counts.keys()) df.set(t, (df.get(t) ?? 0) + 1)
@@ -83,7 +89,7 @@ function tfidf(): RelevanceBackend {
         const denom = q.norm * doc.norm
         return { id: d.id, score: denom === 0 ? 0 : dot / denom }
       })
-      return scored.sort((a, b) => b.score - a.score)
+      return { backend: 'tfidf', scored: scored.sort((a, b) => b.score - a.score) }
     },
   }
 }

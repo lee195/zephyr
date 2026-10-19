@@ -61,12 +61,12 @@ async function registerSession(zephyr: Zephyr, req: Request) {
   return json({ ok: true })
 }
 
-function hints(zephyr: Zephyr, params: URLSearchParams) {
+async function hints(zephyr: Zephyr, params: URLSearchParams) {
   const q = params.get('q')
   if (q === null) return json({ ok: false, error: 'q is required' }, 400)
   const limit = params.get('limit') ?? '3'
   if (!/^[1-5]$/.test(limit)) return json({ ok: false, error: 'limit must be an integer from 1 to 5' }, 400)
-  return json({ hints: zephyr.hints(q, Number(limit)) })
+  return json({ hints: await zephyr.hints(q, Number(limit)) })
 }
 
 /** Defense in depth behind the viewer's own rendering rules: no inline or foreign script can run in the page. */

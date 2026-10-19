@@ -20,15 +20,15 @@ export const MAX_DRAFT_CHARS = 2000
 const MIN_DRAFT_TOKENS = 2
 
 /** Stored entries related to a draft, best first; never calls a model. */
-export function hintsFor(draft: string, limit: number, entries: readonly Entry[], views: readonly View[], relevance: RelevanceBackend): Hint[] {
+export async function hintsFor(draft: string, limit: number, entries: readonly Entry[], views: readonly View[], relevance: RelevanceBackend): Promise<Hint[]> {
   const query = draft.slice(0, MAX_DRAFT_CHARS)
   if (tokenize(query).length < MIN_DRAFT_TOKENS) return []
   const same = draft.trim()
   const byId = new Map(entries.filter((e) => e.text.trim() !== same).map((e) => [e.id, e]))
   const topics = new Map<EntryId, View>()
   for (const v of views) if (v.kind === 'organizer') for (const id of v.sources) if (!topics.has(id)) topics.set(id, v)
-  return relevance
-    .rank(query, [...byId.values()])
+  const { scored } = await relevance.rank(query, [...byId.values()])
+  return scored
     .filter((s) => s.score >= MIN_HINT_SCORE)
     .slice(0, limit)
     .map(({ id, score }) => {

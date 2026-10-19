@@ -77,7 +77,7 @@ test('a one-word draft gets no hints, even when an entry matches it', async () =
 })
 
 test('a hit that shares only one word with the draft falls under the threshold', async () => {
-  const weak = relevanceBackends.tfidf!().rank('sourdough loaf', entries).find((s) => s.id === 'starter')!
+  const weak = (await relevanceBackends.tfidf!().rank('sourdough loaf', entries)).scored.find((s) => s.id === 'starter')!
   expect(weak.score).toBeGreaterThan(0)
   const get = await hintsServer()
   expect((await ask(get, 'sourdough loaf', '&limit=5')).map((h) => h.entryId).sort()).toEqual(['hydration', 'scoring'])

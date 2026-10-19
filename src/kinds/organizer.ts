@@ -99,10 +99,10 @@ export function organizerMessages(newEntries: Entry[], views: ViewContext, recen
   ]
 }
 
-function viewContext(world: World, own: View[], newEntries: Entry[]): ViewContext {
+async function viewContext(world: World, own: View[], newEntries: Entry[]): Promise<ViewContext> {
   const query = newEntries.map((e) => e.text).join('\n')
-  const ranked = world.relevance.rank(query, own.map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` })))
-  const openIds = new Set(ranked.slice(0, OPEN_VIEWS).map((r) => r.id))
+  const { scored } = await world.relevance.rank(query, own.map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` })))
+  const openIds = new Set(scored.slice(0, OPEN_VIEWS).map((r) => r.id))
   const byId = new Map(own.map((v) => [v.id, v]))
   return {
     open: [...openIds].map((id) => byId.get(id)!),
@@ -133,12 +133,12 @@ function applyOps(world: World, own: View[], ops: ViewOp[]): ViewWrite[] {
 export const organizer: AgentKind = {
   kind: 'organizer',
   trigger: { on: 'entry' },
-  plan(run: Run, world: World) {
+  async plan(run: Run, world: World) {
     const runIds = new Set(run.entryIds)
     const newEntries = world.entries.filter((e) => runIds.has(e.id))
     const recent = world.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
     const own = world.views.filter((v) => v.kind === 'organizer')
-    const views = viewContext(world, own, newEntries)
+    const views = await viewContext(world, own, newEntries)
     const ctx: ReplyContext = {
       knownIds: new Set(world.entries.map((e) => e.id)),
       existingSlugs: new Set(own.map((v) => v.slug)),

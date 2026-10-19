@@ -1,5 +1,5 @@
 import { adapters } from './adapters'
-import { hintsFor } from './hints'
+import { hintsFor, type Hint } from './hints'
 import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewWrite, World, ZephyrEvent } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
 import { relevanceBackends, type RelevanceBackend } from './relevance'
@@ -121,7 +121,7 @@ export class Zephyr {
     return this.runs
   }
 
-  hints(draft: string, limit: number) {
+  hints(draft: string, limit: number): Promise<Hint[]> {
     return hintsFor(draft, limit, this.entries, this.listViews(), this.relevance)
   }
 
@@ -261,7 +261,7 @@ export class Zephyr {
     run.startedAt = new Date().toISOString()
     this.emit({ type: 'run', data: run })
     try {
-      const plan = kind.plan(run, this.world())
+      const plan = await kind.plan(run, this.world())
       if (plan) {
         const { json: reply } = await this.backend.complete(plan.messages, { json: true })
         const result = plan.settle(reply)

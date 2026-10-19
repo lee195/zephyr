@@ -111,7 +111,7 @@ export function visualizerMessages(topic: View): ChatMessage[] {
 export const visualizer: AgentKind = {
   kind: 'visualizer',
   trigger: { on: 'view', kind: 'organizer', wants: wantsDiagram },
-  plan(run: Run, world: World) {
+  async plan(run: Run, world: World) {
     const topic = world.views.find((v) => v.id === run.viewIds?.[0])
     // The topic may have been drawn by an earlier run since this one was queued; then there is nothing to do.
     if (!topic || !wantsDiagram(topic, world.views.filter((v) => v.kind === 'visualizer'))) return null
