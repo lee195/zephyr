@@ -357,10 +357,17 @@ export class Zephyr {
     return new Date(this.lastStamp).toISOString()
   }
 
-  /** The id and directory come from the kind, never from the write, so a kind can only ever write its own views. */
+  /**
+   * The id and directory come from the kind, never from the write, so a kind can only ever write its own views.
+   * The title history is kept here, against the stored view, so it holds whichever kind or op changed the title.
+   */
   private async writeView(kind: AgentKind, write: ViewWrite) {
     if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
-    const view: View = { ...write, id: `${kind.kind}/${write.slug}`, kind: kind.kind, updatedAt: this.stamp() }
+    const id = `${kind.kind}/${write.slug}`
+    const prior = this.views.get(id)
+    const updatedAt = this.stamp()
+    const pastTitles = prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt }] : prior?.pastTitles
+    const view: View = { ...write, id, kind: kind.kind, updatedAt, ...(pastTitles && { pastTitles }) }
     await this.store.writeView(view)
     this.views.set(view.id, view)
     this.prepareRelevance(kind.relevanceDocs?.([view]) ?? [])

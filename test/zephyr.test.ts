@@ -327,6 +327,81 @@ test('append with a title renames the topic and keeps its slug, file and sources
   expect(z.listRuns().at(-1)?.dropped).toBeUndefined()
 })
 
+test('a retitle by append records the old title, until the write that replaced it', async () => {
+  const dir = await organizedDir()
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: [{ op: 'append', slug: 'a', title: 'Q3 Roadmap', sources: ['e3'], body: 'Second section.' }] }).backend })
+  await z.start()
+  await z.idle()
+  const [v] = z.listViews()
+  expect(v!.title).toBe('Q3 Roadmap')
+  expect(v!.pastTitles).toEqual([{ title: 'A', until: v!.updatedAt }])
+  expect(Date.parse(v!.pastTitles![0]!.until)).not.toBeNaN()
+})
+
+test('a write that changes the title records the old one', async () => {
+  const dir = await organizedDir()
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: [{ op: 'write', slug: 'a', title: 'Rewritten', sources: ['e3'], body: 'New page.' }] }).backend })
+  await z.start()
+  await z.idle()
+  expect(z.listViews().map((v) => [v.title, v.pastTitles?.map((p) => p.title)])).toEqual([['Rewritten', ['A']]])
+})
+
+test('an op that keeps the title records no past title, in memory or on disk', async () => {
+  const keeps = [
+    { op: 'write', slug: 'a', title: 'A', sources: ['e3'], body: 'Same title.' },
+    { op: 'append', slug: 'a', sources: ['e3'], body: 'No title.' },
+    { op: 'append', slug: 'a', title: 'A', sources: ['e3'], body: 'Title repeated.' },
+  ]
+  for (const op of keeps) {
+    const dir = await organizedDir()
+    const z = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: [op] }).backend })
+    await z.start()
+    await z.idle()
+    expect(z.listViews().map((v) => [v.title, v.pastTitles])).toEqual([['A', undefined]])
+    expect(JSON.parse(await readFile(join(dir, 'views/organizer/a.json'), 'utf8'))).not.toHaveProperty('pastTitles')
+  }
+})
+
+/** Topic a, titled A, retitled by append to T1, by write to T2, by append to T3: one run per new note. */
+async function retitledThrice() {
+  const dir = await organizedDir()
+  const z = new OrganizerOnly({
+    dataDir: dir,
+    backend: scripted(
+      { ops: [{ op: 'append', slug: 'a', title: 'T1', sources: ['e3'], body: 'three' }] },
+      { ops: [{ op: 'write', slug: 'a', title: 'T2', sources: ['e4'], body: 'four' }] },
+      { ops: [{ op: 'append', slug: 'a', title: 'T3', sources: ['e5'], body: 'five' }] },
+    ).backend,
+  })
+  await z.start()
+  await z.idle()
+  for (const id of ['e4', 'e5']) {
+    await z.ingest([entry(id)])
+    await z.idle()
+  }
+  return { dir, z }
+}
+
+test('several retitles keep their order, oldest first, and leave slug and sources alone', async () => {
+  const { dir, z } = await retitledThrice()
+  const [v] = z.listViews()
+  expect([v!.id, v!.slug, v!.title, v!.sources]).toEqual(['organizer/a', 'a', 'T3', ['e1', 'e2', 'e3', 'e4', 'e5']])
+  expect(v!.pastTitles!.map((p) => p.title)).toEqual(['A', 'T1', 'T2'])
+  const untils = v!.pastTitles!.map((p) => p.until)
+  expect([...untils].sort()).toEqual(untils)
+  expect(new Set(untils).size).toBe(3)
+  expect(await filesUnder(join(dir, 'views/organizer'))).toEqual(['a.json', 'a.md'])
+})
+
+test('past titles survive a restart', async () => {
+  const { dir, z } = await retitledThrice()
+  z.stop()
+  const reloaded = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: [] }).backend })
+  await reloaded.start()
+  expect(reloaded.listViews().map((v) => [v.title, v.pastTitles])).toEqual([['T3', z.listViews()[0]!.pastTitles]])
+  expect(reloaded.listViews()[0]!.pastTitles).toHaveLength(3)
+})
+
 test('an empty or overlong append title is dropped with a reason, and the append still lands', async () => {
   for (const title of ['   ', 'x'.repeat(81), 42]) {
     const dir = await organizedDir()

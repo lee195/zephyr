@@ -37,6 +37,13 @@ export interface View {
   tasks?: Task[]
   /** The view this one was derived from, at the version it was derived from; it is stale once that view moves on. */
   derivedFrom?: { id: string; updatedAt: string }
+  /** Titles the view had before its current one, oldest first; until is the updatedAt of the write that replaced it. */
+  pastTitles?: PastTitle[]
+}
+
+export interface PastTitle {
+  title: string
+  until: string
 }
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed'
@@ -130,8 +137,8 @@ export interface World {
   relevance: RelevanceBackend
 }
 
-/** A view as a kind returns it; the server adds id, kind and updatedAt, so a kind can only write its own views. */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt'>
+/** A view as a kind returns it; the server adds id, kind, updatedAt and pastTitles, so a kind can only write its own views and never its history. */
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'pastTitles'>
 
 /** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
 export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }
