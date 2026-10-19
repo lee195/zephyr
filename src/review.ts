@@ -18,19 +18,23 @@ export interface Digest {
   /** Inclusive. The value `POST /api/review/done` takes to close exactly this window. */
   until: string
   notes: { count: number; ids: EntryId[] }
-  /** Topics whose first write fell in the window. */
+  /** Topics whose first write fell in the window, except those the person made, such as by a split. */
   newTopics: TopicRef[]
   /** Each topic that cites a note of the window, with those notes. */
   topics: (TopicRef & { noteIds: EntryId[] })[]
   /** Notes of the window that two or more topics cite. */
   sharedNotes: { noteId: EntryId; slugs: string[] }[]
+  /** Renames by a run; the person's own renames are left out. */
   renames: { slug: string; from: string; to: string; at: string }[]
   /** Tasks citing a note of the window; tasks carry no time of their own. */
   tasks: { id: TaskId; text: string; done: boolean; due?: string; noteIds: EntryId[] }[]
   /** Notes of the window that a kind has not filed: its last finished run on them failed or left them uncovered. */
   unfiled: { noteId: EntryId; kind: string; reason: 'failed' | 'uncovered'; error?: string }[]
-  /** Topics a rewrite run rewrote in the window. */
-  rewrites: { slug: string; at: string }[]
+  /**
+   * Topics a rewrite run rewrote in the window. `yours` marks a rewrite the person's own change forced: the change is
+   * theirs, but the new body is model text they have not seen.
+   */
+  rewrites: { slug: string; at: string; yours?: true }[]
 }
 
 /**
@@ -85,7 +89,7 @@ export function buildDigest(entries: readonly Entry[], views: readonly View[], r
   const renames = topicViews
     .flatMap((v) => {
       const past = v.pastTitles ?? []
-      return past.map((p, i) => ({ slug: v.slug, from: p.title, to: past[i + 1]?.title ?? v.title, at: p.until }))
+      return past.flatMap((p, i) => (p.byPerson ? [] : [{ slug: v.slug, from: p.title, to: past[i + 1]?.title ?? v.title, at: p.until }]))
     })
     .filter((r) => inWindow(r.at, since, until))
     .sort(byAt)
@@ -103,14 +107,14 @@ export function buildDigest(entries: readonly Entry[], views: readonly View[], r
   const ownView = `${TOPIC_KIND}/`
   const rewrites = runs
     .filter((r) => r.kind === TOPIC_KIND && r.status === 'done' && r.viewIds?.[0]?.startsWith(ownView) && inWindow(r.endedAt, since, until))
-    .map((r) => ({ slug: r.viewIds![0]!.slice(ownView.length), at: r.endedAt! }))
+    .map((r) => ({ slug: r.viewIds![0]!.slice(ownView.length), at: r.endedAt!, ...(r.forced && { yours: true as const }) }))
     .sort(byAt)
 
   return {
     since,
     until,
     notes: { count: notes.length, ids: notes },
-    newTopics: topicViews.filter((v) => inWindow(v.createdAt, since, until)).map(ref),
+    newTopics: topicViews.filter((v) => !v.createdByPerson && inWindow(v.createdAt, since, until)).map(ref),
     topics,
     sharedNotes,
     renames,
@@ -143,6 +147,7 @@ export function reviewBrief(digest: Digest): string {
     'Zephyr review. The person directs this review of the notes taken since the last one; the digest below lists them.',
     'Apply only the changes the person asks for, with the zephyr MCP tools. You may suggest fixes, but apply a suggestion only after the person says yes.',
     `When the person says the review is done, call finish_review with until "${digest.until}".`,
+    'Rewrites marked yours carried out a change the person made; their new text is still worth a look.',
     'Start with a short summary of the digest and ask what to change.',
     '',
     JSON.stringify(digest),

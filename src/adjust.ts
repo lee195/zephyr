@@ -162,7 +162,7 @@ const unchanged: Outcome = { ok: true, writes: [], deletes: [], warnings: [] }
 
 /** The view as a kind would write it, without the fields the server owns. */
 export function writeOf(v: View): ViewWrite {
-  const { id, kind, updatedAt, createdAt, pastTitles, appendsSinceWrite, pins, bodyStale, ...write } = v
+  const { id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins, bodyStale, ...write } = v
   return write
 }
 

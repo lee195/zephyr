@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test'
-import type { Entry, ModelBackend, Run, View } from '../src/domain'
+import type { Adjustment, Entry, ModelBackend, Run, View } from '../src/domain'
 import { kinds } from '../src/kinds'
 import { buildDigest, type Digest } from '../src/review'
 import { serve } from '../src/server'
 import { Store } from '../src/store'
 import { Zephyr } from '../src/zephyr'
+import { started } from './desk'
 import { entry, scripted, seedDataDir, tempDir } from './helpers'
 
 const at = (hhmm: string) => `2026-10-01T${hhmm}:00.000Z`
@@ -292,5 +293,37 @@ test('POST /api/adjustments answers 200 with the result, 400 for a malformed op,
     expect([tasks.status, (await tasks.json()).error]).toEqual([409, 'no tasks kind runs on this server'])
   } finally {
     await s.close()
+  }
+})
+
+test("the next digest leaves out the person's own renames and split topics, and marks the rewrites their changes forced as yours", async () => {
+  const s = await started({ kinds: { organizer: kinds.organizer! } })
+  try {
+    await s.note('party: venue', 'party: cake', 'party: budget', 'garden: beans', 'garden: peas')
+    const reviewed = await s.z.review()
+    for (const a of [
+      { op: 'renameTopic', slug: 'party', title: 'Summer Party' },
+      { op: 'splitTopic', slug: 'party', noteIds: ['e3'], into: { slug: 'party-budget', title: 'Party budget' } },
+      { op: 'moveNote', noteId: 'e2', from: 'party', to: 'garden' },
+    ] satisfies Adjustment[])
+      expect((await s.adjust(a)).ok).toBe(true)
+    expect((await s.z.finishReview(reviewed.until)).ok).toBe(true)
+
+    await s.note('garden: tomatoes => Vegetables')
+    for (const x of ['a', 'b', 'c', 'd', 'e', 'f']) await s.note(`trip: ${x}`)
+    await s.z.sweep()
+    await s.z.idle()
+    const next = await s.z.review()
+    expect(next.newTopics).toEqual([{ slug: 'trip', title: 'TRIP' }])
+    expect(next.renames.map(({ at, ...r }) => r)).toEqual([{ slug: 'garden', from: 'GARDEN', to: 'Vegetables' }])
+    expect(next.rewrites.map(({ at, ...r }) => r)).toEqual([
+      { slug: 'party', yours: true },
+      { slug: 'party-budget', yours: true },
+      { slug: 'party', yours: true },
+      { slug: 'garden', yours: true },
+      { slug: 'trip' },
+    ])
+  } finally {
+    s.z.stop()
   }
 })

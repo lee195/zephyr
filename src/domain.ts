@@ -40,6 +40,8 @@ export interface View {
   updatedAt: string
   /** The updatedAt of the view's first write. Absent on views first written before it was recorded. */
   createdAt?: string
+  /** The first write was an adjustment's, such as a split: the person made this view, so no digest lists it as new. */
+  createdByPerson?: true
   /** The task list as data, on the tasks view only; body is its markdown rendering for plain-file readers. */
   tasks?: Task[]
   /** The view this one was derived from, at the version it was derived from; it is stale once that view moves on. */
@@ -72,6 +74,8 @@ export interface Pins {
 export interface PastTitle {
   title: string
   until: string
+  /** The person replaced this title with an adjustment, so no digest lists the rename back to them. */
+  byPerson?: true
 }
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed'
@@ -93,6 +97,8 @@ export interface Run {
   dropped?: string[]
   /** On a done run, the entries its reply did not cover; they are retried like a failed run. Absent when it covered all. */
   uncovered?: EntryId[]
+  /** View work on a view an adjustment marked bodyStale: the run carries out a change the person made. */
+  forced?: true
 }
 
 export interface Session {
@@ -166,10 +172,10 @@ export interface World {
 }
 
 /**
- * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, pastTitles, appendsSinceWrite, pins
+ * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins
  * and bodyStale, so a kind can only write its own views and never their history or what the person fixed.
  */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale'>
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'createdByPerson' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale'>
 
 /** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
 export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }

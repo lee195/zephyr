@@ -430,6 +430,7 @@ export class Zephyr {
   private async execute(kind: AgentKind, run: Run) {
     run.status = 'running'
     run.startedAt = new Date().toISOString()
+    if (run.viewIds && this.views.get(run.viewIds[0]!)?.bodyStale) run.forced = true
     this.emit({ type: 'run', data: run })
     try {
       // Entry work whose every entry was tombstoned since it was queued has nothing left to file.
@@ -604,7 +605,8 @@ export class Zephyr {
    * The id and directory come from the kind, never from the write, so a kind can only ever write its own views.
    * The title history is kept here, against the stored view, so it holds whichever kind or op changed the title.
    * Pins and bodyStale carry over from the stored view unless an adjustment passes `own`; a revisit, which
-   * rewrites the page, archives the prior one and clears bodyStale.
+   * rewrites the page, archives the prior one and clears bodyStale. A write that passes `own` is the person's, and
+   * the title it replaces or the view it creates is marked so.
    */
   private async writeView(kind: AgentKind, write: ViewWrite, opts: { revisit?: boolean; own?: Pick<View, 'pins' | 'bodyStale'> } = {}) {
     if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
@@ -612,9 +614,12 @@ export class Zephyr {
     const prior = this.views.get(id)
     if (prior && opts.revisit) await this.store.archiveView(prior)
     const updatedAt = this.stamp()
-    const pastTitles = prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt }] : prior?.pastTitles
+    const byPerson = opts.own !== undefined
+    const pastTitles =
+      prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt, ...(byPerson && { byPerson: true as const }) }] : prior?.pastTitles
     const appendsSinceWrite = prior && extendsBody(write.body, prior.body) ? (prior.appendsSinceWrite ?? 0) + 1 : 0
     const createdAt = prior ? prior.createdAt : updatedAt
+    const createdByPerson = prior ? prior.createdByPerson : byPerson || undefined
     const { pins, bodyStale } = opts.own ?? { pins: prior?.pins, bodyStale: opts.revisit ? undefined : prior?.bodyStale }
     const view: View = {
       ...write,
@@ -622,6 +627,7 @@ export class Zephyr {
       kind: kind.kind,
       updatedAt,
       ...(createdAt && { createdAt }),
+      ...(createdByPerson && { createdByPerson }),
       ...(pastTitles && { pastTitles }),
       ...(appendsSinceWrite > 0 && { appendsSinceWrite }),
       ...(pins && { pins }),
