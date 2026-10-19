@@ -50,5 +50,12 @@ test('defaults: the vLLM endpoint, embedding relevance, and an empty key counts 
     embedModel: 'embeddinggemma2',
     relevance: 'embedding',
     port: 7317,
+    sweepMinutes: 30,
   })
+})
+
+test('the sweep interval takes any positive number of minutes and refuses anything else, naming the variable', () => {
+  expect(parseConfig({ ZEPHYR_SWEEP_MINUTES: '0.5' }).sweepMinutes).toBe(0.5)
+  expect(parseConfig({ ZEPHYR_SWEEP_MINUTES: '120' }).sweepMinutes).toBe(120)
+  for (const bad of ['0', '-5', 'often', '', 'Infinity']) expect(() => parseConfig({ ZEPHYR_SWEEP_MINUTES: bad })).toThrow(`ZEPHYR_SWEEP_MINUTES must be a positive number: ${bad}`)
 })

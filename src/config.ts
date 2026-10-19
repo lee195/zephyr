@@ -15,6 +15,8 @@ export interface Config {
   relevance: RelevanceName
   dataDir: string
   port: number
+  /** Minutes between cleanup sweeps; fractional values are allowed. */
+  sweepMinutes: number
 }
 
 /** The only place that reads the environment; everything else takes the Config it returns. */
@@ -28,10 +30,17 @@ export function parseConfig(env: Env): Config {
     relevance: registered('ZEPHYR_RELEVANCE', env.ZEPHYR_RELEVANCE ?? 'embedding', relevanceBackends),
     dataDir: resolve(env.ZEPHYR_DATA ?? './data'),
     port: Number(env.ZEPHYR_PORT ?? 7317),
+    sweepMinutes: positive('ZEPHYR_SWEEP_MINUTES', env.ZEPHYR_SWEEP_MINUTES ?? '30'),
   }
 }
 
 function registered<K extends string>(variable: string, value: string, registry: Readonly<Record<K, unknown>>): K {
   if (Object.hasOwn(registry, value)) return value as K
   throw new Error(`unknown ${variable}: ${value}; registered: ${Object.keys(registry).join(', ')}`)
+}
+
+function positive(variable: string, value: string): number {
+  const n = Number(value)
+  if (Number.isFinite(n) && n > 0) return n
+  throw new Error(`${variable} must be a positive number: ${value}`)
 }

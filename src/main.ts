@@ -23,7 +23,7 @@ function serverRelevance(): RelevanceBackend {
   }
 }
 
-const zephyr = new Zephyr({ dataDir: config.dataDir, backend: backends[config.modelBackend](config), relevance: serverRelevance() })
+const zephyr = new Zephyr({ dataDir: config.dataDir, backend: backends[config.modelBackend](config), relevance: serverRelevance(), sweepMs: config.sweepMinutes * 60_000 })
 await zephyr.start()
 const server = serve(zephyr, {
   port: config.port,

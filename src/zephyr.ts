@@ -19,10 +19,15 @@ interface KindQueue {
    * entries, one per source view. Work of different attempts never merges, so each keeps its own retries.
    */
   waiting: Map<string, Run>
+  /** The run executing now, if any. */
+  current: Run | null
   draining: Promise<void> | null
 }
 
 interface ScheduledRetry {
+  kind: string
+  /** The view the retried work is keyed by; absent for entry work. */
+  viewId?: string
   /** Settles when the retry is enqueued or cancelled, so idle() can wait on it. */
   done: Promise<void>
   cancel(): void
@@ -36,6 +41,8 @@ export interface ZephyrOptions {
   relevance?: RelevanceBackend
   pollMs?: number
   retryDelaysMs?: readonly number[]
+  /** How often the sweep runs after the one on start; absent, it runs on start only. */
+  sweepMs?: number
 }
 
 const sessionKey = (harness: string, sessionId: string) => `${harness}:${sessionId}`
@@ -47,6 +54,8 @@ export class Zephyr {
   private relevance: RelevanceBackend
   private pollMs: number
   private retryDelaysMs: readonly number[]
+  private sweepMs?: number
+  private sweepTimer?: Timer
 
   private entries: Entry[] = []
   private entryIds = new Set<EntryId>()
@@ -60,6 +69,11 @@ export class Zephyr {
   private listeners = new Set<(e: ZephyrEvent) => void>()
   private runSeq = 0
   private retries = new Set<ScheduledRetry>()
+  /**
+   * `${kind} ${viewId}` of view work whose last attempt failed, with the view's updatedAt then. The sweep skips it
+   * until the view changes, so a page the model cannot rewrite costs no calls every sweep. Lost on restart.
+   */
+  private exhausted = new Map<string, string | undefined>()
   private lastStamp = 0
   /** Readying every doc the relevance backend will be asked about, started by start() and never awaited by it. */
   private warmup: 'idle' | 'running' | 'done' | 'failed' = 'idle'
@@ -71,6 +85,7 @@ export class Zephyr {
     this.relevance = opts.relevance ?? relevanceBackends.tfidf()
     this.pollMs = opts.pollMs ?? 1000
     this.retryDelaysMs = opts.retryDelaysMs ?? RETRY_DELAYS_MS
+    this.sweepMs = opts.sweepMs
   }
 
   async start() {
@@ -90,11 +105,14 @@ export class Zephyr {
     }
     for (const v of this.views.values()) this.deriveFrom(v)
     this.warm()
+    void this.sweep()
+    if (this.sweepMs) this.sweepTimer = setInterval(() => void this.sweep(), this.sweepMs)
     for (const s of await this.store.loadSessions()) this.sessions.set(sessionKey(s.harness, s.sessionId), s)
     await Promise.all([...this.sessions.values()].map((s) => this.tail(s)))
   }
 
   stop() {
+    clearInterval(this.sweepTimer)
     for (const t of this.tailers.values()) t.stop()
     this.tailers.clear()
     for (const r of this.retries) r.cancel()
@@ -113,6 +131,34 @@ export class Zephyr {
         console.warn(`[zephyr] relevance warm-up failed: ${(err as Error).message}`)
       },
     )
+  }
+
+  /**
+   * Queues the view work each kind's sweep asks for, unless that view is busy in the kind's queue or its last
+   * attempt was exhausted at the view's current version. The queueing is synchronous; the returned promise settles
+   * once the sweep's own logging is done.
+   */
+  async sweep() {
+    const world = this.world()
+    let queued = 0
+    for (const kind of Object.values(this.kinds)) {
+      for (const viewId of kind.sweep?.(world) ?? []) {
+        if (this.busy(kind.kind, viewId)) continue
+        const key = `${kind.kind} ${viewId}`
+        if (this.exhausted.has(key) && this.exhausted.get(key) === this.views.get(viewId)?.updatedAt) continue
+        this.exhausted.delete(key)
+        this.enqueue(kind.kind, { viewId })
+        queued++
+      }
+    }
+    if (queued > 0) console.log(`[zephyr] sweep: queued ${queued} rewrites`)
+  }
+
+  /** Work keyed by this view is waiting, running, or scheduled to retry in the kind's queue. */
+  private busy(kind: string, viewId: string): boolean {
+    const q = this.queue(kind)
+    const keyedBy = (r: Run | null) => r?.viewIds?.[0] === viewId
+    return keyedBy(q.current) || [...q.waiting.values()].some(keyedBy) || [...this.retries].some((r) => r.kind === kind && r.viewId === viewId)
   }
 
   /** Readies docs that just appeared, so the next ranking has them; never awaited. */
@@ -257,7 +303,7 @@ export class Zephyr {
   private queue(kind: string): KindQueue {
     let q = this.queues.get(kind)
     if (!q) {
-      q = { waiting: new Map(), draining: null }
+      q = { waiting: new Map(), current: null, draining: null }
       this.queues.set(kind, q)
     }
     return q
@@ -282,11 +328,17 @@ export class Zephyr {
     if (!q.draining) q.draining = this.drain(kind, q)
   }
 
+  /**
+   * Waiting entry work runs before waiting view work, so a note lands on its page within one call of arriving;
+   * view work such as a rewrite waits. Note flow is human-paced, so view work cannot starve.
+   */
   private async drain(kind: string, q: KindQueue) {
-    for (let next = q.waiting.entries().next(); !next.done; next = q.waiting.entries().next()) {
-      const [key, run] = next.value
+    for (let next = nextWork(q.waiting); next; next = nextWork(q.waiting)) {
+      const [key, run] = next
       q.waiting.delete(key)
+      q.current = run
       await this.execute(this.kinds[kind]!, run)
+      q.current = null
     }
     // Cleared in the same tick as the empty check, so an enqueue can never land between them unseen.
     q.draining = null
@@ -335,7 +387,11 @@ export class Zephyr {
   /** Queues the work a run left undone as its next attempt, after that attempt's delay; none after the last attempt. */
   private scheduleRetry(run: Run, work: Work) {
     const delay = this.retryDelaysMs[run.attempt - 1]
-    if (delay === undefined) return
+    const viewId = 'viewId' in work ? work.viewId : undefined
+    if (delay === undefined) {
+      if (viewId) this.exhausted.set(`${run.kind} ${viewId}`, this.views.get(viewId)?.updatedAt)
+      return
+    }
     let settle!: () => void
     const done = new Promise<void>((r) => (settle = r))
     const timer = setTimeout(() => {
@@ -344,6 +400,8 @@ export class Zephyr {
       settle()
     }, delay)
     const retry: ScheduledRetry = {
+      kind: run.kind,
+      ...(viewId && { viewId }),
       done,
       cancel: () => {
         clearTimeout(timer)
@@ -378,6 +436,12 @@ export class Zephyr {
     this.emit({ type: 'view', data: view })
     this.deriveFrom(view)
   }
+}
+
+/** The first waiting entry work, else the first waiting work. */
+function nextWork(waiting: Map<string, Run>): [string, Run] | undefined {
+  for (const pair of waiting) if (!pair[1].viewIds) return pair
+  return waiting.entries().next().value
 }
 
 /** The next body keeps all of the prior one, as its start, and adds to it. */

@@ -1,4 +1,4 @@
-import type { AgentKind, ChatMessage, Entry, EntryId, Run, View, ViewWrite, World } from '../domain'
+import type { AgentKind, ChatMessage, Entry, EntryId, Plan, Run, View, ViewWrite, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
 import { inEntryOrder, jsonPrompt, knownSources, promptEntry, sanitizeSlug } from './common'
 
@@ -145,30 +145,121 @@ function applyOps(world: World, own: View[], ops: ViewOp[]): ViewWrite[] {
   return [...touched].map((slug) => pages.get(slug)!)
 }
 
+/** A topic that has grown by this many appends in a row since it was last written reads as a log, and is rewritten. */
+export const REWRITE_AFTER_APPENDS = 5
+/**
+ * Body plus note texts, about 8k tokens. A bigger topic is not rewritten: a rewrite from a cut page would lose
+ * content that validation, which checks citations only, cannot see.
+ */
+export const MAX_REWRITE_CHARS = 32_000
+
+/** What a rewrite shows the model: the page, and every note it cites, in full and in entry order. */
+export interface RewriteInput {
+  topic: View
+  notes: Entry[]
+}
+
+/** The rewrite input for this topic, or null when it does not qualify: too few appends in a row, or too big to show in full. */
+export function rewriteInput(topic: View, entries: readonly Entry[]): RewriteInput | null {
+  if ((topic.appendsSinceWrite ?? 0) < REWRITE_AFTER_APPENDS) return null
+  const cited = new Set(topic.sources)
+  const notes = entries.filter((e) => cited.has(e.id))
+  const chars = notes.reduce((n, e) => n + e.text.length, topic.body.length)
+  return chars <= MAX_REWRITE_CHARS ? { topic, notes } : null
+}
+
+export type RewriteResult = { ok: true; write: ViewWrite; dropped: string[] } | { ok: false; error: string }
+
+/**
+ * A rewrite keeps the topic's slug and exactly its sources. It fails when malformed, for another slug, with an
+ * empty body, with any of the page's sources left out, or with a body that only extends the current one. Extra
+ * ids and an unusable title are dropped with a reason; the current title then stays.
+ */
+export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySet<EntryId>): RewriteResult {
+  const r = json as any
+  if (!r || typeof r !== 'object' || typeof r.slug !== 'string' || typeof r.body !== 'string' || !Array.isArray(r.sources))
+    return { ok: false, error: 'reply needs slug and body strings and a sources array' }
+  if (sanitizeSlug(r.slug) !== topic.slug) return { ok: false, error: `slug ${r.slug} is not the topic's slug ${topic.slug}` }
+  const dropped: string[] = []
+  const proposed = typeof r.title === 'string' ? r.title.trim() : ''
+  const usable = proposed.length > 0 && proposed.length <= MAX_TITLE_CHARS
+  if (!usable) dropped.push(`rewrite ${topic.slug}: title dropped, not a non-empty string of at most ${MAX_TITLE_CHARS} characters`)
+  const title = usable ? proposed : topic.title
+  const body = stripTitleHeading(r.body, title)
+  if (!body.trim()) return { ok: false, error: 'body is empty' }
+  const cited = new Set<EntryId>(r.sources.filter((s: unknown) => typeof s === 'string'))
+  const missing = topic.sources.filter((id) => !cited.has(id))
+  if (missing.length > 0) return { ok: false, error: `sources left out: ${missing.join(', ')}` }
+  const head = topic.body.trimEnd()
+  if (body.startsWith(head)) return { ok: false, error: 'body only extends the current page' }
+  const onPage = new Set(topic.sources)
+  const extra = [...cited].filter((id) => !onPage.has(id))
+  const unknown = extra.filter((id) => !knownIds.has(id))
+  const elsewhere = extra.filter((id) => knownIds.has(id))
+  if (unknown.length > 0) dropped.push(`rewrite ${topic.slug}: unknown sources dropped: ${unknown.join(', ')}`)
+  if (elsewhere.length > 0) dropped.push(`rewrite ${topic.slug}: sources not on the page dropped: ${elsewhere.join(', ')}`)
+  return { ok: true, write: { slug: topic.slug, title, sources: topic.sources, format: 'md', body }, dropped }
+}
+
+const REWRITE_SYSTEM = `You rewrite one topic page of a person's notes. The page grew by appending a section per note and now reads like a log.
+Reply with JSON only: {"slug":string,"title":string,"sources":string[],"body":string}
+The input has the page's slug, title and body, and notes: every note the page cites, oldest first.
+- body is the whole page rewritten as one coherent page: group related points, merge repeats, and state a later correction in place of what it corrects. Keep every fact the notes contain; add none they do not contain.
+- sources lists the id of every note in notes; none may be left out.
+- slug stays exactly as given.
+- title describes the whole page; keep the current one when it still does.
+- body is markdown; do not repeat the title as a heading.`
+
+export function rewriteMessages({ topic, notes }: RewriteInput): ChatMessage[] {
+  return jsonPrompt(REWRITE_SYSTEM, { slug: topic.slug, title: topic.title, body: topic.body, notes: notes.map(promptEntry) })
+}
+
+/** Re-checks at run time: a topic written or rewritten since the work was queued no longer qualifies, and makes no call. */
+function rewritePlan(viewId: string, world: World): Plan | null {
+  const topic = world.views.find((v) => v.id === viewId)
+  const input = topic && rewriteInput(topic, world.entries)
+  if (!input) return null
+  const knownIds = new Set(world.entries.map((e) => e.id))
+  return {
+    messages: rewriteMessages(input),
+    settle(json) {
+      const result = validateRewrite(json, input.topic, knownIds)
+      if (!result.ok) return result
+      return { ok: true, writes: [result.write], dropped: result.dropped, covered: [] }
+    },
+  }
+}
+
+async function organizePlan(run: Run, world: World): Promise<Plan> {
+  const runIds = new Set(run.entryIds)
+  const newEntries = world.entries.filter((e) => runIds.has(e.id))
+  const recent = world.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
+  const own = topicsIn(world.views)
+  const views = await viewContext(world, own, newEntries)
+  const ctx: ReplyContext = {
+    knownIds: new Set(world.entries.map((e) => e.id)),
+    existingSlugs: new Set(own.map((v) => v.slug)),
+    openSlugs: new Set(views.open.map((v) => v.slug)),
+  }
+  return {
+    messages: organizerMessages(newEntries, views, recent),
+    settle(json) {
+      const result = validateOps(json, ctx)
+      if (!result.ok) return result
+      // An entry is organized only once an applied op cites it; one the reply skipped, or cited only in a dropped op, is not.
+      const cited = new Set(result.ops.flatMap((o) => o.sources))
+      return { ok: true, writes: applyOps(world, own, result.ops), dropped: result.dropped, covered: run.entryIds.filter((id) => cited.has(id)) }
+    },
+  }
+}
+
 export const organizer: AgentKind = {
   kind: 'organizer',
   trigger: { on: 'entry' },
   relevanceDocs: topicDocs,
+  sweep: (world) => topicsIn(world.views).filter((t) => rewriteInput(t, world.entries)).map((t) => t.id),
+  /** Work keyed by one of its topics is a rewrite of that topic; any other work files new entries. */
   async plan(run: Run, world: World) {
-    const runIds = new Set(run.entryIds)
-    const newEntries = world.entries.filter((e) => runIds.has(e.id))
-    const recent = world.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
-    const own = topicsIn(world.views)
-    const views = await viewContext(world, own, newEntries)
-    const ctx: ReplyContext = {
-      knownIds: new Set(world.entries.map((e) => e.id)),
-      existingSlugs: new Set(own.map((v) => v.slug)),
-      openSlugs: new Set(views.open.map((v) => v.slug)),
-    }
-    return {
-      messages: organizerMessages(newEntries, views, recent),
-      settle(json) {
-        const result = validateOps(json, ctx)
-        if (!result.ok) return result
-        // An entry is organized only once an applied op cites it; one the reply skipped, or cited only in a dropped op, is not.
-        const cited = new Set(result.ops.flatMap((o) => o.sources))
-        return { ok: true, writes: applyOps(world, own, result.ops), dropped: result.dropped, covered: run.entryIds.filter((id) => cited.has(id)) }
-      },
-    }
+    return run.viewIds ? rewritePlan(run.viewIds[0]!, world) : organizePlan(run, world)
   },
 }

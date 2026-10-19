@@ -167,6 +167,8 @@ export interface AgentKind {
   plan(run: Run, world: World): Promise<Plan | null>
   /** The docs, drawn from these views, that this kind's runs will ask the relevance backend to rank. */
   relevanceDocs?(views: readonly View[]): RelevanceDoc[]
+  /** Ids of the kind's own views that the periodic sweep queues as view work on the kind's own queue. */
+  sweep?(world: World): string[]
 }
 
 export type ZephyrEvent =
