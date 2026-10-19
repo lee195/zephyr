@@ -1,4 +1,5 @@
 import type { AgentKind, ChatMessage, Entry, EntryId, Run, Task, TaskId, View, World } from '../domain'
+import { rankAll, type RelevanceDoc } from '../relevance'
 import { inEntryOrder, knownSources } from './common'
 
 /** Open tasks the model sees per run, the ones most relevant to the run's entries; done tasks are never shown. */
@@ -90,10 +91,19 @@ export function tasksMessages(openTasks: Task[], newEntries: Entry[]): ChatMessa
   ]
 }
 
+const currentTasks = (views: readonly View[]): Task[] =>
+  views.find((v): v is View & { tasks: Task[] } => v.kind === 'tasks' && v.slug === 'tasks' && !!v.tasks)?.tasks ?? []
+
+const openTasks = (tasks: Task[]) => tasks.filter((t) => !t.done)
+
+/** The open tasks a run ranks: none while they all fit in the prompt. */
+const docsToRank = (open: Task[]): RelevanceDoc[] => (open.length > OPEN_SHOWN ? open.map((t) => ({ id: t.id, text: t.text })) : [])
+
 async function shownOpenTasks(world: World, tasks: Task[], newEntries: Entry[]): Promise<Task[]> {
-  const open = tasks.filter((t) => !t.done)
-  if (open.length <= OPEN_SHOWN) return open
-  const { scored } = await world.relevance.rank(newEntries.map((e) => e.text).join('\n'), open.map((t) => ({ id: t.id, text: t.text })))
+  const open = openTasks(tasks)
+  const docs = docsToRank(open)
+  if (docs.length === 0) return open
+  const { scored } = await rankAll(world.relevance, newEntries.map((e) => e.text).join('\n'), docs)
   const shown = new Set(scored.slice(0, OPEN_SHOWN).map((r) => r.id))
   return open.filter((t) => shown.has(t.id))
 }
@@ -125,10 +135,11 @@ export function renderTasks(tasks: Task[]): string {
 export const tasks: AgentKind = {
   kind: 'tasks',
   trigger: { on: 'entry' },
+  relevanceDocs: (views) => docsToRank(openTasks(currentTasks(views))),
   async plan(run: Run, world: World) {
     const runIds = new Set(run.entryIds)
     const newEntries = world.entries.filter((e) => runIds.has(e.id))
-    const current = world.views.find((v): v is View & { tasks: Task[] } => v.kind === 'tasks' && v.slug === 'tasks' && !!v.tasks)?.tasks ?? []
+    const current = currentTasks(world.views)
     const shown = await shownOpenTasks(world, current, newEntries)
     const ctx: TaskReplyContext = { entryIds: runIds, openIds: new Set(shown.map((t) => t.id)) }
     return {

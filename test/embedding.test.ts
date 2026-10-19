@@ -1,19 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import { expect, test } from 'bun:test'
 import { embeddingBackend } from '../src/embedding'
-import { tempDir } from './helpers'
-
-/** A fake /embeddings endpoint: a text's vector counts its a, b and c characters. Keeps every input batch it was sent. */
-function fakeEndpoint() {
-  const batches: string[][] = []
-  const fetch = (async (_url: string, init: RequestInit): Promise<Response> => {
-    const { input } = JSON.parse(String(init.body)) as { input: string[] }
-    batches.push(input)
-    const data = input.map((text, index) => ({ index, embedding: ['a', 'b', 'c'].map((ch) => text.split(ch).length - 1) }))
-    return Response.json({ data })
-  }) as typeof globalThis.fetch
-  return { fetch, batches, sentTexts: () => batches.flat() }
-}
+import { eventually, fakeEmbeddings, tempDir } from './helpers'
 
 const docs = [
   { id: 'A', text: 'aaa' },
@@ -24,23 +12,39 @@ const docs = [
 const backend = (cacheDir: string, fetch: typeof globalThis.fetch, model = 'gemma') =>
   embeddingBackend({ baseUrl: 'http://embed.test/v1', model, apiKey: 'k', cacheDir, fetch })
 
-test('ranks by cosine similarity and names itself in the ranking', async () => {
-  const end = fakeEndpoint()
-  const ranking = await backend(await tempDir(), end.fetch).rank('aab', docs)
+test('ranks prepared docs by cosine similarity and names itself in the ranking', async () => {
+  const b = backend(await tempDir(), fakeEmbeddings().fetch)
+  await b.prepare!(docs)
+  const ranking = await b.rank('aab', docs)
   expect(ranking.backend).toBe('embedding-gemma')
+  expect(ranking.partial).toBeUndefined()
   expect(ranking.scored.map((s) => s.id)).toEqual(['A', 'B', 'C'])
   expect(ranking.scored[0]!.score).toBeCloseTo(2 / Math.sqrt(5), 5)
   expect(ranking.scored[2]!.score).toBe(0)
 })
 
+test('a ranking never waits on doc embedding: it scores the cached docs, is partial, and embeds the rest', async () => {
+  const end = fakeEmbeddings()
+  const b = backend(await tempDir(), end.fetch)
+  await b.prepare!([docs[0]!])
+  end.hold((input) => input.includes('bbb'))
+  const ranking = await b.rank('aab', docs)
+  expect(ranking).toEqual({ backend: 'embedding-gemma', scored: [{ id: 'A', score: expect.any(Number) }], partial: true })
+  expect(b.pending!()).toBe(2)
+  end.release()
+  await eventually(() => b.pending!() === 0)
+  expect((await b.rank('aab', docs)).scored.map((s) => s.id)).toEqual(['A', 'B', 'C'])
+})
+
 test('a cached doc is never sent again, in the same process or after a restart', async () => {
   const dir = await tempDir()
-  const end = fakeEndpoint()
-  await backend(dir, end.fetch).rank('abc', docs)
-  expect(end.sentTexts().sort()).toEqual(['aaa', 'abc', 'bbb', 'ccc'])
+  const end = fakeEmbeddings()
+  await backend(dir, end.fetch).prepare!(docs)
+  expect(end.sentTexts().sort()).toEqual(['aaa', 'bbb', 'ccc'])
 
-  const same = fakeEndpoint()
+  const same = fakeEmbeddings()
   const b = backend(dir, same.fetch)
+  await b.prepare!(docs)
   await b.rank('abc', docs)
   await b.rank('cab', docs)
   expect(same.batches).toEqual([['abc'], ['cab']])
@@ -48,34 +52,51 @@ test('a cached doc is never sent again, in the same process or after a restart',
 
 test('a doc whose text changed is embedded again, and only that doc', async () => {
   const dir = await tempDir()
-  await backend(dir, fakeEndpoint().fetch).rank('abc', docs)
-  const end = fakeEndpoint()
-  await backend(dir, end.fetch).rank('abc', [docs[0]!, { id: 'B', text: 'bbbc' }, docs[2]!])
-  expect(end.sentTexts().sort()).toEqual(['abc', 'bbbc'])
+  await backend(dir, fakeEmbeddings().fetch).prepare!(docs)
+  const end = fakeEmbeddings()
+  await backend(dir, end.fetch).prepare!([docs[0]!, { id: 'B', text: 'bbbc' }, docs[2]!])
+  expect(end.sentTexts()).toEqual(['bbbc'])
 })
 
-test('concurrent rankings of the same new docs embed each doc once', async () => {
-  const end = fakeEndpoint()
+test('concurrent prepares of the same new docs embed each doc once, and both wait for it', async () => {
+  const end = fakeEmbeddings()
   const b = backend(await tempDir(), end.fetch)
-  await Promise.all([b.rank('abc', docs), b.rank('cab', docs)])
-  expect(end.sentTexts().filter((t) => t === 'aaa')).toEqual(['aaa'])
+  await Promise.all([b.prepare!(docs), b.prepare!(docs)])
+  expect(end.sentTexts()).toEqual(['aaa', 'bbb', 'ccc'])
+  expect((await b.rank('abc', docs)).partial).toBeUndefined()
 })
 
 test('each backend id keeps its own vectors: another model embeds every doc itself', async () => {
   const dir = await tempDir()
-  await backend(dir, fakeEndpoint().fetch, 'gemma').rank('abc', docs)
-  const other = fakeEndpoint()
-  const ranking = await backend(dir, other.fetch, 'other-model').rank('abc', docs)
-  expect(ranking.backend).toBe('embedding-other-model')
-  expect(other.sentTexts().sort()).toEqual(['aaa', 'abc', 'bbb', 'ccc'])
+  await backend(dir, fakeEmbeddings().fetch, 'gemma').prepare!(docs)
+  const other = fakeEmbeddings()
+  await backend(dir, other.fetch, 'other-model').prepare!(docs)
+  expect(other.sentTexts().sort()).toEqual(['aaa', 'bbb', 'ccc'])
   expect((await readdir(dir)).sort()).toEqual(['embedding-gemma.jsonl', 'embedding-other-model.jsonl'])
 })
 
-test('an endpoint error rejects the ranking and caches nothing', async () => {
+test('an endpoint error rejects prepare and rank, and caches nothing', async () => {
   const dir = await tempDir()
   const failing = (async () => new Response('upstream unreachable', { status: 503 })) as unknown as typeof fetch
-  await expect(backend(dir, failing).rank('abc', docs)).rejects.toThrow('503')
-  const end = fakeEndpoint()
-  await backend(dir, end.fetch).rank('abc', docs)
-  expect(end.sentTexts().sort()).toEqual(['aaa', 'abc', 'bbb', 'ccc'])
+  const down = backend(dir, failing)
+  await expect(down.prepare!(docs)).rejects.toThrow('503')
+  await expect(down.rank('abc', docs)).rejects.toThrow('503')
+  const end = fakeEmbeddings()
+  await backend(dir, end.fetch).prepare!(docs)
+  expect(end.sentTexts().sort()).toEqual(['aaa', 'bbb', 'ccc'])
+})
+
+test('each batch of a large prepare is usable as soon as it lands', async () => {
+  const end = fakeEmbeddings()
+  const b = backend(await tempDir(), end.fetch)
+  const many = Array.from({ length: 300 }, (_, i) => ({ id: `d${i}`, text: `a${i}` }))
+  end.hold((input) => input.includes('a299'))
+  const preparing = b.prepare!(many)
+  await eventually(() => end.batches.some((input) => input.includes('a299')))
+  const ranking = await b.rank('aa', many)
+  expect(ranking.partial).toBe(true)
+  expect(ranking.scored.length).toBeGreaterThan(0)
+  end.release()
+  await preparing
+  expect((await b.rank('aa', many)).scored).toHaveLength(300)
 })

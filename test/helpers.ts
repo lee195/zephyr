@@ -47,3 +47,31 @@ export function scripted(...replies: unknown[]) {
   }
   return { backend, sent }
 }
+
+/**
+ * A fake /embeddings endpoint: a text's vector counts its a, b and c characters. Keeps every input batch it was
+ * sent. While hold(input) says so, a request waits until release().
+ */
+export function fakeEmbeddings() {
+  const batches: string[][] = []
+  let held: Array<() => void> = []
+  const state = { hold: (_input: string[]) => false }
+  const fetch = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const { input } = JSON.parse(String(init.body)) as { input: string[] }
+    batches.push(input)
+    if (state.hold(input)) await new Promise<void>((r) => held.push(r))
+    const data = input.map((text, index) => ({ index, embedding: ['a', 'b', 'c'].map((ch) => text.split(ch).length - 1) }))
+    return Response.json({ data })
+  }) as typeof globalThis.fetch
+  return {
+    fetch,
+    batches,
+    sentTexts: () => batches.flat(),
+    hold: (when: (input: string[]) => boolean) => (state.hold = when),
+    release: () => {
+      state.hold = () => false
+      for (const r of held) r()
+      held = []
+    },
+  }
+}

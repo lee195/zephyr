@@ -1,4 +1,4 @@
-import type { RelevanceBackend } from './relevance'
+import type { RelevanceBackend, RelevanceDoc } from './relevance'
 
 export type EntryId = string
 export type Harness = string
@@ -121,6 +121,8 @@ export interface AgentKind {
   trigger: Trigger
   /** null when there is nothing to ask the model; the run is then done without a call. */
   plan(run: Run, world: World): Promise<Plan | null>
+  /** The docs, drawn from these views, that this kind's runs will ask the relevance backend to rank. */
+  relevanceDocs?(views: readonly View[]): RelevanceDoc[]
 }
 
 export type ZephyrEvent =

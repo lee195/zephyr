@@ -1,4 +1,5 @@
 import type { AgentKind, ChatMessage, Entry, EntryId, Run, View, ViewWrite, World } from '../domain'
+import { rankAll, type RelevanceDoc } from '../relevance'
 import { inEntryOrder, knownSources, sanitizeSlug } from './common'
 
 const RECENT_CONTEXT = 30
@@ -99,9 +100,13 @@ export function organizerMessages(newEntries: Entry[], views: ViewContext, recen
   ]
 }
 
+const topicDocs = (views: readonly View[]): RelevanceDoc[] =>
+  views.filter((v) => v.kind === 'organizer').map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` }))
+
+/** Waits for every topic to be ranked: a topic left out could not open, and the model would then duplicate it. */
 async function viewContext(world: World, own: View[], newEntries: Entry[]): Promise<ViewContext> {
   const query = newEntries.map((e) => e.text).join('\n')
-  const { scored } = await world.relevance.rank(query, own.map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` })))
+  const { scored } = await rankAll(world.relevance, query, topicDocs(own))
   const openIds = new Set(scored.slice(0, OPEN_VIEWS).map((r) => r.id))
   const byId = new Map(own.map((v) => [v.id, v]))
   return {
@@ -133,6 +138,7 @@ function applyOps(world: World, own: View[], ops: ViewOp[]): ViewWrite[] {
 export const organizer: AgentKind = {
   kind: 'organizer',
   trigger: { on: 'entry' },
+  relevanceDocs: topicDocs,
   async plan(run: Run, world: World) {
     const runIds = new Set(run.entryIds)
     const newEntries = world.entries.filter((e) => runIds.has(e.id))

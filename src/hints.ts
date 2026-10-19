@@ -23,17 +23,25 @@ export const MIN_HINT_SCORE: Readonly<Record<string, number>> = { tfidf: 0.14, '
 export const MAX_DRAFT_CHARS = 2000
 const MIN_DRAFT_TOKENS = 2
 
-/** Stored entries related to a draft, best first; never calls a model. */
-export async function hintsFor(draft: string, limit: number, entries: readonly Entry[], views: readonly View[], relevance: RelevanceBackend): Promise<Hint[]> {
+export interface HintReply {
+  hints: Hint[]
+  /** The backend that ranked, or null when the draft was too short to rank. */
+  backend: string | null
+  /** Some entries were not ranked because the backend was not ready for them yet. */
+  partial: boolean
+}
+
+/** Stored entries related to a draft, best first; never calls a model and never waits on embedding entries. */
+export async function hintsFor(draft: string, limit: number, entries: readonly Entry[], views: readonly View[], relevance: RelevanceBackend): Promise<HintReply> {
   const query = draft.slice(0, MAX_DRAFT_CHARS)
-  if (tokenize(query).length < MIN_DRAFT_TOKENS) return []
+  if (tokenize(query).length < MIN_DRAFT_TOKENS) return { hints: [], backend: null, partial: false }
   const same = draft.trim()
   const byId = new Map(entries.filter((e) => e.text.trim() !== same).map((e) => [e.id, e]))
   const topics = new Map<EntryId, View>()
   for (const v of views) if (v.kind === 'organizer') for (const id of v.sources) if (!topics.has(id)) topics.set(id, v)
-  const { backend, scored } = await relevance.rank(query, [...byId.values()])
+  const { backend, scored, partial } = await relevance.rank(query, [...byId.values()])
   const min = MIN_HINT_SCORE[backend] ?? Infinity
-  return scored
+  const hints = scored
     .filter((s) => s.score >= min)
     .slice(0, limit)
     .map(({ id, score }) => {
@@ -41,4 +49,5 @@ export async function hintsFor(draft: string, limit: number, entries: readonly E
       const topic = topics.get(id)
       return { entryId: id, text: e.text, at: e.at, score, topic: topic ? { slug: topic.slug, title: topic.title } : null }
     })
+  return { hints, backend, partial: partial === true }
 }

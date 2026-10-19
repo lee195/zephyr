@@ -11,12 +11,24 @@ export interface Scored {
 /** Scores are only comparable within one backend, so a ranking names the backend that produced it. */
 export interface Ranking {
   backend: string
-  /** Best first; every doc appears once. */
+  /** Best first; every doc appears once, except docs a partial ranking could not score yet. */
   scored: Scored[]
+  /** Some docs were left out because the backend was not ready to score them. */
+  partial?: true
 }
 
 export interface RelevanceBackend {
   rank(query: string, docs: RelevanceDoc[]): Promise<Ranking>
+  /** Readies docs so a later rank scores all of them. Absent when rank always can. */
+  prepare?(docs: RelevanceDoc[]): Promise<void>
+  /** Docs being readied right now. */
+  pending?(): number
+}
+
+/** Every doc ranked, waiting for the backend to ready them first; for background callers that can afford the wait. */
+export async function rankAll(backend: RelevanceBackend, query: string, docs: RelevanceDoc[]): Promise<Ranking> {
+  await backend.prepare?.(docs).catch(() => {})
+  return backend.rank(query, docs)
 }
 
 const MIN_TOKEN_LENGTH = 3
@@ -106,12 +118,27 @@ export interface FallbackOptions {
 /**
  * Answers from primary, or from fallback when primary fails or takes longer than timeoutMs. After a failure it
  * skips primary for cooldownMs, so a down endpoint costs one timeout, not one per request. A primary call that
- * timed out keeps running and still fills primary's caches.
+ * timed out keeps running and still fills primary's caches. prepare has no timeout, since its callers chose to
+ * wait, but a failed prepare counts as a failure.
  */
 export function withFallback(primary: RelevanceBackend, fallback: RelevanceBackend, opts: FallbackOptions): RelevanceBackend {
   const now = opts.now ?? Date.now
   let degradedUntil = 0
+  const degrade = (err: unknown) => {
+    degradedUntil = now() + opts.cooldownMs
+    console.warn(`[zephyr] relevance: ${(err as Error).message}; using the fallback for ${opts.cooldownMs / 1000} s`)
+  }
   return {
+    pending: () => primary.pending?.() ?? 0,
+    async prepare(docs) {
+      if (now() < degradedUntil) return
+      try {
+        await primary.prepare?.(docs)
+      } catch (err) {
+        degrade(err)
+        throw err
+      }
+    },
     async rank(query, docs) {
       if (now() < degradedUntil) return fallback.rank(query, docs)
       const answer = primary.rank(query, docs)
@@ -123,8 +150,7 @@ export function withFallback(primary: RelevanceBackend, fallback: RelevanceBacke
       try {
         return await Promise.race([answer, timeout])
       } catch (err) {
-        degradedUntil = now() + opts.cooldownMs
-        console.warn(`[zephyr] relevance: ${(err as Error).message}; using the fallback for ${opts.cooldownMs / 1000} s`)
+        degrade(err)
         return fallback.rank(query, docs)
       } finally {
         clearTimeout(timer)

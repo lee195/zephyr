@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { RelevanceBackend } from './relevance'
+import type { RelevanceBackend, RelevanceDoc, Scored } from './relevance'
 
 export interface EmbeddingOptions {
   baseUrl: string
@@ -11,7 +11,7 @@ export interface EmbeddingOptions {
   fetch?: typeof fetch
 }
 
-/** The endpoint accepted 1024 inputs in one request; 256 took 0.6 s, short enough for one hint request. */
+/** The endpoint accepted 1024 inputs in one request; 256 took 0.6 s. */
 const BATCH = 256
 /** EmbeddingGemma reads 8192 tokens; this many characters stays under that for English and German prose. */
 const MAX_CHARS = 16_000
@@ -42,6 +42,9 @@ function cosine(a: Vector, b: Vector): number {
  * Cosine similarity of embeddings from an OpenAI-compatible /embeddings endpoint. Document vectors are cached
  * by model and the hash of the exact text sent, in memory and in an append-only file per backend id, so a doc
  * is embedded once across runs and restarts. Query vectors are never stored.
+ *
+ * rank never waits on doc embedding: it scores the docs already cached, marks the ranking partial when some
+ * were not, and starts embedding those. prepare is the call that waits until docs are cached.
  */
 export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
   const id = `embedding-${opts.model.replace(/[^\w.-]+/g, '_')}`
@@ -49,12 +52,13 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
   const doFetch = opts.fetch ?? fetch
   const keyOf = (text: string) => `${opts.model}:${sha256(text)}`
   const vectors = new Map<string, Vector>()
-  /** Docs being embedded right now, so concurrent rankings never embed the same text twice. */
-  const pending = new Map<string, Promise<Vector>>()
+  /** Docs being embedded right now, keyed like vectors, so concurrent callers never embed the same text twice. */
+  const pending = new Map<string, Promise<void>>()
   let loaded: Promise<void> | null = null
 
   /** A line torn by a crash mid-append fails to parse and is skipped; its doc is embedded again on demand. */
   const load = async () => {
+    await mkdir(opts.cacheDir, { recursive: true })
     const raw = await readFile(file, 'utf8').catch((err) => (err.code === 'ENOENT' ? '' : Promise.reject(err)))
     for (const line of raw.split('\n')) {
       try {
@@ -77,36 +81,45 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
     return [...data].sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding))
   }
 
-  const embedMany = async (texts: string[]): Promise<Vector[]> => {
-    const out: Vector[] = []
-    for (let i = 0; i < texts.length; i += BATCH) out.push(...(await request(texts.slice(i, i + BATCH))))
-    return out
-  }
-
-  /** Embeds every doc not cached or in flight, then persists them in one append. */
-  const docVectors = async (texts: string[]): Promise<Vector[]> => {
-    loaded ??= mkdir(opts.cacheDir, { recursive: true }).then(load)
-    await loaded
-    const keys = texts.map(keyOf)
-    const missing = [...new Map(keys.map((k, i) => [k, texts[i]!])).entries()].filter(([k]) => !vectors.has(k) && !pending.has(k))
-    if (missing.length > 0) {
-      const batch = embedMany(missing.map(([, t]) => t)).then(async (vs) => {
-        missing.forEach(([k], i) => vectors.set(k, vs[i]!))
-        await appendFile(file, missing.map(([key], i) => JSON.stringify({ key, v: encode(vs[i]!) }) + '\n').join(''))
-        return vs
+  /**
+   * Embeds every doc not cached or in flight, one batch at a time, each batch cached and persisted as it lands
+   * so a ranking can use it before the rest are done. Resolves when all of docs are cached, including any another
+   * caller had in flight; a failed batch fails the batches queued behind it.
+   */
+  const prepare = async (docs: RelevanceDoc[]) => {
+    await (loaded ??= load())
+    const texts = new Map(docs.map((d) => d.text.slice(0, MAX_CHARS)).map((t) => [keyOf(t), t]))
+    const missing = [...texts].filter(([k]) => !vectors.has(k) && !pending.has(k))
+    let previous: Promise<void> = Promise.resolve()
+    for (let i = 0; i < missing.length; i += BATCH) {
+      const batch = missing.slice(i, i + BATCH)
+      const done = previous.then(async () => {
+        const vs = await request(batch.map(([, t]) => t))
+        batch.forEach(([k], j) => vectors.set(k, vs[j]!))
+        await appendFile(file, batch.map(([key], j) => JSON.stringify({ key, v: encode(vs[j]!) }) + '\n').join(''))
       })
-      missing.forEach(([k], i) => pending.set(k, batch.then((vs) => vs[i]!)))
-      batch.finally(() => missing.forEach(([k]) => pending.delete(k))).catch(() => {})
+      batch.forEach(([k]) => pending.set(k, done))
+      done.finally(() => batch.forEach(([k]) => pending.delete(k))).catch(() => {})
+      previous = done
     }
-    return Promise.all(keys.map((k) => vectors.get(k) ?? pending.get(k)!))
+    await Promise.all([...texts.keys()].map((k) => pending.get(k)))
   }
 
   return {
+    prepare,
+    pending: () => pending.size,
     async rank(query, docs) {
-      const texts = docs.map((d) => d.text.slice(0, MAX_CHARS))
-      const [[q], ds] = await Promise.all([request([query.slice(0, MAX_CHARS)]), docVectors(texts)])
-      const scored = docs.map((d, i) => ({ id: d.id, score: cosine(q!, ds[i]!) }))
-      return { backend: id, scored: scored.sort((a, b) => b.score - a.score) }
+      await (loaded ??= load())
+      const keys = docs.map((d) => keyOf(d.text.slice(0, MAX_CHARS)))
+      const uncached = docs.filter((_, i) => !vectors.has(keys[i]!))
+      if (uncached.length > 0) prepare(uncached).catch(() => {})
+      const [q] = await request([query.slice(0, MAX_CHARS)])
+      const scored: Scored[] = []
+      docs.forEach((d, i) => {
+        const v = vectors.get(keys[i]!)
+        if (v) scored.push({ id: d.id, score: cosine(q!, v) })
+      })
+      return { backend: id, scored: scored.sort((a, b) => b.score - a.score), ...(scored.length < docs.length && { partial: true as const }) }
     },
   }
 }

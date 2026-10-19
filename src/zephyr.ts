@@ -1,8 +1,8 @@
 import { adapters } from './adapters'
-import { hintsFor, type Hint } from './hints'
+import { hintsFor, type HintReply } from './hints'
 import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewWrite, World, ZephyrEvent } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
-import { relevanceBackends, type RelevanceBackend } from './relevance'
+import { relevanceBackends, type RelevanceBackend, type RelevanceDoc } from './relevance'
 import { Store } from './store'
 import { Tailer, type Chunk } from './tailer'
 
@@ -56,6 +56,8 @@ export class Zephyr {
   private runSeq = 0
   private retries = new Set<ScheduledRetry>()
   private lastStamp = 0
+  /** Readying every doc the relevance backend will be asked about, started by start() and never awaited by it. */
+  private warmup: 'idle' | 'running' | 'done' | 'failed' = 'idle'
 
   constructor(opts: ZephyrOptions) {
     this.store = new Store(opts.dataDir)
@@ -82,6 +84,7 @@ export class Zephyr {
       if (uncovered.length > 0) this.enqueue(kind.kind, { entryIds: uncovered })
     }
     for (const v of this.views.values()) this.deriveFrom(v)
+    this.warm()
     for (const s of await this.store.loadSessions()) this.sessions.set(sessionKey(s.harness, s.sessionId), s)
     await Promise.all([...this.sessions.values()].map((s) => this.tail(s)))
   }
@@ -91,6 +94,26 @@ export class Zephyr {
     this.tailers.clear()
     for (const r of this.retries) r.cancel()
     this.retries.clear()
+  }
+
+  private warm() {
+    const docs: RelevanceDoc[] = [...this.entries, ...Object.values(this.kinds).flatMap((k) => k.relevanceDocs?.(this.listViews()) ?? [])]
+    this.warmup = 'running'
+    void (this.relevance.prepare?.(docs) ?? Promise.resolve()).then(
+      () => {
+        this.warmup = 'done'
+      },
+      (err) => {
+        this.warmup = 'failed'
+        console.warn(`[zephyr] relevance warm-up failed: ${(err as Error).message}`)
+      },
+    )
+  }
+
+  /** Readies docs that just appeared, so the next ranking has them; never awaited. */
+  private prepareRelevance(docs: RelevanceDoc[]) {
+    if (docs.length === 0) return
+    this.relevance.prepare?.(docs).catch((err) => console.warn(`[zephyr] relevance: could not prepare ${docs.length} docs: ${(err as Error).message}`))
   }
 
   /** Data dirs from before runs.jsonl: entries a kind's views already cite count as organized, recorded once as a done run. */
@@ -121,7 +144,7 @@ export class Zephyr {
     return this.runs
   }
 
-  hints(draft: string, limit: number): Promise<Hint[]> {
+  hints(draft: string, limit: number): Promise<HintReply> {
     return hintsFor(draft, limit, this.entries, this.listViews(), this.relevance)
   }
 
@@ -134,6 +157,7 @@ export class Zephyr {
       runsInFlight: this.runs.filter((r) => r.status === 'queued' || r.status === 'running').length + this.retries.size,
       lastViewAt,
       sessions: this.sessions.size,
+      relevance: { warmup: this.warmup, pending: this.relevance.pending?.() ?? 0 },
     }
   }
 
@@ -186,6 +210,7 @@ export class Zephyr {
     await this.store.appendEntries(fresh)
     this.entries.push(...fresh)
     for (const e of fresh) this.emit({ type: 'entry', data: e })
+    this.prepareRelevance(fresh)
     for (const kind of this.entryKinds()) this.enqueue(kind.kind, { entryIds: fresh.map((e) => e.id) })
     return fresh
   }
@@ -318,6 +343,7 @@ export class Zephyr {
     const view: View = { ...write, id: `${kind.kind}/${write.slug}`, kind: kind.kind, updatedAt: this.stamp() }
     await this.store.writeView(view)
     this.views.set(view.id, view)
+    this.prepareRelevance(kind.relevanceDocs?.([view]) ?? [])
     this.emit({ type: 'view', data: view })
     this.deriveFrom(view)
   }

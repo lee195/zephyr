@@ -121,7 +121,7 @@ const scoring = (backend: string, score: number): RelevanceBackend => ({
 })
 
 test('hints apply the threshold of the backend that answered', async () => {
-  const hint = (backend: string, score: number) => hintsFor('sourdough loaf', 5, entries, [], scoring(backend, score))
+  const hint = async (backend: string, score: number) => (await hintsFor('sourdough loaf', 5, entries, [], scoring(backend, score))).hints
   expect(await hint('tfidf', 0.5)).toHaveLength(5)
   expect(await hint('embedding-embeddinggemma2', 0.5)).toEqual([])
   expect(await hint('embedding-embeddinggemma2', 0.85)).toHaveLength(5)
@@ -129,5 +129,5 @@ test('hints apply the threshold of the backend that answered', async () => {
 })
 
 test('a backend with no measured threshold gives no hints', async () => {
-  expect(await hintsFor('sourdough loaf', 5, entries, [], scoring('embedding-unmeasured', 0.99))).toEqual([])
+  expect((await hintsFor('sourdough loaf', 5, entries, [], scoring('embedding-unmeasured', 0.99))).hints).toEqual([])
 })
