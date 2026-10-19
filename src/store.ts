@@ -244,6 +244,37 @@ export class Store {
     await rm(this.historyDir(view), { recursive: true, force: true })
   }
 
+  private get summariesDir() {
+    return join(this.dir, 'summaries')
+  }
+
+  /**
+   * Saves a review summary as markdown, with the window and the ids of the notes it summarized in its front matter,
+   * keyed by the window's until, so saving the same window again replaces it. Returns its path.
+   */
+  async saveSummary(s: { since: string | null; until: string; noteIds: string[]; summary: string }): Promise<string> {
+    await mkdir(this.summariesDir, { recursive: true })
+    const path = join(this.summariesDir, `${s.until.replace(/:/g, '-')}.md`)
+    const front = [`since: ${s.since ?? 'null'}`, `until: ${s.until}`, `notes: ${JSON.stringify(s.noteIds)}`]
+    await writeAtomic(path, `---\n${front.join('\n')}\n---\n\n${s.summary}\n`)
+    return path
+  }
+
+  /** Deletes every saved summary for which `drop` holds, given the note ids it summarized and its text. Returns how many. */
+  async deleteSummariesWhere(drop: (noteIds: string[], text: string) => boolean): Promise<number> {
+    let deleted = 0
+    for (const name of await readdir(this.summariesDir).catch(() => [] as string[])) {
+      const path = join(this.summariesDir, name)
+      const text = await readText(path)
+      if (text === null) continue
+      const ids = /^notes: (.*)$/m.exec(text)?.[1]
+      if (!drop(ids ? JSON.parse(ids) : [], text)) continue
+      await rm(path, { force: true })
+      deleted++
+    }
+    return deleted
+  }
+
   async writeView(view: View) {
     const dir = this.viewDir(view.kind)
     await mkdir(dir, { recursive: true })

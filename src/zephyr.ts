@@ -3,6 +3,7 @@ import { effectiveEntries, OPS, planAdjustment, planRewrites, relatedFixes, with
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
 import { hintsFor, type HintReply } from './hints'
+import { linkIndex, linkMessages, parseSummary, summaryInput, summaryMessages, validateLinks, type Link } from './deeper'
 import {
   isNote,
   noteEntry,
@@ -18,6 +19,7 @@ import {
   type Question,
   type Run,
   type Session,
+  type Usage,
   type View,
   type ViewWrite,
   type World,
@@ -29,6 +31,23 @@ import { relevanceBackends, type Compaction, type RelevanceBackend, type Relevan
 import { buildDigest, closeWindow, windowNotes, type Digest, type WindowClose } from './review'
 import { Store } from './store'
 import { Tailer } from './tailer'
+
+export type Summary =
+  | {
+      ok: true
+      since: string | null
+      until: string
+      /** Notes of the window the summary covers, and the older ones left out to stay within the cap. */
+      notes: number
+      leftOut: number
+      summary: string
+      usage?: Usage
+      /** Where it was saved; absent unless saving was asked for. */
+      path?: string
+    }
+  | { ok: false; error: string }
+
+export type LinkSuggestions = { ok: true; links: Link[]; dropped: string[]; leftOut: number; usage?: Usage } | { ok: false; error: string }
 
 export type QuestionAnswer = { ok: true; questionId: string; closed: Closed; adjustment?: AdjustmentResult } | { ok: false; error: string }
 
@@ -109,6 +128,8 @@ export class Zephyr {
   private questionSeq = 0
   /** Answers run one at a time, so two answers to one question cannot both apply. */
   private answerChain: Promise<unknown> = Promise.resolve()
+  /** Summaries run one at a time, and a purge deletes saved ones in this same line, so no save lands after it. */
+  private summaryChain: Promise<unknown> = Promise.resolve()
   /** Ids whose append is in flight. Tailers run concurrently, and two can read the same rows: a re-registered session's old poke is not aborted. */
   private appending = new Set<EntryId>()
   private views = new Map<string, View>()
@@ -287,6 +308,44 @@ export class Zephyr {
   async review(): Promise<Digest> {
     const until = this.stamp()
     return buildDigest(this.entries, this.listViews(), (await this.store.loadRuns()) ?? [], this.lastReviewedAt, until, this.listQuestions())
+  }
+
+  private oneSummaryAtATime<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.summaryChain.then(fn)
+    this.summaryChain = run.catch(() => {})
+    return run
+  }
+
+  /**
+   * A model-written summary of the notes received since the last review, the newest within MAX_SUMMARY_CHARS.
+   * Saved under summaries/ only when asked.
+   */
+  summarizeReview(save: boolean): Promise<Summary> {
+    return this.oneSummaryAtATime(async () => {
+      const since = this.lastReviewedAt
+      const until = this.stamp()
+      const notes = windowNotes(this.entries, since, until)
+      if (notes.length === 0) return { ok: false, error: 'no notes since the last review' }
+      const input = summaryInput(notes)
+      if (input.notes.length === 0) return { ok: false, error: 'the newest note alone is over the summary cap' }
+      const reply = await this.backend.complete(summaryMessages(input, topicsIn(this.listViews())), { json: true }).catch((err: Error) => err)
+      if (reply instanceof Error) return { ok: false, error: `the model call failed: ${reply.message}` }
+      const parsed = parseSummary(reply.json)
+      if (!parsed.ok) return parsed
+      const path = save ? await this.store.saveSummary({ since, until, noteIds: input.notes.map((e) => e.id), summary: parsed.summary }) : undefined
+      return { ok: true, since, until, notes: input.notes.length, leftOut: input.leftOut, summary: parsed.summary, ...(reply.usage && { usage: reply.usage }), ...(path && { path }) }
+    })
+  }
+
+  /** Pairs of topics the model finds related but separate, each with a reason; nothing is applied. */
+  async suggestLinks(): Promise<LinkSuggestions> {
+    const index = linkIndex(topicsIn(this.listViews()))
+    if (index.topics.length < 2) return { ok: false, error: 'fewer than two topics' }
+    const reply = await this.backend.complete(linkMessages(index), { json: true }).catch((err: Error) => err)
+    if (reply instanceof Error) return { ok: false, error: `the model call failed: ${reply.message}` }
+    const parsed = validateLinks(reply.json, index.topics)
+    if (!parsed.ok) return parsed
+    return { ok: true, links: parsed.links, dropped: parsed.dropped, leftOut: index.leftOut, ...(reply.usage && { usage: reply.usage }) }
   }
 
   /**
@@ -677,9 +736,9 @@ export class Zephyr {
   /**
    * Removes a note from the data dir, in an order a crash can resume from: the id is suppressed first, so no
    * transcript re-read brings the note back; then each kind's views are scrubbed on its own queue, after any run in
-   * flight that may have seen the note, topics before the diagrams drawn from them; then the archived bodies, the run
-   * log and the embeddings cache; then the adjustment log, which holds the note's edited texts; and entries.jsonl,
-   * which holds its text, last. Every step reads only sources a later step removes, so a re-run after a crash at any
+   * flight that may have seen the note, topics before the diagrams drawn from them; then the archived bodies, the
+   * saved summaries, the run log and the embeddings cache; then the adjustment log, which holds the note's edited
+   * texts; and entries.jsonl, which holds its text, last. Every step reads only sources a later step removes, so a re-run after a crash at any
    * point finds the words it still has to scrub. Topic bodies are scrubbed of the note's words at once; their
    * rewrite, a model call, is queued and reported as pending.
    */
@@ -714,6 +773,7 @@ export class Zephyr {
     if (slugs > 0) done.warnings.push(`${slugs} view slugs or aliases contain the note's words; a slug is a page's id and file name, so it stays`)
 
     const historyFilesDeleted = await this.store.deleteHistoryWhere(scrubber.hits)
+    const summariesDeleted = await this.oneSummaryAtATime(() => this.store.deleteSummariesWhere((ids, text) => ids.includes(noteId) || scrubber.hits(text)))
     // In place: queues hold these same objects and keep updating them.
     for (const r of this.runs) if (scrubber.hits(JSON.stringify(r))) Object.assign(r, scrubDeep(r, scrubber))
     const runs = await this.store.rewriteRuns((r) => scrubDeep(r, scrubber))
@@ -728,6 +788,7 @@ export class Zephyr {
       noteId,
       tasksDeleted: done.tasksDeleted,
       historyFilesDeleted,
+      summariesDeleted,
       lines: { entries, adjustments, runs, questions },
       stillIn: this.harnessCopy(note),
       status: `GET /api/purge/${noteId} reports when the queued rewrites are done`,

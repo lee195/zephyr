@@ -1,4 +1,5 @@
 import { inputSchema, OPS, parseAdjustment } from './adjust'
+import { MAX_LINK_TOPICS, MAX_LINKS, MAX_SUMMARY_CHARS } from './deeper'
 import type { Adjustment } from './domain'
 import { sanitizeSlug } from './kinds'
 import { MAX_REWRITE_CHARS, topicsIn } from './kinds/organizer'
@@ -93,6 +94,29 @@ function tools(z: Zephyr): Tool[] {
         if (typeof args.questionId !== 'string' || typeof args.answer !== 'string') return toolError('questionId and answer must be strings')
         const answered = await z.answerQuestion(args.questionId, args.answer)
         return answered.ok ? result(answered) : toolError(answered.error)
+      },
+    },
+    {
+      name: 'summarize_review',
+      description: `A summary the model writes of the notes since the last review, with the token usage of the call. It is shown ${MAX_SUMMARY_CHARS} characters of notes at most, the budget a topic rewrite gets, so one call stays quick and is read in full; past that it covers the newest notes, and leftOut counts the older ones left out. Not stored unless save is true; then path is where it was saved.`,
+      inputSchema: { type: 'object', properties: { save: { type: 'boolean', default: false, description: 'keep the summary in the data dir' } }, additionalProperties: false },
+      async call(args) {
+        if (args.save !== undefined && typeof args.save !== 'boolean') return toolError('save must be a boolean')
+        const done = await z.summarizeReview(args.save === true)
+        if (!done.ok) return toolError(done.error)
+        const { ok, ...summary } = done
+        return result(summary)
+      },
+    },
+    {
+      name: 'suggest_links',
+      description: `Pairs of topics the model finds related but worth keeping as separate pages, each with a one-line reason; at most ${MAX_LINKS}, from an index of the ${MAX_LINK_TOPICS} most recently updated topics. Changes nothing: put each pair to the person, and apply one with link_topics only after they say yes.`,
+      inputSchema: noArgs,
+      async call() {
+        const done = await z.suggestLinks()
+        if (!done.ok) return toolError(done.error)
+        const { ok, ...suggestions } = done
+        return result(suggestions)
       },
     },
     {

@@ -29,7 +29,7 @@ data/
   sessions.json                 registered transcripts and where each read resumes
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
   views/<kind>/<slug>.json      view metadata: title, sources, updatedAt, createdAt, pastTitles, appendsSinceWrite,
-                                pins, bodyStale
+                                pins, bodyStale, related
   views/<kind>/.history/<slug>/<updatedAt>.md
                                 a page as it was before a rewrite replaced it or an adjustment deleted it
   embeddings/<backend>.jsonl    cached document vectors; the sweep drops those no ranking can ask about
@@ -38,6 +38,7 @@ data/
   adjustments.jsonl             every adjustment: a request line, then a result line once it applied
   purged.json                   { ids }: purged notes, by id only; a transcript re-read never brings one back
   questions.jsonl               questions runs raised: an asked line, then a closed line once answered; ids and slugs only
+  summaries/<until>.md          a review summary saved on request; front matter holds the window and the ids it summarized
 ```
 
 The viewer does not show `.history`; the files are plain markdown next to the page.
@@ -86,6 +87,7 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 | `tombstoneNote` | `noteId` | Removes the note everywhere: entries, every view's sources, hints. A topic left with no notes is deleted. |
 | `editTask` | `taskId, text?, due?` | `due: null` clears the due date. |
 | `completeTask`, `deleteTask` | `taskId` | |
+| `linkTopics`, `unlinkTopics` | `a, b` | Marks two topics related but separate, or takes the mark off. The link is on both topics' `related`; see Related topics. |
 | `purgeNote` | `noteId, confirm` | Removes the note and its words from the data dir; see Purge. `confirm` must be exactly `purge <noteId>`. |
 
 `move`, `detach` and `split` refuse to leave a topic with no notes, so a note is never on no topic while it counts as filed.
@@ -95,6 +97,18 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 - **Overlay.** Only a purge rewrites `entries.jsonl`. Edits and tombstones are folded from `adjustments.jsonl` on start. A tombstoned note re-read from its transcript stays out.
 - **Replay.** A request with no result line was cut short by a crash, and the next start applies it again. Every op converges from whatever state it finds, so applying one twice changes nothing.
 
+## Related topics
+
+A topic's `related` lists the slugs of topics the person linked to it, sorted, and a link is always on both. It is server-owned like pins: no run sets it, and every write keeps it. A link is not a change to the page, so setting it keeps `updatedAt`: no diagram is redrawn and the append count holds. After every adjustment and on start, the lists are put right: a slug merged away is replaced by the topic it was merged into, a slug of a deleted topic leaves every list, and a link found on one side only, as a crash between the two writes leaves it, is put back on the other. The viewer lists a topic's related topics under its page, as links that scroll to their cards.
+
+## Deeper processing
+
+Three MCP tools for the review, each run only when the person asks:
+
+- `summarize_review { save? }` has the model summarize the notes received since the last review and returns `{ since, until, notes, leftOut, summary, usage }`. It is shown at most 32,000 characters of notes, the budget a topic rewrite gets, so one call stays quick and is read in full. Past the cap it is shown the newest notes that fit, and `leftOut` counts the older ones. Nothing is stored unless `save` is true; then it is written to `summaries/<until>.md` and `path` says where. Summaries run one at a time, so two cannot interleave their writes, and a purge deletes saved ones in the same line, after any in flight.
+- `rewrite_touched_topics` marks every topic that cites a note received since the last review `bodyStale`, in one step on the organizer's queue, so the rewrite runs rewrite each from its notes. It returns `{ queued, overCap }`; a topic over the 32,000-character cap is not marked.
+- `suggest_links` shows the model the topic index (`slug | title | N sources`, the 200 most recently updated topics) and returns up to 5 pairs that are related but should stay separate, each with a one-line reason, plus the ones it dropped and why (an unknown topic, a pair already linked or suggested twice, no usable reason). It applies nothing. The review brief tells the agent to apply a pair with `link_topics` only after the person says yes.
+
 ## Purge
 
 For a pasted secret or something private: `purgeNote` removes the note from Zephyr's data, which nothing else does. It runs one purge at a time, in this order, so a crash at any point leaves a request with no result that the next start finishes before it queues any run:
@@ -102,13 +116,13 @@ For a pasted secret or something private: `purgeNote` removes the note from Zeph
 1. The id goes into `purged.json`, which start loads into the dedupe set, so no transcript re-read brings the note back (opencode re-reads every row each poll; a Claude Code transcript is re-read from 0 when it shrinks or its path changes).
 2. The note leaves every in-memory list, so no run planned from now on is shown it.
 3. Each kind's views are scrubbed on that kind's queue, after any run in flight that was shown the note, topics before diagrams. A topic whose only note it was is deleted with its `.history`. Any other topic citing it loses it from its sources and pins, has the note's words replaced by `[purged]` in its body, title and past titles, and is queued for a rewrite. Of the tasks, one that came only from the note is deleted, since nothing else supports it; others lose the note and its words. Every diagram citing it, or holding its words, is deleted and drawn again from the scrubbed page.
-4. Archived bodies under `.history` that hold the note's words are deleted. Every question about the note is deleted from `questions.jsonl`, open or answered. `runs.jsonl` keeps note ids, which are opaque harness ids, but loses any of the note's words a reason carried. The embeddings cache is compacted, which drops the vector for the note's text; its key was only a hash.
+4. Archived bodies under `.history` that hold the note's words are deleted, and so is every saved summary that summarized the note or holds its words. Every question about the note is deleted from `questions.jsonl`, open or answered. `runs.jsonl` keeps note ids, which are opaque harness ids, but loses any of the note's words a reason carried. The embeddings cache is compacted, which drops the vector for the note's text; its key was only a hash.
 5. `adjustments.jsonl` loses the note's words: an edit of the note keeps its line, with `[purged]` as its text, so replay still converges.
 6. `entries.jsonl` is rewritten without the note, through a tmp file and a rename, in the same exclusive section as appends, so a note arriving meanwhile is not lost.
 
 The note's words are its texts (original and every edit), whole, and each word of four or more characters that no remaining note contains, matched without case at word edges. A page is built only from notes, so such a word there came from the purged one. Scrubbing words is coarse, which is why each scrubbed topic is then rewritten from its remaining notes; the rewrite never sees the note's words. A topic over the 32,000-character cap is scrubbed but not rewritten, and the result warns that a paraphrase may remain. A slug that holds the note's words stays, since it is the page's id; the result counts them.
 
-The result adds `purge: { noteId, tasksDeleted, historyFilesDeleted, lines: { entries, adjustments, runs, questions }, stillIn, status }`. Its `rewrites` are the topics whose rewrite is still queued; `GET /api/purge/<noteId>` returns `{ done, scrubbing, pending }` until they finish. `stillIn` names where the harness keeps its own copy (the Claude Code transcript file and line uuid, or the opencode database, session and message), which Zephyr never writes to; the person removes it there.
+The result adds `purge: { noteId, tasksDeleted, historyFilesDeleted, summariesDeleted, lines: { entries, adjustments, runs, questions }, stillIn, status }`. Its `rewrites` are the topics whose rewrite is still queued; `GET /api/purge/<noteId>` returns `{ done, scrubbing, pending }` until they finish. `stillIn` names where the harness keeps its own copy (the Claude Code transcript file and line uuid, or the opencode database, session and message), which Zephyr never writes to; the person removes it there.
 
 ## Questions
 
@@ -152,9 +166,10 @@ Every request other than `GET` must send `content-type: application/json` (else 
 | `get_topic` `{ slug }` | The page body and the cited notes with their text |
 | `search_notes` `{ query, limit? }` | As `GET /hints`, including which backend ranked |
 | `get_purge` `{ noteId }` | As `GET /api/purge/<noteId>` |
+| `summarize_review` `{ save? }`, `rewrite_touched_topics`, `suggest_links` | See Deeper processing |
 | `list_questions` | The open questions (below), with the note's and topics' current text and the answers each takes |
 | `answer_question` `{ questionId, answer }` | Close a question with one of its answers |
-| `rename_topic`, `merge_topics`, `split_topic`, `move_note`, `detach_note`, `edit_note`, `tombstone_note`, `edit_task`, `complete_task`, `delete_task`, `purge_note` | One adjustment op each, with the op's fields as arguments. `purge_note`'s description tells the agent to call it only when the person explicitly asks to purge that note. |
+| `rename_topic`, `merge_topics`, `split_topic`, `move_note`, `detach_note`, `edit_note`, `tombstone_note`, `edit_task`, `complete_task`, `delete_task`, `link_topics`, `unlink_topics`, `purge_note` | One adjustment op each, with the op's fields as arguments. `purge_note`'s description tells the agent to call it only when the person explicitly asks to purge that note. |
 
 Each op tool's input schema comes from the same field table (`OPS` in `src/adjust.ts`) that `POST /api/adjustments` validates with. A result is the JSON the HTTP route returns, as text. A malformed op or one the data refuses is a tool error carrying the 400 or 409 message.
 

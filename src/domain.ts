@@ -282,6 +282,8 @@ export interface PurgeReport {
   noteId: EntryId
   tasksDeleted: TaskId[]
   historyFilesDeleted: number
+  /** Saved review summaries deleted: each one that summarized the note or holds its words. */
+  summariesDeleted: number
   /** Records rewritten or dropped per file. */
   lines: { entries: number; adjustments: number; runs: number; questions: number }
   /** Where the note's text still is, outside Zephyr's data. */

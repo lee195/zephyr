@@ -156,6 +156,7 @@ export function reviewBrief(digest: Digest): string {
     `When the person says the review is done, call finish_review with until "${digest.until}".`,
     'Rewrites marked yours carried out a change the person made; their new text is still worth a look.',
     "Questions are doubts the agents filed a best guess for. Put each to the person with its answers and record their pick with answer_question; don't pick for them.",
+    'Deeper processing, when the person asks for it: summarize_review writes a summary of these notes, rewrite_touched_topics rewrites every topic they touched, and suggest_links proposes related topics. Apply a suggested link with link_topics only after the person says yes to it.',
     'Start with a short summary of the digest and ask what to change.',
     '',
     JSON.stringify(digest),

@@ -4,26 +4,33 @@ import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
 import { entry, gate, payloadOf, tempDir } from './helpers'
 
-type Call = 'file' | 'tasks' | 'rewrite' | 'draw'
+type Call = 'file' | 'tasks' | 'rewrite' | 'draw' | 'summary' | 'links'
 
 /**
  * Plays every kind. Organizer: "<slug>: text" files text under <slug>, appending when the topic exists;
  * "<slug>: text => Title" also retitles; "cite <id>" in the text cites that note too; "ask:<other>" asks whether the note
  * belongs on <other> instead. Tasks: a note containing "todo <x>" adds task x, and "ask:task" asks whether it is one. A rewrite makes the page
- * one bullet per note it is shown. The visualizer draws the title as ASCII. calls logs "<call> <detail>" in order;
+ * one bullet per note it is shown. The visualizer draws the title as ASCII. A summary lists the ids of the notes it is
+ * shown; a link suggestion replies with `links`, which a test sets. Both report usage. calls logs "<call> <detail>" in order;
  * hold(call) holds calls of that type until release().
  */
 export function desk() {
   const calls: string[] = []
   const held = gate<[call: Call]>()
-  const sent: Record<Call, any[]> = { file: [], tasks: [], rewrite: [], draw: [] }
+  const sent: Record<Call, any[]> = { file: [], tasks: [], rewrite: [], draw: [], summary: [], links: [] }
+  const usage = { promptTokens: 100, completionTokens: 20 }
+  const replies = { links: { links: [] } as unknown }
   const backend: ModelBackend = {
     async complete(messages: ChatMessage[]) {
       const p = payloadOf(messages)
-      const call: Call = 'notes' in p ? 'rewrite' : 'openTasks' in p ? 'tasks' : 'openTopics' in p ? 'file' : 'draw'
+      const call: Call =
+        'sessionNotes' in p ? 'summary' : 'topics' in p ? 'links' : 'notes' in p ? 'rewrite' : 'openTasks' in p ? 'tasks' : 'openTopics' in p ? 'file' : 'draw'
       sent[call].push(p)
-      calls.push(`${call} ${call === 'rewrite' ? p.slug : call === 'draw' ? p.title : p.newEntries.map((e: any) => e.id).join(',')}`)
+      const ids = (list: any[]) => list.map((e: any) => e.id).join(',')
+      calls.push(`${call} ${call === 'rewrite' ? p.slug : call === 'draw' ? p.title : call === 'summary' ? ids(p.sessionNotes) : call === 'links' ? p.topics.length : ids(p.newEntries)}`)
       await held.pass(call)
+      if (call === 'summary') return { json: { summary: `Notes ${ids(p.sessionNotes)}.` }, usage }
+      if (call === 'links') return { json: replies.links, usage }
       if (call === 'rewrite') return { json: { slug: p.slug, title: p.title, sources: p.notes.map((n: any) => n.id), body: p.notes.map((n: any) => `- ${n.text}`).join('\n') } }
       if (call === 'draw') return { json: { format: 'ascii', body: p.title } }
       if (call === 'tasks') {
@@ -51,7 +58,7 @@ export function desk() {
       return { json: { ops, questions } }
     },
   }
-  return { backend, calls, sent, hold: (call: Call) => held.hold((c) => c === call), release: held.release }
+  return { backend, calls, sent, replies, hold: (call: Call) => held.hold((c) => c === call), release: held.release }
 }
 
 export const ALL = { organizer: kinds.organizer!, tasks: kinds.tasks!, visualizer: kinds.visualizer! }
