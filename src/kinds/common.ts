@@ -18,6 +18,9 @@ export function knownSources(raw: unknown[], known: ReadonlySet<EntryId>): Entry
   return [...new Set(raw.filter((s): s is string => typeof s === 'string' && known.has(s)))]
 }
 
+/** An entry as every kind shows it to the model. */
+export const promptEntry = (e: Entry) => ({ id: e.id, at: e.at, text: e.text })
+
 /** A kind's prompt: its rules as the system message, then the run's input as one JSON user message. */
 export function jsonPrompt(system: string, payload: unknown): ChatMessage[] {
   return [
