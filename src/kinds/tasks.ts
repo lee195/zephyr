@@ -125,7 +125,7 @@ export function applyTaskOps(tasks: Task[], ops: TaskOp[]): Task[] {
 
 export function renderTasks(tasks: Task[]): string {
   const line = (t: Task) => `- [${t.done ? 'x' : ' '}] ${t.text}${t.due ? ` (due ${t.due})` : ''}`
-  return [...tasks.filter((t) => !t.done), ...tasks.filter((t) => t.done)].map(line).join('\n')
+  return [...openTasks(tasks), ...tasks.filter((t) => t.done)].map(line).join('\n')
 }
 
 export const tasks: AgentKind = {
