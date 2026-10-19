@@ -1,5 +1,5 @@
 import { computed, reactive } from 'vue'
-import type { Entry, Run, View } from '../../src/domain'
+import type { Entry, Run, View, ZephyrEvent } from '../../src/domain'
 
 export const state = reactive({
   views: new Map<string, View>(),
@@ -33,34 +33,31 @@ export const viewsByKind = computed(() => {
   return groups
 })
 
-async function load<T>(path: string): Promise<T[]> {
+/** Each live collection: the path that loads it and the server event that updates it, both keyed by id. */
+const feeds: { path: string; event: ZephyrEvent['type']; map: Map<string, { id: string }> }[] = [
+  { path: '/api/views', event: 'view', map: state.views },
+  { path: '/api/entries', event: 'entry', map: state.entries },
+  { path: '/api/runs', event: 'run', map: state.runs },
+]
+
+async function load(path: string): Promise<{ id: string }[]> {
   const res = await fetch(path)
   return res.ok ? res.json() : []
 }
 
 export async function connect() {
-  const [views, entries, runs] = await Promise.all([
-    load<View>('/api/views'),
-    load<Entry>('/api/entries'),
-    load<Run>('/api/runs'),
-  ])
-  for (const v of views) state.views.set(v.id, v)
-  for (const e of entries) state.entries.set(e.id, e)
-  for (const r of runs) state.runs.set(r.id, r)
+  const loaded = await Promise.all(feeds.map((f) => load(f.path)))
+  feeds.forEach((f, i) => {
+    for (const item of loaded[i]!) f.map.set(item.id, item)
+  })
 
   const es = new EventSource('/events')
   es.onopen = () => (state.connected = true)
   es.onerror = () => (state.connected = false)
-  es.addEventListener('view', (m) => {
-    const v: View = JSON.parse(m.data)
-    state.views.set(v.id, v)
-  })
-  es.addEventListener('entry', (m) => {
-    const e: Entry = JSON.parse(m.data)
-    state.entries.set(e.id, e)
-  })
-  es.addEventListener('run', (m) => {
-    const r: Run = JSON.parse(m.data)
-    state.runs.set(r.id, r)
-  })
+  for (const f of feeds) {
+    es.addEventListener(f.event, (m) => {
+      const item: { id: string } = JSON.parse(m.data)
+      f.map.set(item.id, item)
+    })
+  }
 }
