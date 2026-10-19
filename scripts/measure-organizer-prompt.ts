@@ -20,6 +20,7 @@ import { backends, chatCompletion } from '../src/backends'
 import { parseConfig } from '../src/config'
 import type { ChatMessage, Entry, ModelBackend, Usage } from '../src/domain'
 import { Store } from '../src/store'
+import { kinds } from '../src/kinds'
 import { Zephyr } from '../src/zephyr'
 
 interface Probe {
@@ -123,7 +124,7 @@ for (let rep = 0; rep < reps; rep++) {
     const dir = await mkdtemp(join(tmpdir(), 'zephyr-measure-run-'))
     await cp(fixture, dir, { recursive: true })
     const calls: Call[] = []
-    const z = new Zephyr({ dataDir: dir, backend: measuring(model, calls), retryDelaysMs: [] })
+    const z = new Zephyr({ dataDir: dir, backend: measuring(model, calls), kinds: { organizer: kinds.organizer! }, retryDelaysMs: [] })
     await z.start()
     const before = new Map(z.listViews().map((v) => [v.slug, v]))
     const probeId = uuid(`probe-${probe.name}`)
@@ -165,12 +166,13 @@ for (let rep = 0; rep < reps; rep++) {
       duplicateTopic: 'existing' in expected && created.length > 0,
       rewrittenExisting: rewritten.map((v) => `${v.slug} ${before.get(v.slug)!.body.length}->${v.body.length} chars`),
       correct,
+      questions: z.listQuestions().map((q) => (q.kind === 'whichTopic' ? `${q.chosen.slug}|${q.alternatives.map((a) => a.slug).join(',')}` : q.kind)),
       promptChars: call?.parts,
     }
     results.push(row)
     firstMessages ??= call?.messages
     console.log(
-      [probe.name.padEnd(10), String(row.promptTokens).padStart(6), `cached ${row.cachedTokens ?? '?'}`.padStart(12), String(row.completionTokens).padStart(5), `${row.latencyMs}ms`.padStart(8), correct ? 'ok ' : 'BAD', replyOps.join(' '), open ? `open=${open.join(',')}` : '', row.dropped ? `dropped=${JSON.stringify(row.dropped)}` : '', row.error ?? ''].join('  '),
+      [probe.name.padEnd(10), String(row.promptTokens).padStart(6), `cached ${row.cachedTokens ?? '?'}`.padStart(12), String(row.completionTokens).padStart(5), `${row.latencyMs}ms`.padStart(8), correct ? 'ok ' : 'BAD', replyOps.join(' '), open ? `open=${open.join(',')}` : '', row.dropped ? `dropped=${JSON.stringify(row.dropped)}` : '', row.questions.length ? `asked=${row.questions.join(' ')}` : '', row.error ?? ''].join('  '),
     )
   }
 }
@@ -188,6 +190,7 @@ const summary = {
   correct: results.filter((r) => r.correct).length,
   duplicates: results.filter((r) => r.duplicateTopic).length,
   failed: results.filter((r) => r.status !== 'done').length,
+  asked: results.filter((r) => r.questions.length > 0).length,
 }
 console.log(JSON.stringify(summary))
 

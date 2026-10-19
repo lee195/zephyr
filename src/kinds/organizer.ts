@@ -129,7 +129,7 @@ The input has openTopics (full pages) and topicIndex (every other topic, one lin
 - write replaces the whole page. Use it to create a topic, or to rewrite an open topic when the entry changes or corrects what the page says. Never write an indexed topic.
 - sources lists the ids of the new entries the op covers.
 - slug is lowercase kebab-case. body is markdown built only from the notes; do not add facts they do not contain, and do not repeat the title as a heading.
-- File every entry by your best guess. Only when an entry fits two or more topics equally well, also add a question: chosen is the topic you filed it on, alternatives the others it fits. At most 2 questions; usually none.`
+- When an entry fits two or more existing topics about equally, file it on one and add a question: chosen is that topic, alternatives the others it fits. At most 2 questions; usually none.`
 
 export function organizerMessages(newEntries: Entry[], views: ViewContext, recentEntries: Entry[]): ChatMessage[] {
   return jsonPrompt(ORGANIZER_SYSTEM, {
