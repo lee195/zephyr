@@ -3,7 +3,7 @@ import { organizerMessages, validateOps, type ReplyContext } from '../src/kinds/
 import { entry, payloadOf } from './helpers'
 
 const organizer = { validate: validateOps, buildMessages: organizerMessages }
-const ctx: ReplyContext = { knownIds: new Set(['e1', 'e2']), existingSlugs: new Set(), openSlugs: new Set() }
+const ctx: ReplyContext = { knownIds: new Set(['e1', 'e2']), topics: new Map(), openSlugs: new Set() }
 
 test('a good reply yields sanitized ops', () => {
   const result = organizer.validate({ ops: [{ op: 'write', slug: 'Bread Baking!', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }] }, ctx)

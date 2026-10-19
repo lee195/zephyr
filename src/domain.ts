@@ -51,6 +51,22 @@ export interface View {
    * the server from the bodies, so no kind can report it; absent when 0.
    */
   appendsSinceWrite?: number
+  /** What the person fixed on this view, which no kind's run may undo. Set only by adjustments; absent when nothing is. */
+  pins?: Pins
+  /**
+   * The page's notes changed under it (moved away, edited, removed, merged in), so its body may say what they no
+   * longer support. Set by an adjustment, cleared by the rewrite run it queues; until then the topic is not drawn.
+   */
+  bodyStale?: true
+}
+
+export interface Pins {
+  /** The person chose the title; no run may change it. */
+  title?: true
+  /** Notes the person took off this page; no run may cite them here again. */
+  excluded?: EntryId[]
+  /** Slugs of topics merged into this one; a run's op on one of them lands here. */
+  aliases?: string[]
 }
 
 export interface PastTitle {
@@ -149,8 +165,11 @@ export interface World {
   relevance: RelevanceBackend
 }
 
-/** A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, pastTitles and appendsSinceWrite, so a kind can only write its own views and never its history. */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'pastTitles' | 'appendsSinceWrite'>
+/**
+ * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, pastTitles, appendsSinceWrite, pins
+ * and bodyStale, so a kind can only write its own views and never their history or what the person fixed.
+ */
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale'>
 
 /** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
 export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }

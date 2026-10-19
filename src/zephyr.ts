@@ -398,7 +398,7 @@ export class Zephyr {
         if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
         // A run on one of the kind's own views revisits a page, so the page it replaces is kept.
         const revisit = run.viewIds?.[0]?.startsWith(`${kind.kind}/`) === true
-        for (const w of result.writes) await this.writeView(kind, w, revisit)
+        for (const w of result.writes) await this.writeView(kind, w, { revisit })
         if (result.dropped.length > 0) run.dropped = result.dropped
         const covered = new Set(result.covered)
         const uncovered = run.entryIds.filter((id) => !covered.has(id))
@@ -457,17 +457,30 @@ export class Zephyr {
   /**
    * The id and directory come from the kind, never from the write, so a kind can only ever write its own views.
    * The title history is kept here, against the stored view, so it holds whichever kind or op changed the title.
+   * Pins and bodyStale carry over from the stored view unless an adjustment passes `own`; a revisit, which
+   * rewrites the page, archives the prior one and clears bodyStale.
    */
-  private async writeView(kind: AgentKind, write: ViewWrite, archivePrior = false) {
+  private async writeView(kind: AgentKind, write: ViewWrite, opts: { revisit?: boolean; own?: Pick<View, 'pins' | 'bodyStale'> } = {}) {
     if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
     const id = `${kind.kind}/${write.slug}`
     const prior = this.views.get(id)
-    if (prior && archivePrior) await this.store.archiveView(prior)
+    if (prior && opts.revisit) await this.store.archiveView(prior)
     const updatedAt = this.stamp()
     const pastTitles = prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt }] : prior?.pastTitles
     const appendsSinceWrite = prior && extendsBody(write.body, prior.body) ? (prior.appendsSinceWrite ?? 0) + 1 : 0
     const createdAt = prior ? prior.createdAt : updatedAt
-    const view: View = { ...write, id, kind: kind.kind, updatedAt, ...(createdAt && { createdAt }), ...(pastTitles && { pastTitles }), ...(appendsSinceWrite > 0 && { appendsSinceWrite }) }
+    const { pins, bodyStale } = opts.own ?? { pins: prior?.pins, bodyStale: opts.revisit ? undefined : prior?.bodyStale }
+    const view: View = {
+      ...write,
+      id,
+      kind: kind.kind,
+      updatedAt,
+      ...(createdAt && { createdAt }),
+      ...(pastTitles && { pastTitles }),
+      ...(appendsSinceWrite > 0 && { appendsSinceWrite }),
+      ...(pins && { pins }),
+      ...(bodyStale && { bodyStale }),
+    }
     await this.store.writeView(view)
     this.views.set(view.id, view)
     this.prepareRelevance(kind.relevanceDocs?.([view]) ?? [])

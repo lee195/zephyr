@@ -24,7 +24,8 @@ export interface ViewContext {
 
 export interface ReplyContext {
   knownIds: ReadonlySet<EntryId>
-  existingSlugs: ReadonlySet<string>
+  /** Every existing topic by slug: its title, and what the person pinned on it. */
+  topics: ReadonlyMap<string, Pick<View, 'title' | 'pins'>>
   openSlugs: ReadonlySet<string>
 }
 
@@ -32,7 +33,7 @@ const MAX_TITLE_CHARS = 80
 const TITLE_DROPPED = `title dropped, not a non-empty string of at most ${MAX_TITLE_CHARS} characters`
 
 /** A title the model proposed, trimmed, or undefined when it is not a non-empty string of at most MAX_TITLE_CHARS. */
-function usableTitle(raw: unknown): string | undefined {
+export function usableTitle(raw: unknown): string | undefined {
   const title = typeof raw === 'string' ? raw.trim() : ''
   return title.length > 0 && title.length <= MAX_TITLE_CHARS ? title : undefined
 }
@@ -46,16 +47,23 @@ function stripTitleHeading(body: string, title: string): string {
   return body.slice(m[0].length).replace(/^\s+/, '')
 }
 
+/** Each alias slug and the topic it was merged into. */
+const aliasTargets = (topics: ReplyContext['topics']) =>
+  new Map([...topics].flatMap(([slug, t]) => (t.pins?.aliases ?? []).map((alias) => [alias, slug] as const)))
+
 /**
  * Parses `{ ops: [...] }`. A malformed reply fails as a whole. A well-formed op the rules refuse is
  * dropped with a reason: a write to an existing topic the model did not see in full, an append to an
  * unknown topic, or an op left with no known sources. An append's unusable title is dropped alone; the append applies.
+ * Pins hold against every op, each with a reason: an op on a merged-away slug lands on its target as an append
+ * without a title, a note excluded from a topic is not cited there again, and a pinned title does not change.
  */
 export function validateOps(json: unknown, ctx: ReplyContext): Validation {
   const ops = (json as any)?.ops
   if (!Array.isArray(ops)) return { ok: false, error: 'reply has no ops array' }
-  const existing = new Set(ctx.existingSlugs)
+  const titles = new Map([...ctx.topics].map(([slug, t]) => [slug, t.title]))
   const writable = new Set(ctx.openSlugs)
+  const aliases = aliasTargets(ctx.topics)
   const out: ViewOp[] = []
   const dropped: string[] = []
   for (const [i, o] of ops.entries()) {
@@ -64,30 +72,46 @@ export function validateOps(json: unknown, ctx: ReplyContext): Validation {
     if (typeof o.slug !== 'string') return { ok: false, error: `op ${i} has no slug` }
     if (typeof o.body !== 'string') return { ok: false, error: `op ${i} body is not a string` }
     if (!Array.isArray(o.sources)) return { ok: false, error: `op ${i} sources is not an array` }
-    const slug = sanitizeSlug(o.slug)
-    if (!slug) return { ok: false, error: `op ${i} slug is empty after sanitizing` }
-    const sources = knownSources(o.sources, ctx.knownIds)
+    const asked = sanitizeSlug(o.slug)
+    if (!asked) return { ok: false, error: `op ${i} slug is empty after sanitizing` }
+    const target = aliases.get(asked)
+    if (target) dropped.push(`${o.op} ${asked}: merged into ${target}, so applied there as an append${o.title != null ? ' without its title' : ''}`)
+    const slug = target ?? asked
+    const op: 'write' | 'append' = target ? 'append' : o.op
+    const pins = ctx.topics.get(slug)?.pins
+    const known = knownSources(o.sources, ctx.knownIds)
+    const excluded = known.filter((id) => pins?.excluded?.includes(id))
+    const sources = known.filter((id) => !excluded.includes(id))
+    if (excluded.length > 0) dropped.push(`${op} ${slug}: excluded from this topic: ${excluded.join(', ')}`)
     if (sources.length === 0) {
-      dropped.push(`${o.op} ${slug}: no known sources`)
+      if (excluded.length === 0) dropped.push(`${op} ${slug}: no known sources`)
       continue
     }
-    if (o.op === 'append') {
-      if (!existing.has(slug)) {
+    if (op === 'append') {
+      if (!titles.has(slug)) {
         dropped.push(`append ${slug}: no such topic`)
         continue
       }
-      const title = usableTitle(o.title)
-      if (o.title != null && !title) dropped.push(`append ${slug}: ${TITLE_DROPPED}`)
+      let title = target ? undefined : usableTitle(o.title)
+      if (!target && o.title != null && !title) dropped.push(`append ${slug}: ${TITLE_DROPPED}`)
+      if (title && pins?.title && title !== titles.get(slug)) {
+        dropped.push(`append ${slug}: title is pinned, ${JSON.stringify(title)} dropped`)
+        title = undefined
+      }
       out.push({ op: 'append', slug, ...(title && { title }), sources, body: o.body })
       continue
     }
-    if (existing.has(slug) && !writable.has(slug)) {
+    if (titles.has(slug) && !writable.has(slug)) {
       dropped.push(`write ${slug}: topic exists but was not open`)
       continue
     }
-    const title = typeof o.title === 'string' && o.title.trim() ? o.title.trim() : slug
+    let title = typeof o.title === 'string' && o.title.trim() ? o.title.trim() : slug
+    if (pins?.title && title !== titles.get(slug)) {
+      dropped.push(`write ${slug}: title is pinned, ${JSON.stringify(title)} dropped`)
+      title = titles.get(slug)!
+    }
     out.push({ op: 'write', slug, title, sources, body: stripTitleHeading(o.body, title) })
-    existing.add(slug)
+    titles.set(slug, title)
     writable.add(slug)
   }
   return { ok: true, ops: out, dropped }
@@ -179,7 +203,7 @@ export type RewriteResult = { ok: true; write: ViewWrite; dropped: string[] } | 
 /**
  * A rewrite keeps the topic's slug and exactly its sources. It fails when malformed, for another slug, with an
  * empty body, with any of the page's sources left out, or with a body that only extends the current one. Extra
- * ids and an unusable title are dropped with a reason; the current title then stays.
+ * ids, an unusable title and a change to a pinned title are dropped with a reason; the current title then stays.
  */
 export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySet<EntryId>): RewriteResult {
   const r = json as any
@@ -189,7 +213,8 @@ export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySe
   const dropped: string[] = []
   const proposed = usableTitle(r.title)
   if (!proposed) dropped.push(`rewrite ${topic.slug}: ${TITLE_DROPPED}`)
-  const title = proposed ?? topic.title
+  else if (topic.pins?.title && proposed !== topic.title) dropped.push(`rewrite ${topic.slug}: title is pinned, ${JSON.stringify(proposed)} dropped`)
+  const title = topic.pins?.title ? topic.title : (proposed ?? topic.title)
   const body = stripTitleHeading(r.body, title)
   if (!body.trim()) return { ok: false, error: 'body is empty' }
   const cited = new Set<EntryId>(r.sources.filter((s: unknown) => typeof s === 'string'))
@@ -243,7 +268,7 @@ async function organizePlan(run: Run, world: World): Promise<Plan> {
   const views = await viewContext(world, own, newEntries)
   const ctx: ReplyContext = {
     knownIds: new Set(world.entries.map((e) => e.id)),
-    existingSlugs: new Set(own.map((v) => v.slug)),
+    topics: new Map(own.map((v) => [v.slug, v])),
     openSlugs: new Set(views.open.map((v) => v.slug)),
   }
   return {
