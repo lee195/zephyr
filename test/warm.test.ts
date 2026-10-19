@@ -4,7 +4,7 @@ import { kinds } from '../src/kinds'
 import { relevanceBackends, withFallback } from '../src/relevance'
 import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
-import { entry, eventually, fakeEmbeddings, scripted, seedDataDir } from './helpers'
+import { doneRun, entry, eventually, fakeEmbeddings, scripted, seedDataDir } from './helpers'
 
 const entries = [
   entry('e1', 'sourdough starter fed with rye'),
@@ -16,7 +16,7 @@ const DRAFT = 'my sourdough starter is sluggish'
 const docTexts = [...entries.map((e) => e.text), 'Bread\nabout sourdough']
 
 const seeded = () =>
-  seedDataDir({ entries, views: [topic], runs: ['organizer', 'tasks'].map((kind) => ({ id: `r-${kind}`, kind, entryIds: entries.map((e) => e.id), status: 'done', attempt: 1 })) })
+  seedDataDir({ entries, views: [topic], runs: ['organizer', 'tasks'].map((kind) => doneRun(kind, entries.map((e) => e.id))) })
 
 let cleanup: (() => void)[] = []
 afterEach(() => {
@@ -119,7 +119,7 @@ test('an organizer run waits for its topics to be embedded, so every topic can o
   const dir = await seedDataDir({
     entries: [...entries, entry('e4', 'rye sourdough rose overnight')],
     views: [topic],
-    runs: ['organizer', 'tasks'].map((kind) => ({ id: `r-${kind}`, kind, entryIds: entries.map((e) => e.id), status: 'done', attempt: 1 })),
+    runs: ['organizer', 'tasks'].map((kind) => doneRun(kind, entries.map((e) => e.id))),
   })
   const end = fakeEmbeddings()
   end.hold((input) => input.includes('Bread\nabout sourdough'))

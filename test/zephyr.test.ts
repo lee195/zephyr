@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { entry, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, seedDataDir, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -331,7 +331,7 @@ function scripted(ops: object[]) {
 function organizedDir() {
   return seedDataDir({
     entries: [entry('e1'), entry('e2'), entry('e3')],
-    runs: [{ id: 'r1', kind: 'organizer', entryIds: ['e1', 'e2'], status: 'done', attempt: 1 }],
+    runs: [doneRun('organizer', ['e1', 'e2'])],
     views: [topic('a', ['e1', 'e2'], 'First section.\n')],
   })
 }
@@ -380,7 +380,7 @@ function fiveTopicDir() {
   const ids = ['e1', 'e2', 'e3', 'e4', 'e5']
   return seedDataDir({
     entries: [...ids, 'e6'].map((id) => entry(id, `text of ${id}`)),
-    runs: [{ id: 'r1', kind: 'organizer', entryIds: ids, status: 'done', attempt: 1 }],
+    runs: [doneRun('organizer', ids)],
     views: ['a', 'b', 'c', 'd', 'e'].map((slug, i) => topic(slug, [ids[i]!], `body of ${slug}`)),
   })
 }

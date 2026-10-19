@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { kinds } from '../src/kinds'
 import { checkAscii, checkSvg, parseDiagram } from '../src/kinds/visualizer'
 import { Zephyr } from '../src/zephyr'
-import { entry, eventually, filesUnder, payloadOf, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, eventually, filesUnder, payloadOf, seedDataDir, tempDir } from './helpers'
 
 const organizerAndVisualizer = { organizer: kinds.organizer!, visualizer: kinds.visualizer! }
 
@@ -197,7 +197,7 @@ test('on start, exactly the topics whose diagram is missing or stale are drawn',
   const entries = ['stale', 'fresh', 'missing', 'small'].flatMap((s) => [0, 1, 2, 3].map((i) => entry(`${s}${i}`)))
   const dir = await seedDataDir({
     entries,
-    runs: [{ id: 'r1', kind: 'organizer', entryIds: entries.map((e) => e.id), status: 'done', attempt: 1 }],
+    runs: [doneRun('organizer', entries.map((e) => e.id))],
     views: [
       topic('stale', 4, '2026-10-19T10:00:00.000Z'),
       diagram('stale', '2026-10-19T09:00:00.000Z'),

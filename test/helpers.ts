@@ -17,13 +17,16 @@ export async function eventually(check: () => boolean | Promise<boolean>, ms = 3
   throw new Error('condition not met in time')
 }
 
+/** A finished run of this kind that covered these entries, so a start does not queue them again for it. */
+export const doneRun = (kind: string, entryIds: string[]): Run => ({ id: `done-${kind}`, kind, entryIds, status: 'done', attempt: 1 })
+
 /** A data dir holding these entries, these finished runs, and these views, as the store writes them. No runs: a data dir from before runs.jsonl. */
-export async function seedDataDir(opts: { entries: Entry[]; runs?: object[]; views?: Omit<View, 'id'>[] }) {
+export async function seedDataDir(opts: { entries: Entry[]; runs?: Run[]; views?: Omit<View, 'id'>[] }) {
   const dir = await tempDir()
   const store = new Store(dir)
   await store.init()
   await store.appendEntries(opts.entries)
-  for (const r of opts.runs ?? []) await store.appendRun(r as Run)
+  for (const r of opts.runs ?? []) await store.appendRun(r)
   for (const v of opts.views ?? []) await store.writeView({ id: `${v.kind}/${v.slug}`, ...v })
   return dir
 }

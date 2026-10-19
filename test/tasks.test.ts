@@ -4,7 +4,7 @@ import { expect, test } from 'bun:test'
 import type { Task, View } from '../src/domain'
 import { kinds } from '../src/kinds'
 import { Zephyr } from '../src/zephyr'
-import { entry, filesUnder, payloadOf, scripted, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, filesUnder, payloadOf, scripted, seedDataDir, tempDir } from './helpers'
 
 const onlyTasks = { tasks: kinds.tasks! }
 
@@ -25,7 +25,7 @@ const anna: Task = { id: 't1', text: 'Call Anna about the venue', due: '2026-10-
 const annaDir = (extra: Task[] = []) =>
   seedDataDir({
     entries: [entry('e1'), entry('e2', 'called Anna, venue confirmed')],
-    runs: [{ id: 'r1', kind: 'tasks', entryIds: ['e1'], status: 'done', attempt: 1 }],
+    runs: [doneRun('tasks', ['e1'])],
     views: [tasksView([anna, ...extra])],
   })
 
