@@ -1,0 +1,23 @@
+{
+  "name": "zephyr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun scripts/start.ts",
+    "dev": "bun --watch src/main.ts",
+    "dev:viewer": "vite --config viewer/vite.config.ts",
+    "build": "vite build --config viewer/vite.config.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "marked": "^16.1.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.0.4"
+  }
+}
