@@ -9,5 +9,5 @@
     "allowImportingTsExtensions": true,
     "types": ["bun"]
   },
-  "include": ["src", "test", "scripts/start.ts"]
+  "include": ["src", "test", "scripts/start.ts", "scripts/measure-organizer-prompt.ts"]
 }

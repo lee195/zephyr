@@ -1,0 +1,564 @@
+{
+  "subjects": [
+    {
+      "slug": "sourdough-baking",
+      "title": "Sourdough Baking",
+      "notes": [
+        "Starter looked sluggish after a week in the fridge — fed it 1:5:5 with rye at 8am and it doubled by 2pm. Back in business.",
+        "Tried 78% hydration again and the dough was soup. Held back 30g water and it finally came together with slap-and-folds.",
+        "Bulk ferment ran 5.5 hours at 24C; dough had good jiggle but maybe slightly over — crumb was a bit flat near the bottom.",
+        "Scored a single 45-degree slash at 2cm deep with the new lame and got a solid ear for once. Baked at 250C with steam for 15 min, then 230C for 25.",
+        "Bought a 2kg bag of stoneground whole wheat from the Saturday market — plan is 20% whole wheat in the next bake to see how it affects rise.",
+        "Dough was gummy in the middle even though internal temp hit 97C. Next time I'll leave it in the oven 5 more minutes and skip cutting while warm.",
+        "Cold retard overnight for 14 hours made shaping way easier but the crust came out dull. Might need a longer preheat on the Dutch oven.",
+        "Priya said the loaf was the best one yet, so I wrote down the exact timings in the notebook before I forget them."
+      ]
+    },
+    {
+      "slug": "pizza-dough",
+      "title": "Pizza Dough",
+      "notes": [
+        "Ball recipe: 1000g Caputo 00, 62% water, 3% salt, 0.5g fresh yeast. Made 6 balls at 270g each for Friday.",
+        "Cold ferment at 4C for 48 hours gave much better flavor and easier stretching than the 24-hour batch. Keep it at 48.",
+        "Oven maxed at 275C with the steel on the middle rack, preheated 45 min. Still not 450C, so pies take about 6 minutes.",
+        "Switched to 65% hydration and the dough got sticky on the bench — more bench flour and shorter stretch helped but lost some puff.",
+        "Tried the broiler trick for the last 90 seconds; leoparding finally showed up on the cornicione. Watch it closely, it burns fast.",
+        "San Marzano tomatoes crushed by hand with just salt, no cooking. Much brighter than the canned sauce I was using.",
+        "Balls were overproofed after 3 hours at room temp — flat and tearing when opened. Next time pull them from the fridge 90 min before, not 3 hours.",
+        "Marco's tip: use a wooden peel with semolina to launch, then switch to the metal peel for turning. Way fewer disasters."
+      ]
+    },
+    {
+      "slug": "coolify-deployments",
+      "title": "Coolify Deployments",
+      "notes": [
+        "Deploy failed on the api service because NODE_ENV wasn't set in the production env — Coolify shows the var but the container didn't pick it up until I redeployed.",
+        "Nixpacks couldn't detect the monorepo layout. Switched the build pack to Dockerfile with a custom path and it built fine.",
+        "Set up the domain app.internal.example.com in Coolify and it provisioned the Let's Encrypt cert automatically, but only after the DNS A record was live.",
+        "Postgres backup volume got wiped when I deleted the service to fix a config issue. Lesson: never delete the service, just redeploy.",
+        "Build kept timing out at 10 minutes on the frontend image. Bumped the build timeout in the service settings and it finished in 13.",
+        "Env vars with $ signs in them got mangled — had to escape them or use the literal mode. Took me an hour to figure out.",
+        "Rolled back to the previous deployment with one click after the bad release, but the DB migration had already run. Need a migration plan.",
+        "Webhook from the repo wasn't firing; the Coolify webhook secret had changed after the app was recreated. Re-added it and deploys work again."
+      ]
+    },
+    {
+      "slug": "forgejo-ci-pipelines",
+      "title": "Forgejo CI Pipelines",
+      "notes": [
+        "Self-hosted runner on the build box keeps going offline after about 12 hours. Probably the systemd unit needs Restart=always.",
+        "Caching the node_modules directory cut the test job from 4 min to 90 seconds. Used the actions/cache equivalent keyed on the lockfile hash.",
+        "Workflow yaml syntax bit me again — needs-on with a list has to be a proper array, not a comma string.",
+        "Flaky test in the integration job fails about 1 in 5 runs. Suspect the Postgres service container isn't ready when tests start; adding a healthcheck wait.",
+        "Matrix build across 3 Go versions is nice but the 1.21 job is the slow one. Considering dropping it to save runner time.",
+        "Secrets aren't available in pull requests from forks, which broke the deploy preview job. Need to gate it on the branch instead.",
+        "Artifact upload from the build step works, but the path was relative to the workspace root, not the subdirectory. Fixed with the full path.",
+        "Added a lint job that runs in parallel with tests and it finishes in 20 seconds. Cheap win, should have done it weeks ago."
+      ]
+    },
+    {
+      "slug": "vllm-endpoint-ops",
+      "title": "vLLM Endpoint Operations",
+      "notes": [
+        "Two A100 80GBs are maxed at about 92% memory with the 70B at 4-bit and 8 concurrent requests. Bumping max-num-seqs made latency worse.",
+        "Model swap takes about 6 minutes to reload — need to drain the queue first or requests just hang and time out at the gateway.",
+        "Set a per-key rate limit of 10 req/s at the proxy; vLLM itself has no real per-user limits, it just queues.",
+        "p99 latency jumped to 8s during the afternoon spike. Turned out to be long prompts with no max_tokens cap, so outputs ran to 4000 tokens.",
+        "Enabled prefix caching and repeated system prompts got noticeably faster — time to first token dropped from 1.2s to 0.4s.",
+        "OOM'd the service after setting gpu-memory-utilization to 0.98. Back to 0.90 and it's stable again.",
+        "Rolling a new model version means downtime unless we stand up a second instance. Asked about a second GPU node for blue-green swaps.",
+        "Health check endpoint returns 200 even while the model is loading, so the load balancer sends traffic too early. Added a readiness check on /v1/models."
+      ]
+    },
+    {
+      "slug": "tauri-wkwebview-quirks",
+      "title": "Tauri WKWebView Quirks",
+      "notes": [
+        "App freezes on the first launch after a rebuild on macOS — looks like WKWebView is holding a stale cached bundle. Clearing the cache in dev fixes it.",
+        "Custom select dropdowns render behind other elements in WKWebView. Z-index alone didn't fix it; had to use a portal to the body.",
+        "Tauri events fired from Rust before the webview finished loading get dropped. Queuing them until the frontend signals ready.",
+        "Native file dialog opens behind the window if the app isn't focused. Need to force focus before calling the dialog plugin.",
+        "Rebuilds are slow because the Rust side recompiles every time even when only frontend files change. Trying a separate dev build profile.",
+        "Scrolling inside a fixed container feels janky in WKWebView but fine in Safari. Adding -webkit-overflow-scrolling and testing again.",
+        "Keyboard shortcuts work in dev but not in the bundled .app — the menu accelerator is swallowing Cmd+K. Need to handle it in the menu config.",
+        "White flash on window show. Setting the window background color to match the app theme and deferring the show until the webview is ready."
+      ]
+    },
+    {
+      "slug": "vue-viewer-ui",
+      "title": "Vue Viewer UI",
+      "notes": [
+        "Split the viewer into a DocumentList and a DocumentView component. Props are getting messy, thinking about a small composable for the fetch logic.",
+        "SSE updates work with EventSource, but reconnects drop events during the gap. Need to send a last-event-id and replay on the server.",
+        "Markdown rendering with markdown-it plus DOMPurify. Sanitizing is non-negotiable since the content comes from other users.",
+        "Styling is plain CSS with scoped styles for now. Tempted to add Tailwind but don't want the setup overhead on such a small page.",
+        "List re-renders on every SSE tick and loses scroll position. Keying by id helped, and I need to stop replacing the whole array.",
+        "Added a loading skeleton and the perceived speed is much better. Simple grey pulse boxes, about 20 lines of CSS.",
+        "Watcher on route params wasn't firing when navigating between two documents — needed to watch the param directly, not the computed.",
+        "Bundle is 180KB gzipped, mostly markdown-it. Lazy-loading the viewer route with defineAsyncComponent should help."
+      ]
+    },
+    {
+      "slug": "marathon-training",
+      "title": "Marathon Training",
+      "notes": [
+        "Long run 28km on Sunday at 5:40/km. Felt strong until 24km then the legs went heavy — need more fuel on the back half.",
+        "Achilles is sore after the Tuesday intervals. Backing off to two quality sessions a week and adding calf raises daily.",
+        "Target is 3:45 in October. That means roughly 5:20/km race pace; easy runs should stay around 6:10.",
+        "Tried gels every 40 minutes on the 32km run and no bonk this time. Stomach handled the caffeine one fine, so stick with it.",
+        "Missed two runs this week because of work travel. Not panicking, but the weekly volume dropped from 65km to 48km.",
+        "Sleep is the weak link — averaging 6 hours. Sam keeps telling me the easy days need to be actually easy.",
+        "Legs felt great on the 20km progression run, last 5km at 5:10/km. Confidence is up after the rough weeks.",
+        "Booked the physio for the Achilles on the 14th, and I'm swapping one interval session for a swim until it settles."
+      ]
+    },
+    {
+      "slug": "home-espresso",
+      "title": "Home Espresso",
+      "notes": [
+        "Dialed the Niche Zero down to 12 for the new Ethiopian beans, 18g in and 36g out in 28s, tastes way sweeter now.",
+        "Ordered 1kg of the Brazilian Cerrado from the roaster on Tuesday, roast date 3 days ago so it needs another week to rest.",
+        "Backflushed the Lelit with Cafiza on Sunday, forgot it last month, the shower screen was pretty grim.",
+        "Milk steaming finally clicking: 200ml whole milk, tip just under the surface for 3 seconds then lower, silky microfoam every time.",
+        "Descaling tomorrow, hard water here so I'm doing it every 8 weeks instead of 12 like the manual says.",
+        "Grinder burrs probably due a clean, shots are running 4s longer than last week with the same setting.",
+        "Bought a cheap 0.1g scale, realised my old one was off by 2g which explains the inconsistency.",
+        "Marta drank a flat white and said it was better than the café near her office, taking that as a win."
+      ]
+    },
+    {
+      "slug": "japanese-learning",
+      "title": "Learning Japanese",
+      "notes": [
+        "Finished the N3 kanji deck on Anki, 340 cards, but the readings for 生 still trip me up every time.",
+        "Tutor session with Yuki on Thursday, she said my て-form is fine but I keep dropping particles in longer sentences.",
+        "Started Genki II chapter 4, the passive form is making my head hurt, need to do the workbook exercises.",
+        "Watched two episodes of a drama without subtitles and caught maybe 60 percent, better than last month.",
+        "Set a reminder to do 20 minutes of WaniKani before work, missed Monday and Tuesday already.",
+        "Wrote a short diary entry in Japanese every night this week, only 4 sentences each but it's something.",
+        "Booked the JLPT for December 7, registration opened today and the Berlin slots go fast.",
+        "Yuki gave me a list of 15 transitive and intransitive verb pairs to memorise, 開く and 開ける are finally clear."
+      ]
+    },
+    {
+      "slug": "iso27001-policy",
+      "title": "ISO 27001 Policy Work",
+      "notes": [
+        "Access control policy draft is with Priya for review, she flagged the section on privileged accounts as too vague.",
+        "Need owners for all 14 policies by Friday, so far only 5 have a named owner and Annex A mapping is half done.",
+        "Kickoff with the auditor is on the 12th, they want the risk register and the SoA before the stage 1 visit.",
+        "Rewrote the incident management policy to reference the 72-hour reporting requirement, legal should check that.",
+        "Stefan from IT says the backup policy contradicts what we actually do, need to align it with the weekly restore test.",
+        "Supplier security policy is the weak one, we have no evidence of reviews for the 8 critical vendors.",
+        "Sent the document approval workflow to the steering group, they meet every second Wednesday so that's a 3-week lag.",
+        "Gap analysis turned up 6 controls with no documentation at all, mostly around asset disposal and clear desk."
+      ]
+    },
+    {
+      "slug": "backend-hiring",
+      "title": "Backend Hiring",
+      "notes": [
+        "Posted the job ad for the senior backend role, 3 years Go or similar, fully remote within Germany, salary band 75 to 90k.",
+        "Interview loop agreed: 30 min screening with me, 60 min system design, 60 min coding, 45 min values with Lena.",
+        "Take-home is too long at 6 hours, cutting it to a 90 minute pairing session instead after feedback from two candidates.",
+        "Screening call with Tomas on Monday, strong on Kafka and Postgres, currently at a fintech in Lisbon, notice period 2 months.",
+        "Only 4 applications in the first week, need to push it on LinkedIn and ask Ravi to share in the Go meetup group.",
+        "One candidate withdrew after the take-home, said the brief was ambiguous about testing requirements, fair point.",
+        "Debrief scheduled for Thursday, we need to decide on a rubric before scoring so it's not just gut feel.",
+        "Hiring manager wants an offer out by end of the month, that means final round needs to happen week after next."
+      ]
+    },
+    {
+      "slug": "quarterly-okrs",
+      "title": "Quarterly OKRs",
+      "notes": [
+        "Q3 objective is to cut p95 API latency below 400ms, currently sitting at 620ms after the caching work.",
+        "KR2 on the onboarding funnel is off track, we're at 34 percent completion versus the 50 percent target.",
+        "Check-in moved to Tuesdays at 10, only 6 of 9 people showed up to the last one.",
+        "Dropped the KR about documentation coverage, it was never measurable and nobody owned it.",
+        "Chat with Sofia about the reliability OKR, she thinks the 99.95 uptime target is unrealistic with the current on-call setup.",
+        "Mid-quarter review shows 2 of 4 KRs are green, one amber, one red, need a plan for the red one by Friday.",
+        "Missed the KR on reducing cloud spend by 15 percent, we only got to 6 percent because of the new staging cluster.",
+        "Writing next quarter's objectives now, keeping it to 3 max, last quarter we had 5 and none got real attention."
+      ]
+    },
+    {
+      "slug": "garden-tomatoes",
+      "title": "Garden Tomatoes",
+      "notes": [
+        "Planted 4 Sungold and 2 Roma seedlings in the balcony boxes on May 3, the Sungold are already 40cm tall.",
+        "Watering twice a day now that it's hot, the south-facing boxes dry out by noon, mulch helped a bit.",
+        "Found aphids on the underside of the Roma leaves, sprayed with soapy water and ordered ladybirds online.",
+        "Pinched out the side shoots on the cordon varieties, the bush tomatoes don't need it but I did it anyway on one by mistake.",
+        "First ripe Sungold on July 8, ate it warm off the vine, absolutely worth the hassle.",
+        "Blossom end rot on two Romas, likely calcium or inconsistent watering, added crushed eggshells and stabilised the schedule.",
+        "Tied the tallest plant to a bamboo cane after the storm bent it, it recovered but lost a truss.",
+        "Harvest so far is about 1.2kg, made a batch of sauce with the Romas and froze 3 portions."
+      ]
+    },
+    {
+      "slug": "apartment-move",
+      "title": "Apartment Move",
+      "notes": [
+        "Movers confirmed for June 28, 3-person crew, 780 euros including the piano surcharge, they arrive at 8am.",
+        "Packed 22 boxes so far, mostly books, ran out of tape on Saturday and had to borrow from Neighbour below.",
+        "Registered the new address at the Bürgeramt on the 14th, they said the confirmation letter takes about 2 weeks.",
+        "Internet contract with the new provider starts July 1, but the technician slot is only available on the 9th so we're offline for a week.",
+        "Need to cancel the old electricity contract, Stadtwerke wants 6 weeks notice, cutting it close.",
+        "Forwarding order for mail set up at Deutsche Post for 12 months, 30 euros, cheaper than I remembered.",
+        "Kitchen stuff is the worst, still need to sort the fridge contents and the cleaning cupboard before Thursday.",
+        "Keys handover for the old flat is July 3, landlord wants it broom clean and I still need to patch two nail holes."
+      ]
+    },
+    {
+      "slug": "tax-return-2026",
+      "title": "Tax Return 2026",
+      "notes": [
+        "Collected all receipts for 2025 into a folder, the home office costs are the big chunk at roughly 1,260 euros.",
+        "Advisor Anke says the deadline is July 31 since we're using a tax consultant, otherwise it'd be end of February.",
+        "Missing the donation receipt from the animal shelter, emailed them Monday and still waiting.",
+        "Work laptop bought in March 2025 goes in as a full deduction, under the 800 euro threshold it would be instant but it wasn't.",
+        "Commuters allowance works out to about 1,400 euros with 22km each way and 210 days, need the employer confirmation.",
+        "Anke asked for the Nebenkostenabrechnung, found it in the old email from the landlord, sent it over yesterday.",
+        "Double-checked the home office deduction, the 6 euro per day option caps at 1,260 so the flat-rate might be simpler.",
+        "Submitted everything to Anke on the 20th, she reckons we'll get a refund somewhere around 1,800 euros."
+      ]
+    },
+    {
+      "slug": "parent-teacher-meetings",
+      "title": "Parent-Teacher Meetings",
+      "notes": [
+        "Met Ms. Duarte for the fall conference, 15 minutes. She said Mateo reads fluently but rushes and guesses at long words instead of sounding them out.",
+        "Ms. Duarte put him at level N on the benchmark, was hoping for P by January. Suggested 20 minutes of reading aloud at night, not silently.",
+        "Homework is taking him 70 minutes when it should be 30. Turns out he's doing math last and melting down, so we're flipping the order to math first.",
+        "She flagged that he talks over other kids in group work. Not mean, just excited. Wants us to practice 'one breath, then listen' at dinner.",
+        "Asked about the reading log and apparently we're the only family not signing it. Setting a reminder for 7:45pm every night.",
+        "Winter conference moved to Feb 11, and it's student-led this time, so Mateo has to present his portfolio. He's nervous about it.",
+        "Ms. Duarte recommended the Mercy Watson series for him and he finished two in a week. Big win, he actually asked for book three.",
+        "Concern about handwriting, still reversing b and d in November. She says it's normal at 7 and to stop correcting every line, just circle one per page."
+      ]
+    },
+    {
+      "slug": "home-network",
+      "title": "Home Network Setup",
+      "notes": [
+        "Replaced the ISP router's wifi with two Deco units, one upstairs one downstairs. Signal in the garage is still trash, might need a third node.",
+        "Finally set up VLANs on the EdgeRouter: 10 for trusted, 20 for IoT, 30 for guests. The printer is on IoT now and my laptop can't see it, need a firewall rule.",
+        "Pi-hole running on the old Pi 3 handles DNS for the whole house, about 18% of queries blocked. My wife's coupon apps broke, added a whitelist entry.",
+        "Synology DS220+ is doing nightly hyper backup to the USB drive and weekly to Backblaze. Tested a restore of one folder, worked fine.",
+        "Mesh handoff is bad when I walk down the stairs, call drops for two seconds. Turned down the transmit power on the upstairs node, seems better.",
+        "Reserved DHCP addresses for the NAS, Pi-hole, and both APs so nothing moves around after a reboot. Should have done this a year ago.",
+        "Speedtest from the wired NAS is 940 down, wifi on the 5GHz band about 480. Good enough, stopped obsessing over it.",
+        "Guests kept asking for the wifi password so I made a QR code and taped it inside the pantry door. Guests VLAN is client-isolated now."
+      ]
+    },
+    {
+      "slug": "film-photography",
+      "title": "Film Photography",
+      "notes": [
+        "Shot a roll of Portra 400 through the Pentax K1000 at the market on Saturday. Light meter battery died halfway, guessed the rest, we'll see.",
+        "Developed HP5 at home for the first time, 1+4 dilution in ID-11 for 11 minutes at 20C. Negatives look thin, think I underdeveloped by a minute.",
+        "Dropped three rolls at the lab, they want 14 euros a roll for dev plus scan. At that price I should just buy a Plustek and do it myself.",
+        "Pushed Tri-X to 1600 for the concert, dev 20% longer, and the grain is gorgeous. Two frames are keepers, the rest are blurry hands.",
+        "Bought a used 50mm f1.7 for 60 euros, the aperture ring is stiff but it works. The 28mm is still my favorite for street stuff.",
+        "Ektar 100 in the Yashica Mat, square format is harder than I remembered. Only 12 frames per roll so I'm being way more deliberate.",
+        "Scanning at 2400 dpi with SilverFast, then a light pass in Lightroom for dust. Takes about 20 minutes a roll but the results beat lab scans.",
+        "Dust is driving me nuts. Ordered anti-static gloves and a rocket blower, and I'm keeping the negatives in Print File sleeves from now on."
+      ]
+    },
+    {
+      "slug": "sci-fi-reading-list",
+      "title": "Sci-Fi Reading List",
+      "notes": [
+        "Finished Le Guin's The Dispossessed last night. The Shevek chapters on Anarres dragged for me but the last 50 pages wrecked me.",
+        "Halfway through Blindsight by Peter Watts and I keep having to reread paragraphs. Dense but the vampire biology thing is genuinely unsettling.",
+        "Want to finally do the Culture series properly, starting with Consider Phlebas. Sara says skip to Player of Games, undecided.",
+        "Read Three-Body Problem in four days, the Cultural Revolution opening hooked me harder than the physics. Book two is on hold at the library.",
+        "Ted Chiang's Exhalation is the best short fiction I've read in years. Story of Your Life made me put the book down for a day.",
+        "Gave up on a 900-page space opera about 300 pages in. Life's too short, no guilt, moving on to Becky Chambers for something warm.",
+        "Want a list for winter: A Memory Called Empire, The Left Hand of Darkness reread, and maybe Children of Time. That's probably enough.",
+        "Ann Leckie's Ancillary Justice pronoun thing took me 40 pages to click, then it was all I thought about for a week. Recommending it to Tom."
+      ]
+    },
+    {
+      "slug": "llm-context-degradation",
+      "title": "LLM Context Degradation",
+      "notes": [
+        "Noticed the model starts ignoring the first instruction around 40k tokens in. Stuff I put at the top of the system prompt just evaporates.",
+        "Ran the same question with the doc at the start vs the end of a 60k context. End position won by a mile, classic recency.",
+        "Repeated the key constraint three times in the prompt and quality jumped noticeably. Ugly but it works, calling it the bookmark trick.",
+        "Longer prompt is not automatically better. Cut my prompt from 3k to 900 tokens and the answers got sharper, fewer hedge-y tangents.",
+        "Middle-of-context stuff is basically dead. The needle in a haystack tests say it's fine, but real multi-hop reasoning in the middle falls apart.",
+        "Tried putting a short summary of the task right before the actual question instead of only at the top. Cheapest quality win so far.",
+        "Steering with 'be concise, no preamble' works for about 5 turns then the model drifts back to chatty. Have to re-inject it every few turns.",
+        "Kept a running scratchpad of decisions in the prompt and the model started contradicting earlier ones less. Probably just as much about my own clarity."
+      ]
+    },
+    {
+      "slug": "postgres-migrations",
+      "title": "Postgres Migrations",
+      "notes": [
+        "Added an index on orders.created_at with CREATE INDEX CONCURRENTLY, took 22 minutes on the replica. Do not wrap it in a transaction, learned that the hard way.",
+        "Backfilled 4M rows in batches of 5000 with a sleep between, kept the replica lag under 2 seconds. First attempt without batching locked the table for 6 minutes.",
+        "Renaming a column is a trap. Added the new column, dual-wrote for a week, backfilled, then dropped the old one after the deploy.",
+        "Adding a NOT NULL column with a default is fine on 11+, but on the old 9.6 box it rewrote the whole table. Checked the version first after that.",
+        "Rollback plan for the enum change was just 'don't'. Split it into a new table with a join instead, way less scary than ALTER TYPE.",
+        "Learned to set lock_timeout to 3s on every migration so it fails fast instead of queueing behind a long query and blocking everything.",
+        "Squashed three migrations into one deploy window, ran them with a migration tool, and the whole thing was done in 40 seconds. Felt too easy.",
+        "Added a constraint NOT VALID, then VALIDATE CONSTRAINT separately so the ACCESS EXCLUSIVE lock was only held for milliseconds. Should be the default pattern."
+      ]
+    },
+    {
+      "slug": "kubernetes-costs",
+      "title": "Kubernetes Costs",
+      "notes": [
+        "Bill was 11k last month, and half the pods were requesting 2 CPUs and using 200m. Right-sized the requests and the node count dropped by a third.",
+        "Found four namespaces nobody had touched since March, staging-v2, demo, and two feature branches. Deleted them, saved about 600 a month.",
+        "Cluster autoscaler was stuck at the min node count of 6 all night. Lowered the min to 3 and added a spot node pool for the batch jobs.",
+        "No requests and no limits meant pods were landing anywhere and starving the neighbors. Set requests properly and dropped limits on most things.",
+        "Spot nodes get reclaimed roughly every 40 hours on the batch pool. Added a PDB and a taint so only the cron jobs land there.",
+        "Vertical pod autoscaler in recommend-only mode for two weeks gave me real numbers instead of my guesses. Way off on the Java service.",
+        "Idle load balancers from deleted services were still costing 18 each. Cleaned up six of them, that one hurt to look at.",
+        "Set a budget alert at 80% of last month's spend and a weekly cost review with Priya on Fridays. The visibility alone changed behavior."
+      ]
+    },
+    {
+      "slug": "sso-incident-postmortem",
+      "title": "SSO Incident Postmortem",
+      "notes": [
+        "Cert rotated at 02:00 UTC, and the IdP served the new cert but the SPs still had the old one pinned. First failed login was 02:07.",
+        "Alert fired at 02:14 from the synthetic login check, but the on-call thought it was a flaky test and acknowledged without escalating. That's the real miss.",
+        "Impact was about 9,400 users over 47 minutes, all of them getting a generic 'invalid SAML response' page. Support queue hit 300 tickets.",
+        "Rolled forward at 02:54 by pushing the new cert to all four SPs via config, no code deploy needed. Login success back to normal by 02:58.",
+        "Root cause is that the cert expiry was tracked in a wiki page nobody owned. Action item: monitor cert expiry at 30/14/7 days and alert to the on-call channel.",
+        "Second action item is automating cert distribution, so the SPs pull from the IdP metadata URL instead of a pinned file. Ticket filed with platform, due next sprint.",
+        "Also changing the runbook: a failed synthetic login is now a page, not a ticket. And the on-call has to post in the incident channel within 5 minutes.",
+        "Wrote the postmortem on Thursday, blameless, and Marcus from support added a great note about what the error page should have said. Better UX is item four."
+      ]
+    },
+    {
+      "slug": "keyboard-firmware",
+      "title": "Keyboard Firmware",
+      "notes": [
+        "Flashing QMK to the Lily58 tonight with home-row mods: A=Gui, S=Alt, D=Ctrl, F=Shift. Took three tries before the left half registered, turned out to be a bad TRRS cable.",
+        "Spent 40 minutes debugging why layer 2 wouldn't activate. Forgot I had to hold MO(2) on the right half, not the left, since I mirrored the keymap.",
+        "ZMK on the Corne is way nicer for wireless, but the battery only lasts about 4 days with RGB on. Disabled underglow and got it to 11 days.",
+        "Ordered 200 Kailh Box Whites and 110 hotswap sockets from AliExpress. Soldering the sockets in on Saturday, need to be careful not to bridge pins 1 and 2.",
+        "Wrote a tapping term of 180ms for the home-row mods. 200 was too slow, kept triggering shift on fast rolls.",
+        "Added a nav layer with arrows under HJKL and a numpad on the right hand. Still messing up the enter key position on layer 1.",
+        "Desoldered the whole left half after a column died. Turns out the diode on row 3 was reversed, now working fine.",
+        "Thinking about trying Vial so I can tweak keymaps without recompiling. QMK compile is fine but rebooting to Windows to flash is a pain."
+      ]
+    },
+    {
+      "slug": "guitar-practice",
+      "title": "Guitar Practice",
+      "notes": [
+        "15 min of spider walks every morning before coffee. Metronome at 80 bpm, still sloppy on the pinky when I cross strings 3 to 4.",
+        "Finally got the F barre chord clean. Pressing closer to the fret with the side of the index finger made the difference.",
+        "Learning Blackbird by the Beatles. The fingerpicking pattern is fine but the transition into the bridge is a mess.",
+        "Switched to a 20-minute routine: 5 min warmup, 5 min scales, 10 min song. Way easier to actually do daily than the hour-long plan.",
+        "Working on the A minor pentatonic in position 1 and 2. Trying to connect them without looking at the neck.",
+        "My teacher Marco says my strumming is too stiff. Practicing the DDUUDU pattern on a G chord until it feels automatic.",
+        "Bought new Elixir strings, .010 gauge. The old ones were dead and buzzy around the 7th fret.",
+        "Recorded myself playing Wonderwall and it sounds way worse than it feels. Timing drifts when I sing along."
+      ]
+    },
+    {
+      "slug": "bouldering",
+      "title": "Bouldering",
+      "notes": [
+        "Hit a V4 for the first time today, the orange overhang on the left wall. Took me four sessions of projecting it.",
+        "Left ring finger is sore after the crimpy problems. Taping it and skipping anything with small holds for a week.",
+        "Two-hour session on Tuesday was too long. Fingers felt wrecked on Thursday, sticking to 75 minutes from now on.",
+        "Working on heel hooks on the slab section. Feels unnatural but the technique coach said to trust the rubber.",
+        "Gym reset the bouldering wall on Friday. The new V3s are reachy, lots of coordination moves which is not my strength.",
+        "Started warming up properly with the hangboard at 20mm, three sets of 10 seconds. Fingers feel more reliable already.",
+        "Climbed with Lena on Sunday and she pointed out I'm always flagging the same foot. Need to practice outside edges.",
+        "Down to V2/V3 again after the finger tweak. Ego hurts more than the finger, honestly."
+      ]
+    },
+    {
+      "slug": "meal-prep",
+      "title": "Weekly Meal Prep",
+      "notes": [
+        "Sunday batch: 2kg chicken thighs, 1kg rice, roasted broccoli and sweet potato. Filled 8 containers, should last till Thursday.",
+        "Bought 10 more glass containers from IKEA, the 1 liter ones. Plastic ones were staining from the curry.",
+        "Shopping list for the week: oats, eggs, chickpeas, spinach, feta, lemons, chicken, rice, frozen peas, olive oil.",
+        "Made a big pot of lentil dal on Monday and froze half in portions. Great for the days I get home late from the gym.",
+        "Trying to hit 140g protein a day. Adding cottage cheese to breakfast and a protein shake after training got me there without too much effort.",
+        "The fish went bad by Thursday again. Stop buying salmon on Sunday if I'm not eating it by Wednesday.",
+        "Spent 2.5 hours prepping on Sunday, that's the limit before I start hating it. Prep the rice in the rice cooker while the oven does the veg.",
+        "Tried overnight oats with Greek yogurt and berries for the first time. 5 jars at once, takes 10 minutes, way better than buying breakfast."
+      ]
+    },
+    {
+      "slug": "household-budget",
+      "title": "Household Budget",
+      "notes": [
+        "Cancelled two subscriptions today, the streaming one we never watch and the cloud storage. Saves 19 euros a month.",
+        "Savings rate was 14% in March, down from 22% in January. The car repair ate most of it.",
+        "Moved all household spending to a shared account with Mia. One card each, easier to see where the money goes.",
+        "Set up categories in the app: groceries, rent, transport, kids, fun, subscriptions. Groceries are the one that keeps overshooting.",
+        "Grocery budget of 600 a month is unrealistic with the new prices. Adjusting to 700 and cutting the eating-out category instead.",
+        "Audit of subscriptions found 11 active ones. Some app I paid for in 2023 is still charging 4.99 monthly.",
+        "Trying the 50/30/20 rule for a quarter. The 20 for savings is the hard part with the mortgage.",
+        "December was a disaster, 400 over budget because of gifts. Starting a sinking fund of 50 a month for next Christmas."
+      ]
+    },
+    {
+      "slug": "car-maintenance",
+      "title": "Car Maintenance",
+      "notes": [
+        "Golf is at 214,000 km. Oil change and filter done at the shop, 95 euros including labor.",
+        "Front tires are at 3mm, need replacing before winter. Looking at Michelin CrossClimate, around 140 each mounted.",
+        "Inspection is due in June. The rear brake light is out, replacing the bulb myself first so it doesn't fail on something stupid.",
+        "Check engine light came on again, same P0420 code. Mechanic says it's the catalytic converter but it's not worth the 800 euro fix on a 2008 car.",
+        "Topped up coolant twice this month, that's a leak somewhere. Keeping a bottle in the trunk for now.",
+        "Battery died at minus 8 last week. Jump started it with Tom's cables, replacing it with a Varta on Saturday.",
+        "Tracking every repair in a spreadsheet. 1,340 euros total this year, which is still way cheaper than a car payment.",
+        "Tire pressure check every two weeks now, the left rear keeps losing about 0.2 bar. Might be a slow leak at the valve."
+      ]
+    },
+    {
+      "slug": "conference-talk",
+      "title": "Conference Talk Prep",
+      "notes": [
+        "Abstract submitted to the Rust meetup, 150 words on incremental builds. Deadline was Friday midnight, sent it at 11:40.",
+        "Talk is confirmed for the 14th of May, 25 minutes plus 5 for questions. Need to cut my outline down by a third.",
+        "Slides at 34 and counting. Rule is one idea per slide, no code blocks longer than 8 lines.",
+        "First rehearsal with a timer took 38 minutes. Cutting the whole history section, it's nice context but it's eating the clock.",
+        "The live demo broke twice in rehearsal. Recording a backup video with asciinema just in case the wifi dies.",
+        "Ran through it in front of Sara and Jonas on Thursday. They said the intro is too slow, moved the hook to slide 2.",
+        "Font sizes bumped to 28 minimum, the projector in that room is terrible and the back row couldn't read the code last year.",
+        "Final run-through at 24:30. Saving the Q&A cheat sheet with links to the benchmark repo in case someone asks about the numbers."
+      ]
+    },
+    {
+      "slug": "bun-open-source",
+      "title": "Contributing to Bun",
+      "notes": [
+        "Opened my first PR to Bun, a small fix for the path resolution on Windows. CI failed on the macOS runner, looks flaky.",
+        "Build setup on Linux was painful. Needed zig 0.13 and the debug build took 12 minutes on my laptop.",
+        "Triaged three issues about bun install and left repro steps on two of them. One was a duplicate of an older issue.",
+        "Reviewer asked me to add a test to the install test suite. Writing it in the existing test format, using a temp dir fixture.",
+        "PR got merged today, the Windows path fix. Small thing but it's in the changelog for 1.1.x.",
+        "Reading through the runtime source to understand the bundler. The codegen in the JS parser is dense, taking notes as I go.",
+        "Trying to fix a bug where the lockfile gets rewritten on every install. Repro is a monorepo with workspace dependencies.",
+        "Joined the Discord and asked about the contribution guidelines for docs. Got pointed to the CONTRIBUTING file and the good first issue label."
+      ]
+    },
+    {
+      "slug": "password-manager-rollout",
+      "title": "Password Manager Rollout",
+      "notes": [
+        "Picked 1Password over Bitwarden for the team after the trial — the admin console felt clearer for non-technical folks. Vault structure: one per department plus a shared 'Ops' vault for AWS and vendor logins.",
+        "Kicked off onboarding Monday with 14 people; 9 had set up their accounts by Wednesday, chasing the other 5 by email. Sent a 4-minute screen recording instead of a doc, seemed to land better.",
+        "Moved the shared Wi-Fi and Stripe credentials out of the Confluence page into the Ops vault and deleted the page. Priya flagged that the page was linked from three other places, so I need to hunt those down.",
+        "Policy decision: no personal items in work vaults, and mandatory 2FA on every account. Wrote it up in the IT handbook, got sign-off from Daniel before announcing it in Slack.",
+        "Set up vault permissions so contractors only see the 'Client Access' vault, nothing else. Took a bit of fiddling with the groups but tested it with a dummy contractor account.",
+        "Migrating from the old Chrome password export is messier than expected — about 60 duplicate entries and a bunch with no URL. Blocking out Friday afternoon to clean it up.",
+        "Turned on the breach monitoring report; it flagged 11 reused passwords across the team, mostly on old tools nobody uses. Not naming anyone, just sending a general nudge to rotate.",
+        "Reminder scheduled for the 1st of next month to review who still hasn't logged in for 30 days and revoke their access. Also want to check the audit log for any shared-vault downloads."
+      ]
+    },
+    {
+      "slug": "typescript-strictness",
+      "title": "TypeScript Strictness",
+      "notes": [
+        "Turned on strictNullChecks in tsconfig today and got 412 errors. Way more than I expected, mostly in the API response mapping layer. Going file by file, starting with the smallest modules.",
+        "noImplicitAny is done — that took two days but the changes were mostly adding real types to event handlers. Left strictFunctionTypes for next week since that one breaks the generic wrappers.",
+        "Deleted about 30 `any` casts in the order service and replaced them with proper interfaces. Feels good but I keep finding more in the older code from the 2021 rewrite.",
+        "Anna suggested enabling `noUncheckedIndexedAccess` — I tried it and got another 80 errors, mostly array access in the CSV parser. Parked it for now, maybe after the release.",
+        "Set up a CI check that fails the build if new `any` is introduced, using eslint's no-explicit-any as a warning first. Want to make it an error once we're under 50 occurrences.",
+        "Big surprise: `strictPropertyInitialization` broke all the DTO classes because they rely on the ORM filling fields. Had to add definite assignment assertions, which feels like cheating but is pragmatic.",
+        "Ran into a nasty one with the third-party SDK types — their `declare` file is just wrong, so I added a local .d.ts override with a comment explaining why. Filed an issue upstream too.",
+        "Down to 47 errors now. Wrote a short note in the repo README on the migration plan and the flags we've enabled so far, so Tomas can pick it up while I'm out next week."
+      ]
+    },
+    {
+      "slug": "dog-training",
+      "title": "Dog Training",
+      "notes": [
+        "Recall is finally clicking with the long line in the park — Biscuit came back 8 out of 10 times with the whistle. Still zero chance off-leash near the ducks, so keeping the 10m lead on.",
+        "Leash pulling is the big one. Bought a front-clip harness and it made a real difference on the walk to the bakery, but he still lunges at scooters. Practicing U-turns when he pulls.",
+        "Switched treats from the kibble to tiny bits of chicken — way higher value, and he actually pays attention now. Keeping a pouch by the door so I don't forget.",
+        "Puppy class on Tuesday was chaos, six dogs and Biscuit wanted to greet every single one. Trainer said to practice 'look at me' for 5 minutes a day, so that's the homework this week.",
+        "Started a 3-2-1 game for recall: three treats, two, one, then release. Doing it in the garden twice a day and he's starting to sprint back instead of ambling.",
+        "He's 7 months now and the teenage phase is real — ignoring 'sit' when there's a smell he likes. Trainer said to lower criteria and reward more, so going back to basics indoors.",
+        "Got the settle on a mat working with a 5-minute timer. Managed to eat dinner in peace for the first time in weeks. Next goal is 15 minutes while I'm on a call.",
+        "Note to self: stop repeating 'come' three times. One cue, then wait, then reward. Also stop training when he's tired — Wednesday's session was a write-off because it was too close to walk time."
+      ]
+    },
+    {
+      "slug": "friends-wedding-trip",
+      "title": "Friend's Wedding Trip",
+      "notes": [
+        "Booked the flights to Lisbon for the 12th of September, out of Gatwick at 7:40am. Was £210 return with hand luggage only, which feels like a win. Need to check the wedding is actually near Lisbon before I book the hotel.",
+        "Hotel sorted — three nights in Alfama, small place with a terrace, 140 euros a night. Wedding is in Sintra so we'll need a taxi or the train on the Saturday, checking times this week.",
+        "Gift: chipped in with Marta and Tom on the Le Creuset set from the registry, 60 quid each. Need to remember to bring the card, it's still on the kitchen counter.",
+        "Speech is a mess. Drafted about 400 words, way too long, and it's basically a list of embarrassing stories. Cutting to one story and one sincere bit, max 2 minutes.",
+        "Figured out the dress code question — apparently it's 'cocktail, but comfortable shoes for the garden'. Need to sort out a jacket before we fly, mine is from 2019 and doesn't fit.",
+        "Sorted the airport transfer and downloaded the offline maps for Sintra. Also checking whether my debit card works in Portugal without a fee, I think it's 2.75% which adds up.",
+        "Called James to ask if there's anything we should know about the schedule, apparently Friday is a welcome dinner at 7 and there's a shuttle from the hotel. Good to know, saves on taxis.",
+        "Packing list started: speech printed twice, gift card, jacket, the shoes that actually work on cobblestones. Need to be at the airport by 5:30 so setting two alarms."
+      ]
+    },
+    {
+      "slug": "podcast-ideas",
+      "title": "Podcast Ideas",
+      "notes": [
+        "Landing on a 25-minute format: one topic per episode, no guest most weeks, just me and a co-host. Longer interviews only when there's someone genuinely interesting. Recorded a test episode on database migrations and it ran to 40 minutes, so cutting harder next time.",
+        "Guest list draft: my old colleague Ravi on incident response, someone from the platform team on Kubernetes costs, and maybe the woman who ran the observability meetup. Need to actually email them instead of just thinking about it.",
+        "Bought the Shure MV7 secondhand for 130 euros. Sounds noticeably better than the laptop mic, but the room echo is still terrible so I'm hanging blankets on the wall behind me.",
+        "Editing in Audacity because it's free and I know it. It's taking about 2 hours per 30 minutes of audio, mostly trimming ums and long pauses. Might try Reaper if this keeps up.",
+        "Struggling with the name. Everything decent is taken and the .com is squatted. Leaning towards something plain and boring that's easy to spell.",
+        "Wrote the first proper outline: cold open with a problem, 3 points, one listener question, then out. Having the outline cut my rambling a lot in the second test recording.",
+        "Tried recording with the co-host over Discord and it sounded thin, so we're switching to recording locally on both ends and syncing in the edit. Clap at the start for alignment.",
+        "Realistic plan: 6 episodes banked before publishing anything, then weekly. Set a Sunday morning slot for recording, otherwise it just won't happen."
+      ]
+    },
+    {
+      "slug": "portugal-vacation",
+      "title": "Portugal Vacation",
+      "notes": [
+        "Route is roughly set: land in Lisbon, 4 nights there, train down to the Algarve for 5 nights, then back up for the last 2 nights near the airport. Trying not to cram in Porto this time.",
+        "Booked the apartment in Lisbon in Alfama for the first four nights, 110 euros a night with a balcony. It's up a hill so I'm mentally preparing for the stairs with luggage.",
+        "Rental car only for the Algarve leg — picking up in Faro and dropping off at Lisbon airport, about 220 euros for five days. Checking whether my licence needs an international permit, apparently not for Portugal.",
+        "Budget draft: flights 340, accommodation 980, car 220, food and wine 600, activities 250. That's about 2,400 for two people, which is more than I wanted but the flights are done.",
+        "Algarve plan: base in Lagos, day trips to Sagres and the Ponta da Piedade caves by kayak. Booked the kayak tour for the Tuesday morning before it gets too hot.",
+        "Lisbon must-dos: Time Out Market, the tram to Graça, and a day trip to Sintra. Booking the Pena Palace tickets online because the queue looked brutal on the blog posts.",
+        "August heat is going to be the real issue — planning mornings out and afternoons by the water. Bought two big refillable bottles and a sun hat that doesn't look ridiculous.",
+        "Still need to sort travel insurance and check what the card charges for foreign transactions. Also need to tell work the exact dates, I've only said 'early August' so far."
+      ]
+    },
+    {
+      "slug": "smart-home-lights",
+      "title": "Smart Home Lights",
+      "notes": [
+        "Replaced the last three dumb bulbs with Zigbee ones, all on the same coordinator now. Hue bulbs in the living room and the cheap ones in the hallway, which is a mix but they all pair fine.",
+        "Finally got the motion sensor in the hallway working properly — 2 minutes on, and it doesn't fire during the day if the lux is above 40. Took three attempts to get the lux condition right.",
+        "Automation for sunset: living room lamps fade to 40% warm at sunset minus 15 minutes. It's the first one that actually feels useful instead of a gimmick.",
+        "Zigbee network was flaky in the back bedroom until I moved the coordinator away from the router and added a plug as a repeater. No dropouts for a week now.",
+        "Added a 'goodnight' script that kills all lights except the bedside lamp and dims it to 5%. Bound it to a physical button by the bed so guests can use it too.",
+        "Automation for the bathroom light at night: motion triggers at 10% red instead of full white. Sounds silly but it means I don't get blinded at 3am anymore.",
+        "Backed up the Home Assistant config and the Zigbee database to the NAS after the update scare last month. Should probably put it in git, but the secrets make that annoying.",
+        "Rule to remember: never update Home Assistant the night before a workday. The 2024.8 update broke two automations and I spent an hour rebuilding the sunset one."
+      ]
+    },
+    {
+      "slug": "sleep-tracking",
+      "title": "Sleep Tracking",
+      "notes": [
+        "Wearing the ring for three weeks now and it says my average is 6h 12m, with deep sleep way below what it should be. The numbers are depressing but at least they're consistent.",
+        "Cut caffeine off at 2pm starting Monday and my sleep score went from 68 to 74 by Friday. Not sure if it's the caffeine or just the novelty, giving it another two weeks.",
+        "Bedtime routine: phone in the kitchen at 10:30, ten minutes of reading, lights down to the warm ones. Managed it four nights out of seven, which is better than nothing.",
+        "The wearable keeps flagging my resting heart rate as high on the nights I have a glass of wine. Annoying because it's true. Trying to keep it to weekends.",
+        "Tried a 20-minute nap on Tuesday and felt worse afterwards, groggy for an hour. The tracker says my naps are mostly light sleep, so maybe cutting them to 15 minutes or skipping.",
+        "Bedroom is too warm, 23 degrees according to the sensor. Dropped the thermostat to 19 overnight and the wake-ups went from four to two. Cheap fix, should have done it months ago.",
+        "Comparing the ring against the phone app and they disagree by about 40 minutes on sleep onset. Trusting the ring more, but honestly neither is a medical device so I'm not overthinking it.",
+        "Booked a check-up for the 14th to ask about the snoring Marta mentioned. If it's apnea then none of the caffeine and thermostat stuff matters much."
+      ]
+    }
+  ]
+}

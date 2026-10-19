@@ -1,0 +1,447 @@
+{
+  "summary": {
+    "label": "baseline",
+    "topics": 40,
+    "entries": 216,
+    "runs": 15,
+    "meanPromptTokens": 17306,
+    "meanCompletionTokens": 221,
+    "medianLatencyMs": 982,
+    "latencyRangeMs": [
+      437,
+      1313
+    ],
+    "correct": 13,
+    "duplicates": 0,
+    "failed": 0
+  },
+  "tokensByPart": {
+    "total": 17309,
+    "system": 153,
+    "existingTopics": 13424,
+    "recentEntries": 2349,
+    "newEntries": 90
+  },
+  "results": [
+    {
+      "rep": 0,
+      "probe": "sourdough",
+      "expect": "sourdough-baking",
+      "status": "done",
+      "promptTokens": 17309,
+      "cachedTokens": 17280,
+      "completionTokens": 271,
+      "latencyMs": 1028,
+      "replyOps": [
+        "upsert:sourdough-baking"
+      ],
+      "landed": [
+        "sourdough-baking"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "sourdough-baking 369->511 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "forgejo",
+      "expect": "forgejo-ci-pipelines",
+      "status": "done",
+      "promptTokens": 17306,
+      "cachedTokens": 17280,
+      "completionTokens": 300,
+      "latencyMs": 1011,
+      "replyOps": [
+        "upsert:bun-open-source"
+      ],
+      "landed": [
+        "bun-open-source"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "bun-open-source 466->611 chars"
+      ],
+      "correct": false,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 235
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "marathon",
+      "expect": "marathon-training",
+      "status": "done",
+      "promptTokens": 17304,
+      "cachedTokens": 17280,
+      "completionTokens": 316,
+      "latencyMs": 1060,
+      "replyOps": [
+        "upsert:marathon-training"
+      ],
+      "landed": [
+        "marathon-training"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "marathon-training 469->622 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 239
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "sailing",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 17302,
+      "cachedTokens": 17280,
+      "completionTokens": 86,
+      "latencyMs": 508,
+      "replyOps": [
+        "upsert:dinghy-sailing"
+      ],
+      "landed": [
+        "dinghy-sailing"
+      ],
+      "created": [
+        "dinghy-sailing"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 231
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "beekeeping",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 17308,
+      "cachedTokens": 17280,
+      "completionTokens": 89,
+      "latencyMs": 446,
+      "replyOps": [
+        "upsert:beekeeping"
+      ],
+      "landed": [
+        "beekeeping"
+      ],
+      "created": [
+        "beekeeping"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 1,
+      "probe": "sourdough",
+      "expect": "sourdough-baking",
+      "status": "done",
+      "promptTokens": 17309,
+      "cachedTokens": 17280,
+      "completionTokens": 271,
+      "latencyMs": 979,
+      "replyOps": [
+        "upsert:sourdough-baking"
+      ],
+      "landed": [
+        "sourdough-baking"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "sourdough-baking 369->511 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 1,
+      "probe": "forgejo",
+      "expect": "forgejo-ci-pipelines",
+      "status": "done",
+      "promptTokens": 17306,
+      "cachedTokens": 17280,
+      "completionTokens": 428,
+      "latencyMs": 1313,
+      "replyOps": [
+        "upsert:forgejo-ci-pipelines"
+      ],
+      "landed": [
+        "forgejo-ci-pipelines"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "forgejo-ci-pipelines 785->934 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 235
+      }
+    },
+    {
+      "rep": 1,
+      "probe": "marathon",
+      "expect": "marathon-training",
+      "status": "done",
+      "promptTokens": 17304,
+      "cachedTokens": 17280,
+      "completionTokens": 316,
+      "latencyMs": 1046,
+      "replyOps": [
+        "upsert:marathon-training"
+      ],
+      "landed": [
+        "marathon-training"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "marathon-training 469->622 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 239
+      }
+    },
+    {
+      "rep": 1,
+      "probe": "sailing",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 17302,
+      "cachedTokens": 17280,
+      "completionTokens": 93,
+      "latencyMs": 483,
+      "replyOps": [
+        "upsert:dinghy-sailing-lessons"
+      ],
+      "landed": [
+        "dinghy-sailing-lessons"
+      ],
+      "created": [
+        "dinghy-sailing-lessons"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 231
+      }
+    },
+    {
+      "rep": 1,
+      "probe": "beekeeping",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 17308,
+      "cachedTokens": 17280,
+      "completionTokens": 89,
+      "latencyMs": 495,
+      "replyOps": [
+        "upsert:beekeeping"
+      ],
+      "landed": [
+        "beekeeping"
+      ],
+      "created": [
+        "beekeeping"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 2,
+      "probe": "sourdough",
+      "expect": "sourdough-baking",
+      "status": "done",
+      "promptTokens": 17309,
+      "cachedTokens": 17280,
+      "completionTokens": 271,
+      "latencyMs": 984,
+      "replyOps": [
+        "upsert:sourdough-baking"
+      ],
+      "landed": [
+        "sourdough-baking"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "sourdough-baking 369->511 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 2,
+      "probe": "forgejo",
+      "expect": "forgejo-ci-pipelines",
+      "status": "done",
+      "promptTokens": 17306,
+      "cachedTokens": 17280,
+      "completionTokens": 300,
+      "latencyMs": 982,
+      "replyOps": [
+        "upsert:bun-open-source"
+      ],
+      "landed": [
+        "bun-open-source"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "bun-open-source 466->611 chars"
+      ],
+      "correct": false,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 235
+      }
+    },
+    {
+      "rep": 2,
+      "probe": "marathon",
+      "expect": "marathon-training",
+      "status": "done",
+      "promptTokens": 17304,
+      "cachedTokens": 17280,
+      "completionTokens": 316,
+      "latencyMs": 1065,
+      "replyOps": [
+        "upsert:marathon-training"
+      ],
+      "landed": [
+        "marathon-training"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "marathon-training 469->622 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 239
+      }
+    },
+    {
+      "rep": 2,
+      "probe": "sailing",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 17302,
+      "cachedTokens": 17280,
+      "completionTokens": 87,
+      "latencyMs": 523,
+      "replyOps": [
+        "upsert:dinghy-sailing"
+      ],
+      "landed": [
+        "dinghy-sailing"
+      ],
+      "created": [
+        "dinghy-sailing"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 231
+      }
+    },
+    {
+      "rep": 2,
+      "probe": "beekeeping",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 17308,
+      "cachedTokens": 17280,
+      "completionTokens": 89,
+      "latencyMs": 437,
+      "replyOps": [
+        "upsert:beekeeping"
+      ],
+      "landed": [
+        "beekeeping"
+      ],
+      "created": [
+        "beekeeping"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 682,
+        "existingTopics": 41465,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    }
+  ]
+}
