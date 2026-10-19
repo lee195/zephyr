@@ -1,7 +1,7 @@
 import { inputSchema, OPS, parseAdjustment } from './adjust'
 import type { Adjustment } from './domain'
 import { sanitizeSlug } from './kinds'
-import { topicsIn } from './kinds/organizer'
+import { MAX_REWRITE_CHARS, topicsIn } from './kinds/organizer'
 import type { Zephyr } from './zephyr'
 
 /** The newest first; an initialize asking for another gets the newest. */
@@ -93,6 +93,15 @@ function tools(z: Zephyr): Tool[] {
         if (typeof args.questionId !== 'string' || typeof args.answer !== 'string') return toolError('questionId and answer must be strings')
         const answered = await z.answerQuestion(args.questionId, args.answer)
         return answered.ok ? result(answered) : toolError(answered.error)
+      },
+    },
+    {
+      name: 'rewrite_touched_topics',
+      description: `Rewrite every topic that cites a note since the last review as one coherent page from its notes. Queues the rewrites and returns the slugs queued; a topic whose body and notes exceed ${MAX_REWRITE_CHARS} characters is not rewritten and is listed in overCap.`,
+      inputSchema: noArgs,
+      async call() {
+        const done = await z.rewriteTouched()
+        return done.ok ? result({ queued: done.queued, overCap: done.overCap }) : toolError(done.error)
       },
     },
     {

@@ -69,9 +69,12 @@ function unfiledIn(runs: readonly Run[], ids: ReadonlySet<EntryId>): Map<string,
   return last
 }
 
+/** The notes the server received in the window, in entry order. */
+export const windowNotes = (entries: readonly Entry[], since: string | null, until: string) => entries.filter((e) => inWindow(e.receivedAt, since, until))
+
 /** `runs` are every finished run, oldest first, as runs.jsonl holds them. */
 export function buildDigest(entries: readonly Entry[], views: readonly View[], runs: readonly Run[], since: string | null, until: string, questions: QuestionView[]): Digest {
-  const notes = entries.filter((e) => inWindow(e.receivedAt, since, until)).map((e) => e.id)
+  const notes = windowNotes(entries, since, until).map((e) => e.id)
   const inNotes = new Set(notes)
   const order = new Map(notes.map((id, i) => [id, i]))
   const topicViews = views.filter((v) => v.kind === TOPIC_KIND).sort(bySlug)

@@ -1,5 +1,5 @@
 import { adapters } from './adapters'
-import { effectiveEntries, OPS, planAdjustment, relatedFixes, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
+import { effectiveEntries, OPS, planAdjustment, planRewrites, relatedFixes, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
 import { hintsFor, type HintReply } from './hints'
@@ -24,8 +24,9 @@ import {
   type ZephyrEvent,
 } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
+import { topicsIn } from './kinds/organizer'
 import { relevanceBackends, type Compaction, type RelevanceBackend, type RelevanceDoc } from './relevance'
-import { buildDigest, closeWindow, type Digest, type WindowClose } from './review'
+import { buildDigest, closeWindow, windowNotes, type Digest, type WindowClose } from './review'
 import { Store } from './store'
 import { Tailer } from './tailer'
 
@@ -286,6 +287,22 @@ export class Zephyr {
   async review(): Promise<Digest> {
     const until = this.stamp()
     return buildDigest(this.entries, this.listViews(), (await this.store.loadRuns()) ?? [], this.lastReviewedAt, until, this.listQuestions())
+  }
+
+  /**
+   * Marks every topic that cites a note received since the last review stale, on the organizer's queue like an
+   * adjustment, so the rewrite runs rewrite each from its notes. A topic over the rewrite cap is left as it is.
+   */
+  async rewriteTouched(): Promise<{ ok: true; queued: string[]; overCap: string[] } | { ok: false; error: string }> {
+    if (!this.kinds.organizer) return { ok: false, error: 'no organizer kind runs on this server' }
+    return this.step('organizer', async () => {
+      const window = new Set(windowNotes(this.entries, this.lastReviewedAt, this.stamp()).map((e) => e.id))
+      const touched = topicsIn(this.listViews()).filter((v) => v.sources.some((id) => window.has(id)))
+      const plan = planRewrites(touched, this.adjustState())
+      await this.applyOutcome('rewrite-touched', plan)
+      const queued = plan.writes.map((w) => w.write.slug)
+      return { ok: true as const, queued, overCap: touched.map((v) => v.slug).filter((slug) => !queued.includes(slug)) }
+    })
   }
 
   /** Moves the cursor to the until of the digest the review covered, so notes received since then stay unreviewed. */

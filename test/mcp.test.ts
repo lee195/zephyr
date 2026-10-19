@@ -1,34 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Adjustment } from '../src/domain'
-import { serve } from '../src/server'
 import type { Zephyr } from '../src/zephyr'
-import { ALL, started } from './desk'
-import { tempDir } from './helpers'
-
-async function withMcp(kinds?: NonNullable<Parameters<typeof started>[0]>['kinds']) {
-  const s = await started({ kinds })
-  const server = serve(s.z, { port: 0, distDir: await tempDir() })
-  const base = `http://127.0.0.1:${server.port}`
-  let id = 0
-  const rpc = async (method: string, params?: unknown) => {
-    const res = await fetch(`${base}/mcp`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, ...(params !== undefined && { params }) }),
-    })
-    return res.json() as Promise<any>
-  }
-  const call = async (name: string, args: Record<string, unknown> = {}) => {
-    const { result } = await rpc('tools/call', { name, arguments: args })
-    await s.z.idle()
-    return result as { content: { type: string; text: string }[]; isError?: true }
-  }
-  const close = () => {
-    server.stop(true)
-    s.z.stop()
-  }
-  return { ...s, base, rpc, call, close }
-}
+import { ALL, started, withMcp } from './desk'
 
 const NOTES = ['party: venue', 'party: cake', 'party: budget', 'party: todo buy cake', 'garden: beans', 'trip: train', 'camping: tent', 'garden: flowers, cite e2']
 
@@ -81,6 +54,7 @@ test('tools/list offers the review tools and one tool per op, each schema requir
     expect([...byName.keys()].sort()).toEqual(
       [
         'get_review', 'finish_review', 'list_topics', 'get_topic', 'search_notes', 'get_purge', 'list_questions', 'answer_question',
+        'rewrite_touched_topics',
         'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task', 'link_topics', 'unlink_topics', 'purge_note',
       ].sort(),
     )

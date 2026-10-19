@@ -243,7 +243,7 @@ export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySe
 
 const REWRITE_REASON = {
   log: 'The page grew by appending a section per note and now reads like a log.',
-  stale: "The person changed the page's notes: some were moved to another page, edited, removed, or merged in from another page. The body may still say what the notes no longer support.",
+  stale: "The person changed the page's notes, or asked for the page to be rewritten from them: some may have been moved to another page, edited, removed, or merged in from another page. The body may still say what the notes no longer support.",
 }
 
 const rewriteSystem = (reason: string) => `You rewrite one topic page of a person's notes. ${reason}

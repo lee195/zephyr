@@ -331,6 +331,12 @@ function splitTopic(a: Extract<Adjustment, { op: 'splitTopic' }>, s: AdjustState
   return { ok: true, writes, deletes: [], warnings: t.warnings }
 }
 
+/** Each topic marked stale, so a rewrite run rewrites its body from its notes; one too big to rewrite gets a warning instead. */
+export function planRewrites(topics: readonly View[], s: AdjustState): Extract<Outcome, { ok: true }> {
+  const t = new Topics(s)
+  return { ok: true, writes: topics.map((v) => t.changed(v, {})).filter((w) => w.own.bodyStale), deletes: [], warnings: t.warnings }
+}
+
 /** Tasks are not re-run on the new text: the person edits them directly. */
 function editNote(a: Extract<Adjustment, { op: 'editNote' }>, s: AdjustState): Outcome {
   const note = live(s, a.noteId)

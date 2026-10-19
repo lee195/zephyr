@@ -1,5 +1,6 @@
 import type { Adjustment, ChatMessage, ModelBackend } from '../src/domain'
 import { kinds } from '../src/kinds'
+import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
 import { entry, gate, payloadOf, tempDir } from './helpers'
 
@@ -75,3 +76,29 @@ export async function started(opts: { dir?: string; kinds?: typeof ALL | { organ
   return { z, d, dir, note, view, adjust }
 }
 
+
+/** A started desk behind a server on a free port, with JSON-RPC over its /mcp route. A call waits until the server is idle. */
+export async function withMcp(kinds?: NonNullable<Parameters<typeof started>[0]>['kinds']) {
+  const s = await started({ kinds })
+  const server = serve(s.z, { port: 0, distDir: await tempDir() })
+  const base = `http://127.0.0.1:${server.port}`
+  let id = 0
+  const rpc = async (method: string, params?: unknown) => {
+    const res = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, ...(params !== undefined && { params }) }),
+    })
+    return res.json() as Promise<any>
+  }
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const { result } = await rpc('tools/call', { name, arguments: args })
+    await s.z.idle()
+    return result as { content: { type: string; text: string }[]; isError?: true }
+  }
+  const close = () => {
+    server.stop(true)
+    s.z.stop()
+  }
+  return { ...s, base, rpc, call, close }
+}
