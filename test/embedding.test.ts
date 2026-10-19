@@ -2,7 +2,7 @@ import { readdir } from 'node:fs/promises'
 import { expect, spyOn, test } from 'bun:test'
 import { embeddingBackend } from '../src/embedding'
 import { hintsFor } from '../src/hints'
-import { eventually, fakeEmbeddings, tempDir } from './helpers'
+import { entry, eventually, fakeEmbeddings, tempDir } from './helpers'
 
 const docs = [
   { id: 'A', text: 'aaa' },
@@ -118,7 +118,7 @@ test('a model with no measured threshold warns once, when built, and gives no hi
   try {
     const b = backend(await tempDir(), fakeEmbeddings().fetch, 'unmeasured')
     await b.prepare!(docs)
-    const entries = docs.map((d) => ({ ...d, harness: 'claude-code', sessionId: 's', at: '2026-10-19T08:00:00Z' }))
+    const entries = docs.map((d) => entry(d.id, d.text))
     const reply = await hintsFor('aab aab', 5, entries, [], b)
     await hintsFor('aab aab', 5, entries, [], b)
     expect(reply).toMatchObject({ backend: 'embedding-unmeasured', hints: [] })

@@ -6,6 +6,7 @@ import type { ChatMessage, Entry, ModelBackend } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
+import { entry } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -13,8 +14,6 @@ class OrganizerOnly extends Zephyr {
     super({ kinds: { organizer: kinds.organizer! }, ...opts })
   }
 }
-
-const entry = (id: string, text = id): Entry => ({ id, harness: 'claude-code', sessionId: 's', at: '2026-10-19T00:00:00Z', text })
 
 const noteRow = (uuid: string, text: string) =>
   JSON.stringify({ type: 'user', isMeta: true, uuid, timestamp: '2026-10-19T00:00:00Z', sessionId: 's1', message: { role: 'user', content: [{ type: 'text', text: `[zephyr] ${text}` }] } }) + '\n'

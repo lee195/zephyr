@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { organizerMessages, validateOps, type ReplyContext } from '../src/kinds/organizer'
+import { entry } from './helpers'
 
 const organizer = { validate: validateOps, buildMessages: organizerMessages }
 const ctx: ReplyContext = { knownIds: new Set(['e1', 'e2']), existingSlugs: new Set(), openSlugs: new Set() }
@@ -63,7 +64,6 @@ test('a topic written earlier in the same reply can be appended to', () => {
 })
 
 test('the prompt shows open topics in full and every other topic as one index line', () => {
-  const entry = (id: string, text: string) => ({ id, harness: 'claude-code', sessionId: 's', at: 't', text })
   const view = (slug: string, body: string, sources: string[]) => ({ id: `organizer/${slug}`, kind: 'organizer', slug, title: slug.toUpperCase(), sources, format: 'md' as const, body, updatedAt: 't' })
   const messages = organizer.buildMessages(
     [entry('e3', 'new thing')],
