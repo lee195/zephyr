@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { doneRun, entry, gate, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, gate, payloadOf, seedDataDir, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -23,8 +23,7 @@ function fakeBackend() {
   const held = gate()
   const backend: ModelBackend = {
     async complete(messages: ChatMessage[]) {
-      const payload = JSON.parse(messages.at(-1)!.content)
-      const ids: string[] = payload.newEntries.map((e: any) => e.id)
+      const ids: string[] = payloadOf(messages).newEntries.map((e: any) => e.id)
       calls.push(ids)
       await held.pass()
       return { json: { ops: [{ op: 'write', slug: 'all', title: 'All', sources: ids, body: ids.join(',') }] } }
@@ -140,7 +139,7 @@ test('a retry never merges with new work of another attempt; work of the same at
   const calls: string[][] = []
   const backend: ModelBackend = {
     async complete(messages) {
-      const ids: string[] = JSON.parse(messages.at(-1)!.content).newEntries.map((e: any) => e.id)
+      const ids: string[] = payloadOf(messages).newEntries.map((e: any) => e.id)
       calls.push(ids)
       await new Promise<void>((r) => gates.push(r))
       if (calls.length === 1) throw new Error('boom')
