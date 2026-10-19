@@ -12,13 +12,14 @@
  * so each part's token count is a measured difference, not a chars-per-token estimate.
  */
 import { createHash } from 'node:crypto'
-import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { backends, chatCompletion } from '../src/backends'
 import { parseConfig } from '../src/config'
 import type { ChatMessage, Entry, ModelBackend, Usage } from '../src/domain'
+import { Store } from '../src/store'
 import { Zephyr } from '../src/zephyr'
 
 interface Probe {
@@ -66,16 +67,14 @@ async function buildFixture(subjects: Subject[]): Promise<string> {
       sourcesBySlug.set(s.slug, [...(sourcesBySlug.get(s.slug) ?? []), id])
     })
   }
-  await writeFile(join(dir, 'entries.jsonl'), entries.map((e) => JSON.stringify(e) + '\n').join(''))
+  const store = new Store(dir)
+  await store.init()
+  await store.appendEntries(entries)
   const now = at(entries.length)
-  await writeFile(join(dir, 'runs.jsonl'), JSON.stringify({ id: 'fixture', kind: 'organizer', entryIds: entries.map((e) => e.id), status: 'done', attempt: 1, startedAt: now, endedAt: now }) + '\n')
-  const viewDir = join(dir, 'views', 'organizer')
-  await mkdir(viewDir, { recursive: true })
+  await store.appendRun({ id: 'fixture', kind: 'organizer', entryIds: entries.map((e) => e.id), status: 'done', attempt: 1, startedAt: now, endedAt: now })
   for (const [i, s] of subjects.entries()) {
     const body = s.notes.slice(0, notesPer[i]).map((n) => `- ${n}`).join('\n')
-    const meta = { id: `organizer/${s.slug}`, kind: 'organizer', slug: s.slug, title: s.title, sources: sourcesBySlug.get(s.slug), format: 'md', updatedAt: now }
-    await writeFile(join(viewDir, `${s.slug}.md`), body)
-    await writeFile(join(viewDir, `${s.slug}.json`), JSON.stringify(meta, null, 2))
+    await store.writeView({ id: `organizer/${s.slug}`, kind: 'organizer', slug: s.slug, title: s.title, sources: sourcesBySlug.get(s.slug)!, format: 'md', body, updatedAt: now })
   }
   return dir
 }

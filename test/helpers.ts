@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ChatMessage, Entry, ModelBackend, View } from '../src/domain'
+import type { ChatMessage, Entry, ModelBackend, Run, View } from '../src/domain'
+import { Store } from '../src/store'
 
 export const entry = (id: string, text = id, at = '2026-10-19T09:00:00Z'): Entry => ({ id, harness: 'claude-code', sessionId: 's', at, text })
 
@@ -16,18 +17,14 @@ export async function eventually(check: () => boolean | Promise<boolean>, ms = 3
   throw new Error('condition not met in time')
 }
 
-/** A data dir holding these entries, these finished runs, and these views on disk. */
+/** A data dir holding these entries, these finished runs, and these views, as the store writes them. No runs: a data dir from before runs.jsonl. */
 export async function seedDataDir(opts: { entries: Entry[]; runs?: object[]; views?: Omit<View, 'id'>[] }) {
   const dir = await tempDir()
-  await writeFile(join(dir, 'entries.jsonl'), opts.entries.map((e) => JSON.stringify(e) + '\n').join(''))
-  await writeFile(join(dir, 'runs.jsonl'), (opts.runs ?? []).map((r) => JSON.stringify(r) + '\n').join(''))
-  for (const v of opts.views ?? []) {
-    const ext = { md: 'md', svg: 'svg', ascii: 'txt' }[v.format]
-    await mkdir(join(dir, 'views', v.kind), { recursive: true })
-    const { body, ...meta } = v
-    await writeFile(join(dir, 'views', v.kind, `${v.slug}.${ext}`), body)
-    await writeFile(join(dir, 'views', v.kind, `${v.slug}.json`), JSON.stringify({ id: `${v.kind}/${v.slug}`, ...meta }))
-  }
+  const store = new Store(dir)
+  await store.init()
+  await store.appendEntries(opts.entries)
+  for (const r of opts.runs ?? []) await store.appendRun(r as Run)
+  for (const v of opts.views ?? []) await store.writeView({ id: `${v.kind}/${v.slug}`, ...v })
   return dir
 }
 

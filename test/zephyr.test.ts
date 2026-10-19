@@ -1,11 +1,11 @@
-import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
-import type { ChatMessage, Entry, ModelBackend } from '../src/domain'
+import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { entry, tempDir } from './helpers'
+import { entry, seedDataDir, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -73,6 +73,9 @@ test('entries arriving during a run coalesce into exactly one next run', async (
 })
 
 const fastRetries = [1, 1, 1]
+
+/** An organizer topic on disk, titled after its slug. */
+const topic = (slug: string, sources: string[], body: string): Omit<View, 'id'> => ({ kind: 'organizer', slug, title: slug.toUpperCase(), sources, format: 'md', body, updatedAt: 't' })
 
 const runLines = async (dir: string) =>
   (await readFile(join(dir, 'runs.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
@@ -204,22 +207,15 @@ test('a note the reply skipped is retried like a failed run, and stays unorganiz
   expect(fake.calls).toEqual([['e2']])
 })
 
-async function seedDataDir(entries: Entry[], runs?: object[]) {
-  const dir = await tempDir()
-  await writeFile(join(dir, 'entries.jsonl'), entries.map((e) => JSON.stringify(e) + '\n').join(''))
-  if (runs) await writeFile(join(dir, 'runs.jsonl'), runs.map((r) => JSON.stringify(r) + '\n').join(''))
-  return dir
-}
-
 test('on start, entries not covered by a done run are queued and covered ones are not', async () => {
-  const dir = await seedDataDir(
-    [entry('e1'), entry('e2'), entry('e3')],
-    [
+  const dir = await seedDataDir({
+    entries: [entry('e1'), entry('e2'), entry('e3')],
+    runs: [
       { id: 'r1', kind: 'organizer', entryIds: ['e1'], status: 'done', attempt: 1 },
       { id: 'r2', kind: 'organizer', entryIds: ['e2'], status: 'failed', attempt: 4, error: 'x' },
       { id: 'r3', kind: 'other', entryIds: ['e3'], status: 'done', attempt: 1 },
     ],
-  )
+  })
   const fake = fakeBackend()
   const z = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
   await z.start()
@@ -229,11 +225,7 @@ test('on start, entries not covered by a done run are queued and covered ones ar
 })
 
 test('a data dir without runs.jsonl treats entries its views cite as organized, once and for good', async () => {
-  const dir = await seedDataDir([entry('e1'), entry('e2')])
-  await mkdir(join(dir, 'views/organizer'), { recursive: true })
-  await writeFile(join(dir, 'views/organizer/a.md'), 'e1')
-  const meta = { id: 'organizer/a', kind: 'organizer', slug: 'a', title: 'A', sources: ['e1'], format: 'md', updatedAt: 't' }
-  await writeFile(join(dir, 'views/organizer/a.json'), JSON.stringify(meta))
+  const dir = await seedDataDir({ entries: [entry('e1'), entry('e2')], views: [topic('a', ['e1'], 'e1')] })
 
   const fake = fakeBackend()
   const z = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
@@ -250,7 +242,7 @@ test('a data dir without runs.jsonl treats entries its views cite as organized, 
 
 test('a data dir without runs.jsonl or views organizes every entry', async () => {
   const fake = fakeBackend()
-  const z = new OrganizerOnly({ dataDir: await seedDataDir([entry('e1'), entry('e2')]), backend: fake.backend })
+  const z = new OrganizerOnly({ dataDir: await seedDataDir({ entries: [entry('e1'), entry('e2')] }), backend: fake.backend })
   await z.start()
   await z.idle()
   expect(fake.calls).toEqual([['e1', 'e2']])
@@ -323,15 +315,6 @@ test('a note whose entry append failed is re-read from its transcript and kept',
   expect(z.listViews().map((v) => v.sources)).toEqual([['n1']])
 })
 
-async function seedViews(dir: string, views: { slug: string; sources: string[]; body: string }[]) {
-  await mkdir(join(dir, 'views/organizer'), { recursive: true })
-  for (const v of views) {
-    await writeFile(join(dir, `views/organizer/${v.slug}.md`), v.body)
-    const meta = { id: `organizer/${v.slug}`, kind: 'organizer', slug: v.slug, title: v.slug.toUpperCase(), sources: v.sources, format: 'md', updatedAt: 't' }
-    await writeFile(join(dir, `views/organizer/${v.slug}.json`), JSON.stringify(meta))
-  }
-}
-
 /** Replies with the given ops for every call, and keeps the messages it was sent. */
 function scripted(ops: object[]) {
   const sent: ChatMessage[][] = []
@@ -345,10 +328,12 @@ function scripted(ops: object[]) {
 }
 
 /** A data dir where e1 and e2 are organized into topic "a", and e3 is waiting to be organized. */
-async function organizedDir() {
-  const dir = await seedDataDir([entry('e1'), entry('e2'), entry('e3')], [{ id: 'r1', kind: 'organizer', entryIds: ['e1', 'e2'], status: 'done', attempt: 1 }])
-  await seedViews(dir, [{ slug: 'a', sources: ['e1', 'e2'], body: 'First section.\n' }])
-  return dir
+function organizedDir() {
+  return seedDataDir({
+    entries: [entry('e1'), entry('e2'), entry('e3')],
+    runs: [{ id: 'r1', kind: 'organizer', entryIds: ['e1', 'e2'], status: 'done', attempt: 1 }],
+    views: [topic('a', ['e1', 'e2'], 'First section.\n')],
+  })
 }
 
 test('append adds a section to an existing topic and unions its sources', async () => {
@@ -391,11 +376,13 @@ function fixedRelevance(scores: Record<string, number>) {
 }
 
 /** Five topics a..e over e1..e5, and e6 waiting to be organized. */
-async function fiveTopicDir() {
+function fiveTopicDir() {
   const ids = ['e1', 'e2', 'e3', 'e4', 'e5']
-  const dir = await seedDataDir([...ids, 'e6'].map((id) => entry(id, `text of ${id}`)), [{ id: 'r1', kind: 'organizer', entryIds: ids, status: 'done', attempt: 1 }])
-  await seedViews(dir, ['a', 'b', 'c', 'd', 'e'].map((slug, i) => ({ slug, sources: [ids[i]!], body: `body of ${slug}` })))
-  return dir
+  return seedDataDir({
+    entries: [...ids, 'e6'].map((id) => entry(id, `text of ${id}`)),
+    runs: [{ id: 'r1', kind: 'organizer', entryIds: ids, status: 'done', attempt: 1 }],
+    views: ['a', 'b', 'c', 'd', 'e'].map((slug, i) => topic(slug, [ids[i]!], `body of ${slug}`)),
+  })
 }
 
 const scores = { 'organizer/e': 0.9, 'organizer/c': 0.7, 'organizer/a': 0.5, 'organizer/b': 0.3, 'organizer/d': 0.1 }
