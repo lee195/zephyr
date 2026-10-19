@@ -130,6 +130,8 @@ export interface TranscriptAdapter {
   harness: Harness
   /** The rows written after `offset`, and the offset the next read resumes from. Rows may repeat across reads. */
   read(transcriptPath: string, sessionId: string, offset: number): Promise<Batch>
+  /** Where in the transcript a row is, in words a person can act on. */
+  locate(transcriptPath: string, sessionId: string, rowId: string): string
 }
 
 export const isNote = (row: Row) => row.role === 'user' && row.text.startsWith(NOTE_MARKER)
@@ -211,7 +213,9 @@ export interface AgentKind {
  * - moveNote: off `from`, onto `to`, which does not cite it yet. detachNote: off `from`, staying on `to`, which
  *   already cites it. Neither may leave `from` without notes, so a note is never left on no topic.
  * - splitTopic: `noteIds`, some but not all of the topic's notes, become the new topic `into`.
- * - editNote and tombstoneNote are overlays on entries.jsonl, which is never rewritten.
+ * - editNote and tombstoneNote are overlays on entries.jsonl.
+ * - purgeNote is the one op that rewrites entries.jsonl: it removes the note and its words from the data dir.
+ *   `confirm` must be exactly `purge <noteId>`.
  */
 export type Adjustment =
   | { op: 'renameTopic'; slug: string; title: string }
@@ -224,6 +228,7 @@ export type Adjustment =
   | { op: 'editTask'; taskId: TaskId; text?: string; due?: string | null }
   | { op: 'completeTask'; taskId: TaskId }
   | { op: 'deleteTask'; taskId: TaskId }
+  | { op: 'purgeNote'; noteId: EntryId; confirm: string }
 
 export type AdjustmentResult =
   | {
@@ -236,8 +241,24 @@ export type AdjustmentResult =
       rewrites: string[]
       /** What the op could not do and the person should know, such as a page too big to rewrite. */
       warnings: string[]
+      purge?: PurgeReport
     }
   | { id: string; ok: false; error: string }
+
+/**
+ * What a purge removed before its result returned. The topics in the result's `rewrites` hold none of the note's
+ * words already; their rewrite, still queued, makes them read whole again and catches paraphrase.
+ */
+export interface PurgeReport {
+  noteId: EntryId
+  tasksDeleted: TaskId[]
+  historyFilesDeleted: number
+  /** Records rewritten or dropped per file. */
+  lines: { entries: number; adjustments: number; runs: number }
+  /** Where the note's text still is, outside Zephyr's data. */
+  stillIn: string
+  status: string
+}
 
 /**
  * A line of adjustments.jsonl. The request is logged before the op applies and the result after, so a request with

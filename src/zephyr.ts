@@ -1,5 +1,6 @@
 import { adapters } from './adapters'
 import { effectiveEntries, OPS, planAdjustment, withoutTombstoned, type NoteChange, type Outcome, type Overlay } from './adjust'
+import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
 import { hintsFor, type HintReply } from './hints'
 import {
   isNote,
@@ -11,6 +12,7 @@ import {
   type Entry,
   type EntryId,
   type ModelBackend,
+  type PurgeReport,
   type Run,
   type Session,
   type View,
@@ -83,8 +85,18 @@ export class Zephyr {
   private overlay: Overlay = { edits: new Map(), tombstoned: new Set() }
   /** The raw entries with the overlay applied: what every kind, hint and ranking reads. */
   private entries: Entry[] = []
-  /** Raw ids, tombstoned ones included, so a tombstoned note re-read from its transcript stays out. */
+  /** Raw ids, tombstoned and purged ones included, so a note re-read from its transcript stays out. */
   private entryIds = new Set<EntryId>()
+  /** Ids of purged notes, persisted in purged.json and loaded before any transcript is read. */
+  private purged = new Set<EntryId>()
+  /**
+   * Purged notes whose purge has not finished, as entries.jsonl still holds them: kept out of raw, so no kind sees
+   * them, and held only so the purge knows which words to scrub, including a purge a crash interrupted.
+   */
+  private purging = new Map<EntryId, Entry>()
+  /** Purges run one at a time; this is the last one queued. */
+  private purgeChain: Promise<unknown> = Promise.resolve()
+  private purgesInFlight = new Set<Promise<unknown>>()
   private adjustSeq = 0
   /** Ids whose append is in flight. Tailers run concurrently, and two can read the same rows: a re-registered session's old poke is not aborted. */
   private appending = new Set<EntryId>()
@@ -122,11 +134,14 @@ export class Zephyr {
   async start() {
     await this.store.init()
     this.lastReviewedAt = await this.store.loadReviewCursor()
+    this.purged = new Set(await this.store.loadPurged())
     for (const e of await this.store.loadEntries()) {
       if (this.entryIds.has(e.id)) continue
       this.entryIds.add(e.id)
-      this.raw.push(e)
+      if (this.purged.has(e.id)) this.purging.set(e.id, e)
+      else this.raw.push(e)
     }
+    for (const id of this.purged) this.entryIds.add(id)
     const interrupted = this.foldAdjustments(await this.store.loadAdjustments())
     this.entries = effectiveEntries(this.raw, this.overlay)
     for (const v of await this.store.loadViews()) this.views.set(v.id, v)
@@ -134,8 +149,11 @@ export class Zephyr {
     this.runs = (finished ?? []).slice(-RUN_HISTORY)
     // Queued before any run, so on each queue they go first.
     for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
-    for (const line of interrupted)
-      this.applyLogged(line.id, line.adjustment).catch((err) => console.error(`[zephyr] could not apply interrupted ${line.id}: ${(err as Error).message}`))
+    for (const line of interrupted) {
+      const applied = this.applyLogged(line.id, line.adjustment).catch((err) => console.error(`[zephyr] could not apply interrupted ${line.id}: ${(err as Error).message}`))
+      // A purge finishes before any run is queued or any view derived, so no run is shown the words it still has to scrub.
+      if (line.adjustment.op === 'purgeNote') await applied
+    }
     for (const kind of this.entryKinds()) {
       const covered = finished ? doneEntryIds(finished, kind.kind) : await this.migrateCoverage(kind.kind)
       const uncovered = this.entries.filter((e) => !covered.has(e.id)).map((e) => e.id)
@@ -361,10 +379,10 @@ export class Zephyr {
     }
   }
 
-  /** Resolves once every kind's queue has drained and no retry is still scheduled. */
+  /** Resolves once every kind's queue has drained, no retry is still scheduled, and no purge is running. */
   async idle() {
     while (true) {
-      const pending = [...[...this.queues.values()].map((q) => q.draining), ...[...this.retries].map((r) => r.done)].filter(Boolean)
+      const pending = [...[...this.queues.values()].map((q) => q.draining), ...[...this.retries].map((r) => r.done), ...this.purgesInFlight].filter(Boolean)
       if (pending.length === 0) return
       await Promise.all(pending)
     }
@@ -528,11 +546,12 @@ export class Zephyr {
   }
 
   private applyLogged(id: string, adjustment: Adjustment): Promise<AdjustmentResult> {
-    const owner = OPS[adjustment.op].owner
     const finish = async (result: AdjustmentResult) => {
       await this.store.appendAdjustment({ type: 'result', id, result })
       return result
     }
+    if (adjustment.op === 'purgeNote') return this.onePurgeAtATime(() => this.purge(id, adjustment.noteId)).then(finish)
+    const owner = OPS[adjustment.op].owner!
     if (!this.kinds[owner]) return finish({ id, ok: false, error: `no ${owner} kind runs on this server` })
     return this.step(owner, async () => {
       const outcome = planAdjustment(adjustment, { entries: this.entries, views: this.listViews(), tombstoned: this.overlay.tombstoned })
@@ -560,6 +579,123 @@ export class Zephyr {
     }
     if (o.note || o.writes.length > 0 || o.deletes.length > 0) for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
     return { id, ok: true, written: o.writes.map((w) => `${w.kind}/${w.write.slug}`), deleted: o.deletes, rewrites, warnings: o.warnings }
+  }
+
+  private onePurgeAtATime<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.purgeChain.then(fn)
+    const settled = run.catch(() => {})
+    this.purgeChain = settled
+    this.purgesInFlight.add(settled)
+    void settled.then(() => this.purgesInFlight.delete(settled))
+    return run
+  }
+
+  /**
+   * Removes a note from the data dir, in an order a crash can resume from: the id is suppressed first, so no
+   * transcript re-read brings the note back; then each kind's views are scrubbed on its own queue, after any run in
+   * flight that may have seen the note, topics before the diagrams drawn from them; then the archived bodies, the run
+   * log and the embeddings cache; then the adjustment log, which holds the note's edited texts; and entries.jsonl,
+   * which holds its text, last. Every step reads only sources a later step removes, so a re-run after a crash at any
+   * point finds the words it still has to scrub. Topic bodies are scrubbed of the note's words at once; their
+   * rewrite, a model call, is queued and reported as pending.
+   */
+  private async purge(id: string, noteId: EntryId): Promise<AdjustmentResult> {
+    const note = this.raw.find((e) => e.id === noteId) ?? this.purging.get(noteId)
+    if (!note && !this.purged.has(noteId)) return { id, ok: false, error: `no note ${noteId}` }
+    if (!this.purged.has(noteId)) {
+      this.purged.add(noteId)
+      await this.store.savePurged([...this.purged])
+    }
+    this.entryIds.add(noteId)
+    if (note) this.purging.set(noteId, note)
+    if (this.raw.some((e) => e.id === noteId)) {
+      this.raw = this.raw.filter((e) => e.id !== noteId)
+      this.entries = effectiveEntries(this.raw, this.overlay)
+      this.emit({ type: 'removed', data: { of: 'entry', id: noteId } })
+    }
+    this.overlay.edits.delete(noteId)
+    this.overlay.tombstoned.delete(noteId)
+
+    const edited = (await this.store.loadAdjustments()).flatMap((l) => (l.type === 'request' && l.adjustment.op === 'editNote' && l.adjustment.noteId === noteId ? [l.adjustment.text] : []))
+    const scrubber = scrubberFor([...(note ? [note.text] : []), ...edited], this.entries)
+    const done = { written: [] as string[], deleted: [] as string[], rewrites: [] as string[], warnings: [] as string[], tasksDeleted: [] as string[] }
+    const derivedLast = Object.values(this.kinds).sort((a, b) => Number(a.trigger.on === 'view') - Number(b.trigger.on === 'view'))
+    for (const kind of derivedLast) await this.step(kind.kind, () => this.purgeViews((v) => v.kind === kind.kind, noteId, scrubber, done))
+    await this.purgeViews((v) => !this.kinds[v.kind], noteId, scrubber, done)
+    for (const viewId of done.rewrites) {
+      const kind = viewId.slice(0, viewId.indexOf('/'))
+      if (this.kinds[kind] && !this.busy(kind, viewId)) this.enqueue(kind, { viewId })
+    }
+    const slugs = this.listViews().filter((v) => [v.slug, ...(v.pins?.aliases ?? [])].some(scrubber.slugHits)).length
+    if (slugs > 0) done.warnings.push(`${slugs} view slugs or aliases contain the note's words; a slug is a page's id and file name, so it stays`)
+
+    const historyFilesDeleted = await this.store.deleteHistoryWhere(scrubber.hits)
+    // In place: queues hold these same objects and keep updating them.
+    for (const r of this.runs) if (scrubber.hits(JSON.stringify(r))) Object.assign(r, scrubDeep(r, scrubber))
+    const runs = await this.store.rewriteRuns((r) => scrubDeep(r, scrubber))
+    await this.relevance.compact?.(this.relevantDocs()).catch((err) => console.warn(`[zephyr] purge: embeddings cache compaction failed: ${(err as Error).message}`))
+    const adjustments = await this.store.rewriteAdjustments((l) => scrubDeep(l, scrubber))
+    const entries = await this.store.rewriteEntries((e) => (e.id === noteId ? null : e))
+    this.purging.delete(noteId)
+    for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
+
+    const report: PurgeReport = {
+      noteId,
+      tasksDeleted: done.tasksDeleted,
+      historyFilesDeleted,
+      lines: { entries, adjustments, runs },
+      stillIn: this.harnessCopy(note),
+      status: `GET /api/purge/${noteId} reports when the queued rewrites are done`,
+    }
+    return { id, ok: true, written: done.written, deleted: done.deleted, rewrites: done.rewrites, warnings: done.warnings, purge: report }
+  }
+
+  /** Applies purgeView to every view the filter takes, deleting rather than archiving, since an archive would keep the words. */
+  private async purgeViews(which: (v: View) => boolean, noteId: EntryId, scrubber: Scrubber, done: { written: string[]; deleted: string[]; rewrites: string[]; warnings: string[]; tasksDeleted: string[] }) {
+    for (const v of this.listViews().filter(which)) {
+      const p = purgeView(v, noteId, scrubber, this.entries)
+      if (p.op === 'keep') continue
+      if (p.op === 'drop') {
+        await this.store.deleteView(v)
+        await this.store.deleteHistory(v)
+        this.views.delete(v.id)
+        this.emit({ type: 'removed', data: { of: 'view', id: v.id } })
+        done.deleted.push(v.id)
+        continue
+      }
+      const view: View = { ...p.view, updatedAt: this.stamp() }
+      await this.store.writeView(view)
+      this.views.set(view.id, view)
+      this.prepareRelevance(this.kinds[view.kind]?.relevanceDocs?.([view]) ?? [])
+      this.emit({ type: 'view', data: view })
+      this.deriveFrom(view)
+      done.written.push(view.id)
+      done.tasksDeleted.push(...p.tasksDeleted)
+      if (p.rewrite) done.rewrites.push(view.id)
+      else if (view.kind === 'organizer') done.warnings.push(`topic ${view.slug} is over the rewrite cap: the note's words were scrubbed from its body, but it was not rewritten, so a paraphrase of the note may remain`)
+    }
+  }
+
+  /** Where the note's text still is: its harness's transcript, which Zephyr only ever reads. */
+  private harnessCopy(note: Entry | undefined): string {
+    const session = note && this.sessions.get(sessionKey(note.harness, note.sessionId))
+    const where = note && session ? adapters[note.harness]?.locate(session.transcriptPath, note.sessionId, note.id) : undefined
+    const place = where ?? (note ? `the ${note.harness} transcript of session ${note.sessionId}` : 'the harness transcript that recorded it')
+    return `Zephyr never writes to harness transcripts, so the note's text is still in ${place}. Remove it there yourself.`
+  }
+
+  /**
+   * Whether a purge has finished: null when the note was never purged. done once its result is logged and every
+   * topic it queued for a rewrite has been rewritten; pending lists those still waiting.
+   */
+  async purgeStatus(noteId: EntryId): Promise<{ noteId: EntryId; done: boolean; scrubbing: boolean; pending: string[] } | null> {
+    if (!this.purged.has(noteId)) return null
+    const lines = await this.store.loadAdjustments()
+    const requests = new Set(lines.flatMap((l) => (l.type === 'request' && l.adjustment.op === 'purgeNote' && l.adjustment.noteId === noteId ? [l.id] : [])))
+    const result = lines.findLast((l) => l.type === 'result' && requests.has(l.id) && l.result.ok)
+    if (!result || result.type !== 'result' || !result.result.ok) return { noteId, done: false, scrubbing: true, pending: [] }
+    const pending = result.result.rewrites.filter((viewId) => this.views.get(viewId)?.bodyStale)
+    return { noteId, done: pending.length === 0, scrubbing: false, pending }
   }
 
   /** Runs fn on the kind's queue, after the run in flight and before any waiting run. */

@@ -72,6 +72,15 @@ function tools(z: Zephyr): Tool[] {
         return result(await z.hints(args.query, limit as number))
       },
     },
+    {
+      name: 'get_purge',
+      description: 'Whether a purge has finished: done once the topics it queued for a rewrite have been rewritten; pending lists those still waiting.',
+      inputSchema: { type: 'object', properties: { noteId: { type: 'string', description: 'the purged note id' } }, required: ['noteId'], additionalProperties: false },
+      async call(args) {
+        const status = typeof args.noteId === 'string' ? await z.purgeStatus(args.noteId) : null
+        return status ? result(status) : toolError(`note ${String(args.noteId)} was not purged`)
+      },
+    },
   ]
   const adjust = (Object.keys(OPS) as Adjustment['op'][]).map(
     (op): Tool => ({

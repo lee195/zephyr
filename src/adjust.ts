@@ -10,16 +10,26 @@ type FieldKind = 'text' | 'optionalText' | 'due' | 'ids' | 'ref'
 type KindOf<T> = [T] extends [string[]] ? 'ids' : [T] extends [{ slug: string; title: string }] ? 'ref' : null extends T ? 'due' : undefined extends T ? 'optionalText' : 'text'
 
 type OpSpec<A> = {
-  /** The kind whose queue applies the op: the one that owns the views it writes. */
-  owner: string
+  /** The kind whose queue applies the op: the one that owns the views it writes. Absent: every kind's, in turn. */
+  owner?: string
   describe: string
   fields: { [K in Exclude<keyof A, 'op'>]-?: { kind: KindOf<A[K]>; describe: string } }
   /** At least one of these optional fields must be given. */
   needsOne?: readonly (keyof A & string)[]
+  /** A rule across fields, checked once each field has its type; the reason when the op breaks it. */
+  check?: (a: A) => string | undefined
 }
 
 /** An op's spec with its field names erased, as the generic code below reads it. */
-type AnySpec = { describe: string; fields: Record<string, { kind: FieldKind; describe: string }>; needsOne?: readonly string[] }
+type AnySpec = {
+  describe: string
+  fields: Record<string, { kind: FieldKind; describe: string }>
+  needsOne?: readonly string[]
+  check?: (a: Adjustment) => string | undefined
+}
+
+/** The confirmation a purge needs: a value a person types, which a model cannot produce by filling in a flag. */
+export const purgeConfirmation = (noteId: string) => `purge ${noteId}`
 
 /** Each op's fields, read by parseAdjustment and by the MCP tools' input schemas. */
 export const OPS: { [Op in Adjustment['op']]: OpSpec<Extract<Adjustment, { op: Op }>> } = {
@@ -74,6 +84,15 @@ export const OPS: { [Op in Adjustment['op']]: OpSpec<Extract<Adjustment, { op: O
   },
   completeTask: { owner: 'tasks', describe: 'Mark a task done.', fields: { taskId: { kind: 'text', describe: 'task id' } } },
   deleteTask: { owner: 'tasks', describe: 'Delete a task.', fields: { taskId: { kind: 'text', describe: 'task id' } } },
+  purgeNote: {
+    describe:
+      "Remove a note and every copy of its words from Zephyr's data, for a pasted secret or something private; it cannot be undone. Call it only when the person explicitly asks to purge that note. The harness transcript keeps its own copy.",
+    fields: {
+      noteId: { kind: 'text', describe: 'note id' },
+      confirm: { kind: 'text', describe: 'exactly "purge <noteId>", such as "purge abc123"' },
+    },
+    check: (a) => (a.confirm === purgeConfirmation(a.noteId) ? undefined : `purgeNote needs confirm to be exactly "${purgeConfirmation(a.noteId)}"`),
+  },
 }
 
 export type Parsed = { ok: true; adjustment: Adjustment } | { ok: false; error: string }
@@ -103,6 +122,8 @@ export function parseAdjustment(json: unknown): Parsed {
     out[key] = kind === 'ids' ? [...new Set<string>(v)] : kind === 'ref' ? { slug: v.slug, title: v.title } : v
   }
   if (spec.needsOne?.every((key) => out[key] === undefined)) return refuse(`${op} needs ${spec.needsOne.join(' or ')}`)
+  const broken = spec.check?.(out as Adjustment)
+  if (broken) return refuse(broken)
   return { ok: true, adjustment: out as Adjustment }
 }
 
@@ -356,6 +377,8 @@ export function planAdjustment(a: Adjustment, s: AdjustState): Outcome {
       return changeTask(s, a.taskId, (task) => ({ ...task, done: true }))
     case 'deleteTask':
       return changeTask(s, a.taskId, () => null)
+    case 'purgeNote':
+      return fail('purgeNote rewrites files, so the server applies it, not a plan')
   }
 }
 

@@ -25,7 +25,7 @@ Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, p
 
 ```
 data/
-  entries.jsonl                 one Entry per line, append-only; receivedAt is when the server stored it
+  entries.jsonl                 one Entry per line, append-only except for a purge; receivedAt is when the server stored it
   sessions.json                 registered transcripts and where each read resumes
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
   views/<kind>/<slug>.json      view metadata: title, sources, updatedAt, createdAt, pastTitles, appendsSinceWrite,
@@ -36,6 +36,7 @@ data/
   runs.jsonl                    every finished run, append-only
   review.json                   { lastReviewedAt }: where the last review ended
   adjustments.jsonl             every adjustment: a request line, then a result line once it applied
+  purged.json                   { ids }: purged notes, by id only; a transcript re-read never brings one back
 ```
 
 The viewer does not show `.history`; the files are plain markdown next to the page.
@@ -84,13 +85,29 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 | `tombstoneNote` | `noteId` | Removes the note everywhere: entries, every view's sources, hints. A topic left with no notes is deleted. |
 | `editTask` | `taskId, text?, due?` | `due: null` clears the due date. |
 | `completeTask`, `deleteTask` | `taskId` | |
+| `purgeNote` | `noteId, confirm` | Removes the note and its words from the data dir; see Purge. `confirm` must be exactly `purge <noteId>`. |
 
 `move`, `detach` and `split` refuse to leave a topic with no notes, so a note is never on no topic while it counts as filed.
 
 - **Pins.** Topic views carry `pins: { title?, excluded?, aliases? }`, which no run can change. A run's op on an alias lands on the merge target as an append, a note taken off a topic is not cited there again, and a pinned title stays. Each refusal is a reason in the run's `dropped`.
 - **Stale bodies.** An op that changes a topic's notes marks it `bodyStale` and queues a rewrite, which is told that the notes changed and are the truth. The flag is persisted, so the sweep on start re-queues a rewrite a restart interrupted. A page whose body and notes exceed 32,000 characters is not marked; the result carries a warning instead.
-- **Overlay.** `entries.jsonl` is never rewritten. Edits and tombstones are folded from `adjustments.jsonl` on start. A tombstoned note re-read from its transcript stays out.
+- **Overlay.** Only a purge rewrites `entries.jsonl`. Edits and tombstones are folded from `adjustments.jsonl` on start. A tombstoned note re-read from its transcript stays out.
 - **Replay.** A request with no result line was cut short by a crash, and the next start applies it again. Every op converges from whatever state it finds, so applying one twice changes nothing.
+
+## Purge
+
+For a pasted secret or something private: `purgeNote` removes the note from Zephyr's data, which nothing else does. It runs one purge at a time, in this order, so a crash at any point leaves a request with no result that the next start finishes before it queues any run:
+
+1. The id goes into `purged.json`, which start loads into the dedupe set, so no transcript re-read brings the note back (opencode re-reads every row each poll; a Claude Code transcript is re-read from 0 when it shrinks or its path changes).
+2. The note leaves every in-memory list, so no run planned from now on is shown it.
+3. Each kind's views are scrubbed on that kind's queue, after any run in flight that was shown the note, topics before diagrams. A topic whose only note it was is deleted with its `.history`. Any other topic citing it loses it from its sources and pins, has the note's words replaced by `[purged]` in its body, title and past titles, and is queued for a rewrite. Of the tasks, one that came only from the note is deleted, since nothing else supports it; others lose the note and its words. Every diagram citing it, or holding its words, is deleted and drawn again from the scrubbed page.
+4. Archived bodies under `.history` that hold the note's words are deleted. `runs.jsonl` keeps note ids, which are opaque harness ids, but loses any of the note's words a reason carried. The embeddings cache is compacted, which drops the vector for the note's text; its key was only a hash.
+5. `adjustments.jsonl` loses the note's words: an edit of the note keeps its line, with `[purged]` as its text, so replay still converges.
+6. `entries.jsonl` is rewritten without the note, through a tmp file and a rename, in the same exclusive section as appends, so a note arriving meanwhile is not lost.
+
+The note's words are its texts (original and every edit), whole, and each word of four or more characters that no remaining note contains, matched without case at word edges. A page is built only from notes, so such a word there came from the purged one. Scrubbing words is coarse, which is why each scrubbed topic is then rewritten from its remaining notes; the rewrite never sees the note's words. A topic over the 32,000-character cap is scrubbed but not rewritten, and the result warns that a paraphrase may remain. A slug that holds the note's words stays, since it is the page's id; the result counts them.
+
+The result adds `purge: { noteId, tasksDeleted, historyFilesDeleted, lines: { entries, adjustments, runs }, stillIn, status }`. Its `rewrites` are the topics whose rewrite is still queued; `GET /api/purge/<noteId>` returns `{ done, scrubbing, pending }` until they finish. `stillIn` names where the harness keeps its own copy (the Claude Code transcript file and line uuid, or the opencode database, session and message), which Zephyr never writes to; the person removes it there.
 
 ## HTTP
 
@@ -103,6 +120,7 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 | `GET /api/review` | The digest since the last review, computed on each request: `{ since, until, notes: { count, ids }, newTopics, topics, sharedNotes, renames, tasks, unfiled, rewrites }`. Every list is about the notes the server received after `since` and up to `until`, or about writes in that window. It leaves out the person's own changes, renames and topics an adjustment made; a rewrite their change forced is listed with `yours: true`, since its new body is model text they have not seen. `since` is `null` before the first review. |
 | `POST /api/review/done` `{ until }` | Ends a review: the next digest starts after `until`, the value the digest that was reviewed returned. A note received after that digest was read stays in the next one. Refuses an `until` in the future or before the last review. |
 | `POST /api/adjustments` `{ op, ... }` | Apply one adjustment (below). 200 with `{ id, ok: true, written, deleted, rewrites, warnings }`; 400 for a malformed op; 409 with `{ id, ok: false, error }` when the data refuses it, such as an unknown topic. |
+| `GET /api/purge/<noteId>` | `{ noteId, done, scrubbing, pending }` for a purged note: `scrubbing` until the purge's result is logged, then `pending` lists the topics whose rewrite is still queued. 404 for a note never purged. |
 | `GET /api/review/brief` | The prompt a harness's review command submits, as text: the review's rules, naming the MCP tools, then the digest as JSON. |
 | `POST /mcp` | MCP for the harness agent; see below. `GET /mcp` answers 405, since there is no server-to-client stream. |
 | `GET /events` | SSE stream of `entry`, `run`, `view` and `removed` (`{ of: 'entry' \| 'view', id }`) events |
@@ -121,7 +139,8 @@ Every request other than `GET` must send `content-type: application/json` (else 
 | `list_topics` | Every topic: slug, title, note ids |
 | `get_topic` `{ slug }` | The page body and the cited notes with their text |
 | `search_notes` `{ query, limit? }` | As `GET /hints`, including which backend ranked |
-| `rename_topic`, `merge_topics`, `split_topic`, `move_note`, `detach_note`, `edit_note`, `tombstone_note`, `edit_task`, `complete_task`, `delete_task` | One adjustment op each, with the op's fields as arguments |
+| `get_purge` `{ noteId }` | As `GET /api/purge/<noteId>` |
+| `rename_topic`, `merge_topics`, `split_topic`, `move_note`, `detach_note`, `edit_note`, `tombstone_note`, `edit_task`, `complete_task`, `delete_task`, `purge_note` | One adjustment op each, with the op's fields as arguments. `purge_note`'s description tells the agent to call it only when the person explicitly asks to purge that note. |
 
 Each op tool's input schema comes from the same field table (`OPS` in `src/adjust.ts`) that `POST /api/adjustments` validates with. A result is the JSON the HTTP route returns, as text. A malformed op or one the data refuses is a tool error carrying the 400 or 409 message.
 

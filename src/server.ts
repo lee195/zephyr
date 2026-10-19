@@ -181,6 +181,11 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
         case 'GET /events':
           return sse(zephyr, req.signal)
       }
+      if (req.method === 'GET' && pathname.startsWith('/api/purge/')) {
+        const noteId = decodeURIComponent(pathname.slice('/api/purge/'.length))
+        const status = await zephyr.purgeStatus(noteId)
+        return status ? json(status) : fail(`note ${noteId} was not purged`, 404)
+      }
       if (req.method === 'GET') return serveStatic(opts.distDir, pathname)
       return fail('not found', 404)
     },

@@ -80,8 +80,8 @@ test('tools/list offers the review tools and one tool per op, each schema requir
     const byName = new Map<string, any>(result.tools.map((t: any) => [t.name, t]))
     expect([...byName.keys()].sort()).toEqual(
       [
-        'get_review', 'finish_review', 'list_topics', 'get_topic', 'search_notes',
-        'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task',
+        'get_review', 'finish_review', 'list_topics', 'get_topic', 'search_notes', 'get_purge',
+        'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task', 'purge_note',
       ].sort(),
     )
     for (const t of byName.values()) expect(t.description.length).toBeGreaterThan(0)

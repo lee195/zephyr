@@ -37,6 +37,42 @@ function parseJsonl<T>(text: string | null): T[] {
 export class Store {
   constructor(readonly dir: string) {}
 
+  /** Per jsonl file, the tail of its exclusive section. */
+  private sections = new Map<string, Promise<unknown>>()
+
+  /** One file's exclusive section: an append and a rewrite of the same file never overlap, so no append is lost. */
+  private exclusive<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.sections.get(path) ?? Promise.resolve()).then(fn)
+    this.sections.set(path, run.catch(() => {}))
+    return run
+  }
+
+  private appendLines(path: string, records: unknown[]) {
+    return this.exclusive(path, () => appendFile(path, records.map((r) => JSON.stringify(r) + '\n').join('')))
+  }
+
+  /**
+   * Rewrites a jsonl file record by record, through a tmp file and a rename, inside its exclusive section. edit
+   * returns the record, a changed copy, or null to drop it. Writes nothing when nothing changed, so a repeat is a
+   * no-op. Returns how many records changed or were dropped.
+   */
+  private rewriteLines<T>(path: string, edit: (record: T) => T | null): Promise<number> {
+    return this.exclusive(path, async () => {
+      const text = await readText(path)
+      if (text === null) return 0
+      let changed = 0
+      const out: string[] = []
+      for (const record of parseJsonl<T>(text)) {
+        const next = edit(record)
+        const line = next === null ? null : JSON.stringify(next)
+        if (line !== JSON.stringify(record)) changed++
+        if (line !== null) out.push(line + '\n')
+      }
+      if (changed > 0) await writeAtomic(path, out.join(''))
+      return changed
+    })
+  }
+
   private get entriesPath() {
     return join(this.dir, 'entries.jsonl')
   }
@@ -61,7 +97,25 @@ export class Store {
 
   async appendEntries(entries: Entry[]) {
     if (entries.length === 0) return
-    await appendFile(this.entriesPath, entries.map((e) => JSON.stringify(e) + '\n').join(''))
+    await this.appendLines(this.entriesPath, entries)
+  }
+
+  rewriteEntries(edit: (e: Entry) => Entry | null) {
+    return this.rewriteLines(this.entriesPath, edit)
+  }
+
+  private get purgedPath() {
+    return join(this.dir, 'purged.json')
+  }
+
+  /** Ids of purged notes, never their text. */
+  async loadPurged(): Promise<string[]> {
+    const text = await readText(this.purgedPath)
+    return text ? (JSON.parse(text) as { ids: string[] }).ids : []
+  }
+
+  async savePurged(ids: string[]) {
+    await writeAtomic(this.purgedPath, JSON.stringify({ ids }, null, 2))
   }
 
   /** Every finished run, oldest first; null when the data dir predates runs.jsonl. */
@@ -71,7 +125,11 @@ export class Store {
   }
 
   async appendRun(run: Run) {
-    await appendFile(this.runsPath, JSON.stringify(run) + '\n')
+    await this.appendLines(this.runsPath, [run])
+  }
+
+  rewriteRuns(edit: (r: Run) => Run | null) {
+    return this.rewriteLines(this.runsPath, edit)
   }
 
   private get reviewPath() {
@@ -114,7 +172,7 @@ export class Store {
 
   /** The view as it is now, kept as views/<kind>/.history/<slug>/<updatedAt>.<ext>; loadViews never reads it back. */
   async archiveView(view: View) {
-    const dir = join(this.viewDir(view.kind), '.history', view.slug)
+    const dir = this.historyDir(view)
     await mkdir(dir, { recursive: true })
     await writeAtomic(join(dir, `${view.updatedAt}.${EXT[view.format]}`), view.body)
   }
@@ -135,7 +193,39 @@ export class Store {
   }
 
   async appendAdjustment(line: AdjustmentLine) {
-    await appendFile(this.adjustmentsPath, JSON.stringify(line) + '\n')
+    await this.appendLines(this.adjustmentsPath, [line])
+  }
+
+  rewriteAdjustments(edit: (l: AdjustmentLine) => AdjustmentLine | null) {
+    return this.rewriteLines(this.adjustmentsPath, edit)
+  }
+
+  private historyDir(view: Pick<View, 'kind' | 'slug'>) {
+    return join(this.viewDir(view.kind), '.history', view.slug)
+  }
+
+  /** Deletes every archived body that holds matching text. Returns how many it deleted. */
+  async deleteHistoryWhere(holds: (text: string) => boolean): Promise<number> {
+    let deleted = 0
+    for (const kind of await readdir(join(this.dir, 'views')).catch(() => [] as string[])) {
+      const root = join(this.viewDir(kind), '.history')
+      for (const slug of await readdir(root).catch(() => [] as string[])) {
+        for (const name of await readdir(join(root, slug)).catch(() => [] as string[])) {
+          const path = join(root, slug, name)
+          // A tmp file can vanish under the read, renamed into place by an archive in flight; the next pass sees it.
+          const text = await readText(path)
+          if (text === null || !holds(text)) continue
+          await rm(path, { force: true })
+          deleted++
+        }
+      }
+    }
+    return deleted
+  }
+
+  /** Every archived version of the view. */
+  async deleteHistory(view: Pick<View, 'kind' | 'slug'>) {
+    await rm(this.historyDir(view), { recursive: true, force: true })
   }
 
   async writeView(view: View) {

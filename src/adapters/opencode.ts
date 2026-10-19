@@ -44,4 +44,5 @@ export const opencode: TranscriptAdapter = {
       db.close()
     }
   },
+  locate: (transcriptPath, sessionId, rowId) => `the opencode database ${transcriptPath}, message ${rowId} of session ${sessionId} and its parts`,
 }

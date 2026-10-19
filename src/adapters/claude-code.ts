@@ -40,4 +40,5 @@ export const claudeCode: TranscriptAdapter = {
     const chunk = await readComplete(transcriptPath, offset)
     return { rows: chunk.lines.flatMap(parseClaudeCode), offset: chunk.offset }
   },
+  locate: (transcriptPath, _sessionId, rowId) => `the Claude Code transcript ${transcriptPath}, the line whose uuid is ${rowId}`,
 }
