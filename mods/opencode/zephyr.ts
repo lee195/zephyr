@@ -34,8 +34,12 @@ const tui: TuiPlugin = async (api, options) => {
     )
   }
 
+  // Counts note boxes opened; a box's close ends notes only while it is the latest one.
+  let boxes = 0
+
   // Silent when the server is down or slow: the first note's registration already warned.
   function endNotes() {
+    boxes++
     api.ui.dialog.clear()
     fetch(`${base}/api/review`, { signal: AbortSignal.timeout(1500) })
       .then((res) => (res.ok ? res.json() : null))
@@ -59,14 +63,18 @@ const tui: TuiPlugin = async (api, options) => {
     ask(sessionID)
   }
 
+  // Esc closes the box through the dialog stack's onClose, which replacing the box after a note also calls.
   function ask(sessionID: string) {
-    api.ui.dialog.replace(() =>
-      api.ui.DialogPrompt({
-        title: 'Zephyr note',
-        placeholder: 'Enter keeps it, with no model reply. Esc ends notes.',
-        onConfirm: (value) => void keep(sessionID, value),
-        onCancel: endNotes,
-      }),
+    const box = ++boxes
+    api.ui.dialog.replace(
+      () =>
+        api.ui.DialogPrompt({
+          title: 'Zephyr note',
+          placeholder: 'Enter keeps it, with no model reply. Esc ends notes.',
+          onConfirm: (value) => void keep(sessionID, value),
+          onCancel: endNotes,
+        }),
+      () => box === boxes && endNotes(),
     )
   }
 
