@@ -144,8 +144,11 @@ export class Zephyr {
     return this.runs
   }
 
-  hints(draft: string, limit: number): Promise<HintReply> {
-    return hintsFor(draft, limit, this.entries, this.listViews(), this.relevance)
+  async hints(draft: string, limit: number): Promise<HintReply> {
+    const reply = await hintsFor(draft, limit, this.entries, this.listViews(), this.relevance)
+    // A partial answer means the endpoint is back while a failed warm-up left docs uncached, so finish the warm-up.
+    if (reply.partial && this.warmup === 'failed') this.warm()
+    return reply
   }
 
   status() {

@@ -25,9 +25,9 @@ afterEach(() => {
 })
 
 /** The production composition: embeddings over a fake endpoint, falling back to tfidf. */
-async function server(dataDir: string, fetch: typeof globalThis.fetch) {
+async function server(dataDir: string, fetch: typeof globalThis.fetch, cooldownMs = 30_000) {
   const embedding = embeddingBackend({ baseUrl: 'http://embed.test/v1', model: 'gemma', apiKey: 'k', cacheDir: `${dataDir}/embeddings`, fetch })
-  const relevance = withFallback(embedding, relevanceBackends.tfidf!(), { timeoutMs: 1000, cooldownMs: 30_000 })
+  const relevance = withFallback(embedding, relevanceBackends.tfidf!(), { timeoutMs: 1000, cooldownMs })
   const z = new Zephyr({ dataDir, backend: scripted({ ops: [] }).backend, kinds: { organizer: kinds.organizer!, tasks: kinds.tasks! }, relevance })
   await z.start()
   const s = serve(z, { port: 0, distDir: '/nonexistent' })
@@ -99,6 +99,20 @@ test('with the endpoint down during warm-up, the server keeps serving tfidf hint
   const reply = await hint()
   expect(reply).toMatchObject({ backend: 'tfidf', partial: false })
   expect(reply.hints.map((h: { entryId: string }) => h.entryId)).toContain('e1')
+})
+
+test('a failed warm-up is finished once a hint finds the endpoint back, and then reports done', async () => {
+  const end = fakeEmbeddings()
+  let up = false
+  const flaky = (async (url: string, init: RequestInit) =>
+    up ? end.fetch(url, init) : new Response('upstream unreachable', { status: 503 })) as unknown as typeof fetch
+  const { status, hint } = await server(await seeded(), flaky, 0)
+  await eventually(async () => (await status()).relevance.warmup === 'failed')
+  up = true
+  expect(await hint()).toMatchObject({ backend: 'embedding-gemma', partial: true })
+  await eventually(async () => (await status()).relevance.warmup === 'done')
+  expect((await status()).relevance.pending).toBe(0)
+  expect(await hint()).toMatchObject({ partial: false })
 })
 
 test('an organizer run waits for its topics to be embedded, so every topic can open', async () => {
