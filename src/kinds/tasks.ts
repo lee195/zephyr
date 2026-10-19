@@ -1,6 +1,6 @@
 import type { AgentKind, ChatMessage, Entry, EntryId, Run, Task, TaskId, View, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
-import { inEntryOrder, knownSources } from './common'
+import { inEntryOrder, jsonPrompt, knownSources } from './common'
 
 /** Open tasks the model sees per run, the ones most relevant to the run's entries; done tasks are never shown. */
 const OPEN_SHOWN = 30
@@ -81,14 +81,10 @@ The input has openTasks (id, text, due) and newEntries (id, at, text).
 - sources lists the ids of the new entries the op comes from.`
 
 export function tasksMessages(openTasks: Task[], newEntries: Entry[]): ChatMessage[] {
-  const payload = {
+  return jsonPrompt(TASKS_SYSTEM, {
     openTasks: openTasks.map((t) => ({ id: t.id, text: t.text, ...(t.due && { due: t.due }) })),
     newEntries: newEntries.map((e) => ({ id: e.id, at: e.at, text: e.text })),
-  }
-  return [
-    { role: 'system', content: TASKS_SYSTEM },
-    { role: 'user', content: JSON.stringify(payload) },
-  ]
+  })
 }
 
 const currentTasks = (views: readonly View[]): Task[] =>

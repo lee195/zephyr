@@ -1,6 +1,6 @@
 import type { AgentKind, ChatMessage, Entry, EntryId, Run, View, ViewWrite, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
-import { inEntryOrder, knownSources, sanitizeSlug } from './common'
+import { inEntryOrder, jsonPrompt, knownSources, sanitizeSlug } from './common'
 
 const RECENT_CONTEXT = 30
 /** Topics the model sees in full per run, picked by relevance to the run's entries; the rest are index lines. */
@@ -88,16 +88,12 @@ The input has openTopics (full pages) and topicIndex (every other topic, one lin
 - slug is lowercase kebab-case. body is markdown built only from the notes; do not add facts they do not contain, and do not repeat the title as a heading.`
 
 export function organizerMessages(newEntries: Entry[], views: ViewContext, recentEntries: Entry[]): ChatMessage[] {
-  const payload = {
+  return jsonPrompt(ORGANIZER_SYSTEM, {
     topicIndex: views.indexed.map((v) => `${v.slug} | ${v.title} | ${v.sources.length} sources`),
     openTopics: views.open.map((v) => ({ slug: v.slug, title: v.title, body: v.body })),
     recentEntries: recentEntries.map((e) => ({ id: e.id, at: e.at, text: e.text })),
     newEntries: newEntries.map((e) => ({ id: e.id, at: e.at, text: e.text })),
-  }
-  return [
-    { role: 'system', content: ORGANIZER_SYSTEM },
-    { role: 'user', content: JSON.stringify(payload) },
-  ]
+  })
 }
 
 const topicDocs = (views: readonly View[]): RelevanceDoc[] =>

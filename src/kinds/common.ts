@@ -1,4 +1,4 @@
-import type { Entry, EntryId } from '../domain'
+import type { ChatMessage, Entry, EntryId } from '../domain'
 
 export function sanitizeSlug(raw: string): string {
   return raw
@@ -16,4 +16,12 @@ export function inEntryOrder(entries: readonly Entry[], cited: ReadonlySet<Entry
 /** Ids the model may cite: strings among the known ids, deduplicated. */
 export function knownSources(raw: unknown[], known: ReadonlySet<EntryId>): EntryId[] {
   return [...new Set(raw.filter((s): s is string => typeof s === 'string' && known.has(s)))]
+}
+
+/** A kind's prompt: its rules as the system message, then the run's input as one JSON user message. */
+export function jsonPrompt(system: string, payload: unknown): ChatMessage[] {
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: JSON.stringify(payload) },
+  ]
 }

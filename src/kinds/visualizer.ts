@@ -1,4 +1,5 @@
 import type { AgentKind, ChatMessage, Run, View, World } from '../domain'
+import { jsonPrompt } from './common'
 
 /** A topic is drawn once it has this many sources. */
 export const MIN_SOURCES = 4
@@ -102,10 +103,7 @@ Use ASCII only when a drawing would not help: at most ${MAX_ASCII_COLUMNS} colum
 
 export function visualizerMessages(topic: View): ChatMessage[] {
   const body = topic.body.length > MAX_TOPIC_CHARS ? `${topic.body.slice(0, MAX_TOPIC_CHARS)}\n[…]` : topic.body
-  return [
-    { role: 'system', content: VISUALIZER_SYSTEM },
-    { role: 'user', content: JSON.stringify({ title: topic.title, body }) },
-  ]
+  return jsonPrompt(VISUALIZER_SYSTEM, { title: topic.title, body })
 }
 
 export const visualizer: AgentKind = {
