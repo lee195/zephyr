@@ -35,6 +35,8 @@ export interface View {
   updatedAt: string
   /** The task list as data, on the tasks view only; body is its markdown rendering for plain-file readers. */
   tasks?: Task[]
+  /** The view this one was derived from, at the version it was derived from; it is stale once that view moves on. */
+  derivedFrom?: { id: string; updatedAt: string }
 }
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed'
@@ -43,6 +45,8 @@ export interface Run {
   id: string
   kind: string
   entryIds: EntryId[]
+  /** For a kind triggered by views: the view this run derives from. Absent for runs triggered by entries. */
+  viewIds?: string[]
   status: RunStatus
   /** 1-based; a retry of a failed run is the next attempt. */
   attempt: number
@@ -106,7 +110,11 @@ export interface Plan {
   settle(json: unknown): Settled
 }
 
-export type Trigger = { on: 'entry' }
+/**
+ * entry: every new entry is queued for the kind, and on start every entry no done run covered.
+ * view: a written view of `kind` is queued when `wants` says so, and on start every view it wants.
+ */
+export type Trigger = { on: 'entry' } | { on: 'view'; kind: string; wants(source: View, own: readonly View[]): boolean }
 
 export interface AgentKind {
   kind: string

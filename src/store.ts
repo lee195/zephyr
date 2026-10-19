@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Entry, Run, Session, View, ViewFormat } from './domain'
 
@@ -104,5 +104,7 @@ export class Store {
     const { body, ...meta } = view
     await writeAtomic(join(dir, `${view.slug}.${EXT[view.format]}`), body)
     await writeAtomic(join(dir, `${view.slug}.json`), JSON.stringify(meta, null, 2))
+    // A view that changed format, such as a diagram redrawn as ASCII, leaves no stale body behind.
+    for (const ext of Object.values(EXT)) if (ext !== EXT[view.format]) await rm(join(dir, `${view.slug}.${ext}`), { force: true })
   }
 }
