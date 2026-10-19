@@ -39,6 +39,11 @@ export interface View {
   derivedFrom?: { id: string; updatedAt: string }
   /** Titles the view had before its current one, oldest first; until is the updatedAt of the write that replaced it. */
   pastTitles?: PastTitle[]
+  /**
+   * Writes in a row, since the last one that was not, whose body strictly extended the body before it. Measured by
+   * the server from the bodies, so no kind can report it; absent when 0.
+   */
+  appendsSinceWrite?: number
 }
 
 export interface PastTitle {
@@ -137,8 +142,8 @@ export interface World {
   relevance: RelevanceBackend
 }
 
-/** A view as a kind returns it; the server adds id, kind, updatedAt and pastTitles, so a kind can only write its own views and never its history. */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'pastTitles'>
+/** A view as a kind returns it; the server adds id, kind, updatedAt, pastTitles and appendsSinceWrite, so a kind can only write its own views and never its history. */
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'pastTitles' | 'appendsSinceWrite'>
 
 /** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
 export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }

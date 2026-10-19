@@ -367,13 +367,20 @@ export class Zephyr {
     const prior = this.views.get(id)
     const updatedAt = this.stamp()
     const pastTitles = prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt }] : prior?.pastTitles
-    const view: View = { ...write, id, kind: kind.kind, updatedAt, ...(pastTitles && { pastTitles }) }
+    const appendsSinceWrite = prior && extendsBody(write.body, prior.body) ? (prior.appendsSinceWrite ?? 0) + 1 : 0
+    const view: View = { ...write, id, kind: kind.kind, updatedAt, ...(pastTitles && { pastTitles }), ...(appendsSinceWrite > 0 && { appendsSinceWrite }) }
     await this.store.writeView(view)
     this.views.set(view.id, view)
     this.prepareRelevance(kind.relevanceDocs?.([view]) ?? [])
     this.emit({ type: 'view', data: view })
     this.deriveFrom(view)
   }
+}
+
+/** The next body keeps all of the prior one, as its start, and adds to it. */
+function extendsBody(next: string, prior: string): boolean {
+  const head = prior.trimEnd()
+  return next.length > head.length && next.startsWith(head)
 }
 
 /** Entries some done run of this kind covered. A line from before `uncovered` existed counts as covering all its entries. */
