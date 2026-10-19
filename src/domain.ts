@@ -35,6 +35,8 @@ export interface Run {
   startedAt?: string
   endedAt?: string
   error?: string
+  /** Ops the reply asked for that validation refused, one reason each; the rest of the reply still applied. */
+  dropped?: string[]
 }
 
 export interface Session {
@@ -71,20 +73,30 @@ export interface ModelBackend {
   complete(messages: ChatMessage[], opts: { json: true }): Promise<Completion>
 }
 
-export interface ViewUpsert {
-  slug: string
-  title: string
-  sources: EntryId[]
-  body: string
+/** write replaces a view's body (new slug, or an open one); append adds a section to an existing view. */
+export type ViewOp =
+  | { op: 'write'; slug: string; title: string; sources: EntryId[]; body: string }
+  | { op: 'append'; slug: string; sources: EntryId[]; body: string }
+
+export type Validation = { ok: true; ops: ViewOp[]; dropped: string[] } | { ok: false; error: string }
+
+/** What the model was shown: open views in full, indexed views as one line each. */
+export interface ViewContext {
+  open: View[]
+  indexed: View[]
 }
 
-export type Validation = { ok: true; upserts: ViewUpsert[] } | { ok: false; error: string }
+export interface ReplyContext {
+  knownIds: ReadonlySet<EntryId>
+  existingSlugs: ReadonlySet<string>
+  openSlugs: ReadonlySet<string>
+}
 
 export interface AgentKind {
   kind: string
   format: ViewFormat
-  buildMessages(newEntries: Entry[], ownViews: View[], recentEntries: Entry[]): ChatMessage[]
-  validate(json: unknown, knownIds: ReadonlySet<EntryId>): Validation
+  buildMessages(newEntries: Entry[], views: ViewContext, recentEntries: Entry[]): ChatMessage[]
+  validate(json: unknown, ctx: ReplyContext): Validation
 }
 
 export type ZephyrEvent =

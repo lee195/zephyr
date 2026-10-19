@@ -1,5 +1,5 @@
 import { adapters } from './adapters'
-import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ZephyrEvent } from './domain'
+import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewOp, ZephyrEvent } from './domain'
 import { kinds as defaultKinds } from './kinds'
 import { Store } from './store'
 import { Tailer, type Chunk } from './tailer'
@@ -233,10 +233,16 @@ export class Zephyr {
       const newEntries = this.entries.filter((e) => runIds.has(e.id))
       const recent = this.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
       const ownViews = this.listViews().filter((v) => v.kind === kind.kind)
-      const { json: reply } = await this.backend.complete(kind.buildMessages(newEntries, ownViews, recent), { json: true })
-      const result = kind.validate(reply, this.entryIds)
+      const views = { open: ownViews, indexed: [] }
+      const { json: reply } = await this.backend.complete(kind.buildMessages(newEntries, views, recent), { json: true })
+      const result = kind.validate(reply, {
+        knownIds: this.entryIds,
+        existingSlugs: new Set(ownViews.map((v) => v.slug)),
+        openSlugs: new Set(views.open.map((v) => v.slug)),
+      })
       if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
-      for (const u of result.upserts) await this.applyUpsert(kind, u)
+      for (const op of result.ops) await this.applyOp(kind, op)
+      if (result.dropped.length > 0) run.dropped = result.dropped
       run.status = 'done'
     } catch (err) {
       run.status = 'failed'
@@ -269,25 +275,31 @@ export class Zephyr {
     this.retries.add(retry)
   }
 
-  private async applyUpsert(kind: AgentKind, u: { slug: string; title: string; sources: EntryId[]; body: string }) {
-    const id = `${kind.kind}/${u.slug}`
+  /** Validation guarantees an append targets an existing view. */
+  private async applyOp(kind: AgentKind, op: ViewOp) {
+    const id = `${kind.kind}/${op.slug}`
     const prior = this.views.get(id)
     // Union with prior sources: a page update should never silently orphan an entry it already cited.
-    const cited = new Set([...(prior?.sources ?? []), ...u.sources])
+    const cited = new Set([...(prior?.sources ?? []), ...op.sources])
+    const page = op.op === 'write' ? { title: op.title, body: op.body } : { title: prior!.title, body: appendSection(prior!.body, op.body) }
     const view: View = {
       id,
       kind: kind.kind,
-      slug: u.slug,
-      title: u.title,
+      slug: op.slug,
+      ...page,
       sources: this.entries.filter((e) => cited.has(e.id)).map((e) => e.id),
       format: kind.format,
-      body: u.body,
       updatedAt: new Date().toISOString(),
     }
     await this.store.writeView(view)
     this.views.set(id, view)
     this.emit({ type: 'view', data: view })
   }
+}
+
+function appendSection(body: string, section: string): string {
+  const [head, tail] = [body.trimEnd(), section.trim()]
+  return head && tail ? `${head}\n\n${tail}` : head || tail
 }
 
 function doneEntryIds(runs: Run[], kind: string): Set<EntryId> {

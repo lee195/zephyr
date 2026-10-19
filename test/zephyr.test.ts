@@ -21,7 +21,7 @@ function fakeBackend() {
       const ids: string[] = payload.newEntries.map((e: any) => e.id)
       calls.push(ids)
       if (hold) await new Promise<void>((r) => gates.push(r))
-      return { json: { upserts: [{ slug: 'all', title: 'All', sources: ids, body: ids.join(',') }] } }
+      return { json: { ops: [{ op: 'write', slug: 'all', title: 'All', sources: ids, body: ids.join(',') }] } }
     },
   }
   return {
@@ -145,7 +145,7 @@ test('a retry coalesces with the waiting run and keeps the higher attempt', asyn
       calls.push(ids)
       await new Promise<void>((r) => gates.push(r))
       if (calls.length === 1) throw new Error('boom')
-      return { json: { upserts: [{ slug: 'all', title: 'All', sources: ids, body: '' }] } }
+      return { json: { ops: [{ op: 'write', slug: 'all', title: 'All', sources: ids, body: '' }] } }
     },
   }
   const z = new Zephyr({ dataDir: await tempDir(), backend, retryDelaysMs: [200] })
@@ -266,4 +266,59 @@ test('a registered transcript is backfilled, tailed, and never duplicated across
   const lines = (await readFile(join(dir, 'entries.jsonl'), 'utf8')).trim().split('\n')
   expect(lines.map((l) => JSON.parse(l).id)).toEqual(['n1', 'n2', 'n3'])
   expect(restarted.status().sessions).toBe(1)
+})
+
+async function seedViews(dir: string, views: { slug: string; sources: string[]; body: string }[]) {
+  await mkdir(join(dir, 'views/organizer'), { recursive: true })
+  for (const v of views) {
+    await writeFile(join(dir, `views/organizer/${v.slug}.md`), v.body)
+    const meta = { id: `organizer/${v.slug}`, kind: 'organizer', slug: v.slug, title: v.slug.toUpperCase(), sources: v.sources, format: 'md', updatedAt: 't' }
+    await writeFile(join(dir, `views/organizer/${v.slug}.json`), JSON.stringify(meta))
+  }
+}
+
+/** Replies with the given ops for every call, and keeps the messages it was sent. */
+function scripted(ops: object[]) {
+  const sent: ChatMessage[][] = []
+  const backend: ModelBackend = {
+    async complete(messages) {
+      sent.push(messages)
+      return { json: { ops } }
+    },
+  }
+  return { backend, sent }
+}
+
+/** A data dir where e1 and e2 are organized into topic "a", and e3 is waiting to be organized. */
+async function organizedDir() {
+  const dir = await seedDataDir([entry('e1'), entry('e2'), entry('e3')], [{ id: 'r1', kind: 'organizer', entryIds: ['e1', 'e2'], status: 'done', attempt: 1 }])
+  await seedViews(dir, [{ slug: 'a', sources: ['e1', 'e2'], body: 'First section.\n' }])
+  return dir
+}
+
+test('append adds a section to an existing topic and unions its sources', async () => {
+  const dir = await organizedDir()
+  const z = new Zephyr({ dataDir: dir, backend: scripted([{ op: 'append', slug: 'a', sources: ['e3'], body: 'Second section.' }]).backend })
+  await z.start()
+  await z.idle()
+  expect(z.listViews().map((v) => [v.slug, v.title, v.sources, v.body])).toEqual([['a', 'A', ['e1', 'e2', 'e3'], 'First section.\n\nSecond section.']])
+  expect(await readFile(join(dir, 'views/organizer/a.md'), 'utf8')).toBe('First section.\n\nSecond section.')
+  expect(z.listRuns().at(-1)?.status).toBe('done')
+  expect(z.listRuns().at(-1)?.dropped).toBeUndefined()
+})
+
+test('append to an unknown topic is dropped with a reason, and the rest of the reply applies', async () => {
+  const dir = await organizedDir()
+  const reply = [
+    { op: 'append', slug: 'ghost', sources: ['e3'], body: 'lost' },
+    { op: 'write', slug: 'fresh', title: 'Fresh', sources: ['e3'], body: 'kept' },
+  ]
+  const z = new Zephyr({ dataDir: dir, backend: scripted(reply).backend })
+  await z.start()
+  await z.idle()
+  expect(z.listViews().map((v) => [v.slug, v.sources, v.body]).sort()).toEqual([
+    ['a', ['e1', 'e2'], 'First section.\n'],
+    ['fresh', ['e3'], 'kept'],
+  ])
+  expect(z.listRuns().at(-1)).toMatchObject({ status: 'done', dropped: ['append ghost: no such topic'] })
 })

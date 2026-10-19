@@ -1,21 +1,19 @@
 import { expect, test } from 'bun:test'
+import type { ReplyContext } from '../src/domain'
 import { kinds } from '../src/kinds'
 
 const organizer = kinds.organizer!
-const known = new Set(['e1', 'e2'])
+const ctx: ReplyContext = { knownIds: new Set(['e1', 'e2']), existingSlugs: new Set(), openSlugs: new Set() }
 
-test('a good reply yields sanitized upserts', () => {
-  const result = organizer.validate(
-    { upserts: [{ slug: 'Bread Baking!', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }] },
-    known,
-  )
-  expect(result).toEqual({ ok: true, upserts: [{ slug: 'bread-baking', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }] })
+test('a good reply yields sanitized ops', () => {
+  const result = organizer.validate({ ops: [{ op: 'write', slug: 'Bread Baking!', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }] }, ctx)
+  expect(result).toEqual({ ok: true, ops: [{ op: 'write', slug: 'bread-baking', title: 'Bread', sources: ['e1'], body: 'Rye needs time.' }], dropped: [] })
 })
 
 const bodyFor = (title: string, body: string) => {
-  const result = organizer.validate({ upserts: [{ slug: 'q3', title, sources: ['e1'], body }] }, known)
+  const result = organizer.validate({ ops: [{ op: 'write', slug: 'q3', title, sources: ['e1'], body }] }, ctx)
   if (!result.ok) throw new Error(result.error)
-  return result.upserts[0]!.body
+  return result.ops[0]!.body
 }
 
 test('a leading heading that repeats the title is stripped from the body', () => {
@@ -31,32 +29,52 @@ test('a heading that differs from the title, or no heading, leaves the body as i
 })
 
 test('malformed replies fail', () => {
-  expect(organizer.validate({ topics: [] }, known).ok).toBe(false)
-  expect(organizer.validate({ upserts: [{ slug: 'a', sources: ['e1'], body: 7 }] }, known).ok).toBe(false)
-  expect(organizer.validate({ upserts: [{ slug: 'a', sources: 'e1', body: 'x' }] }, known).ok).toBe(false)
-  expect(organizer.validate({ upserts: [{ slug: '!!!', sources: ['e1'], body: 'x' }] }, known).ok).toBe(false)
-  expect(organizer.validate(null, known).ok).toBe(false)
+  expect(organizer.validate({ upserts: [] }, ctx).ok).toBe(false)
+  expect(organizer.validate({ ops: [{ op: 'upsert', slug: 'a', sources: ['e1'], body: 'x' }] }, ctx).ok).toBe(false)
+  expect(organizer.validate({ ops: [{ op: 'write', slug: 'a', sources: ['e1'], body: 7 }] }, ctx).ok).toBe(false)
+  expect(organizer.validate({ ops: [{ op: 'append', slug: 'a', sources: 'e1', body: 'x' }] }, ctx).ok).toBe(false)
+  expect(organizer.validate({ ops: [{ op: 'write', slug: '!!!', sources: ['e1'], body: 'x' }] }, ctx).ok).toBe(false)
+  expect(organizer.validate(null, ctx).ok).toBe(false)
 })
 
-test('unknown source ids are dropped, and a topic left with none is dropped', () => {
+test('unknown source ids are dropped, and an op left with none is dropped with a reason', () => {
   const result = organizer.validate(
     {
-      upserts: [
-        { slug: 'a', title: 'A', sources: ['e1', 'ghost', 'e1'], body: 'x' },
-        { slug: 'b', title: 'B', sources: ['ghost'], body: 'y' },
+      ops: [
+        { op: 'write', slug: 'a', title: 'A', sources: ['e1', 'ghost', 'e1'], body: 'x' },
+        { op: 'write', slug: 'b', title: 'B', sources: ['ghost'], body: 'y' },
       ],
     },
-    known,
+    ctx,
   )
-  expect(result).toEqual({ ok: true, upserts: [{ slug: 'a', title: 'A', sources: ['e1'], body: 'x' }] })
+  expect(result).toEqual({ ok: true, ops: [{ op: 'write', slug: 'a', title: 'A', sources: ['e1'], body: 'x' }], dropped: ['write b: no known sources'] })
 })
 
-test('the prompt carries new entries, existing topics, and context', () => {
+test('a topic written earlier in the same reply can be appended to', () => {
+  const result = organizer.validate(
+    {
+      ops: [
+        { op: 'write', slug: 'new', title: 'New', sources: ['e1'], body: 'x' },
+        { op: 'append', slug: 'new', sources: ['e2'], body: 'y' },
+      ],
+    },
+    ctx,
+  )
+  expect(result.ok && result.ops.map((o) => o.op)).toEqual(['write', 'append'])
+})
+
+test('the prompt shows open topics in full and every other topic as one index line', () => {
   const entry = (id: string, text: string) => ({ id, harness: 'claude-code', sessionId: 's', at: 't', text })
-  const view = { id: 'organizer/a', kind: 'organizer', slug: 'a', title: 'A', sources: ['e1'], format: 'md' as const, body: 'old', updatedAt: 't' }
-  const messages = organizer.buildMessages([entry('e2', 'new thing')], [view], [entry('e1', 'old thing')])
+  const view = (slug: string, body: string, sources: string[]) => ({ id: `organizer/${slug}`, kind: 'organizer', slug, title: slug.toUpperCase(), sources, format: 'md' as const, body, updatedAt: 't' })
+  const messages = organizer.buildMessages(
+    [entry('e3', 'new thing')],
+    { open: [view('a', 'open body', ['e1'])], indexed: [view('b', 'hidden body', ['e1', 'e2'])] },
+    [entry('e1', 'old thing')],
+  )
   const user = JSON.parse(messages.at(-1)!.content)
-  expect(user.newEntries.map((e: any) => e.id)).toEqual(['e2'])
+  expect(user.newEntries.map((e: any) => e.id)).toEqual(['e3'])
   expect(user.recentEntries.map((e: any) => e.id)).toEqual(['e1'])
-  expect(user.existingTopics[0].slug).toBe('a')
+  expect(user.openTopics).toEqual([{ slug: 'a', title: 'A', body: 'open body' }])
+  expect(user.topicIndex).toEqual(['b | B | 2 sources'])
+  expect(messages.map((m) => m.content).join('\n')).not.toContain('hidden body')
 })
