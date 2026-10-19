@@ -76,3 +76,64 @@ export function bandLine(isNotesOn: boolean, server: Server, now: number): strin
   }
   return parts.join(' · ')
 }
+
+/** One hint as the band shows it: the matching note's topic title, when it has one, and its text. */
+export type Hint = { topic: string | null; text: string }
+
+export const HINT_LIMIT = 3
+
+const NO_HINTS: readonly Hint[] = []
+
+/**
+ * The hints for the draft in the box. `waiting` is a draft settling or its request out: only the reply tagged
+ * `seq` lands, and the hints of the draft before stay up meanwhile.
+ */
+export type Hints =
+  | { kind: 'idle' }
+  | { kind: 'waiting'; seq: number; draft: string; hints: readonly Hint[] }
+  | { kind: 'shown'; draft: string; hints: readonly Hint[] }
+
+export const NO_DRAFT: Hints = { kind: 'idle' }
+
+export function shownHints(hints: Hints): readonly Hint[] {
+  return hints.kind === 'idle' ? NO_HINTS : hints.hints
+}
+
+/** A draft under two words asks for nothing and clears what was shown; the same draft (a cursor move) changes nothing. */
+export function draftChanged(hints: Hints, draft: string, seq: number): Hints {
+  const text = draft.trim()
+  if (text.split(/\s+/).length < 2) return NO_DRAFT
+  if (hints.kind !== 'idle' && hints.draft === text) return hints
+  return { kind: 'waiting', seq, draft: text, hints: shownHints(hints) }
+}
+
+export function hintsArrived(hints: Hints, seq: number, arrived: readonly Hint[]): Hints {
+  return hints.kind === 'waiting' && hints.seq === seq ? { kind: 'shown', draft: hints.draft, hints: arrived } : hints
+}
+
+const oneLine = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
+
+/** The body of `GET /hints`; anything unreadable counts as no hints. */
+export function parseHints(text: string): readonly Hint[] {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return NO_HINTS
+  }
+  const list = typeof raw === 'object' && raw !== null ? (raw as { hints?: unknown }).hints : undefined
+  if (!Array.isArray(list)) return NO_HINTS
+  return list
+    .flatMap((h: unknown): Hint[] => {
+      if (typeof h !== 'object' || h === null) return []
+      const r = h as { text?: unknown; topic?: unknown }
+      const text = oneLine(r.text)
+      const topic = typeof r.topic === 'object' && r.topic !== null ? oneLine((r.topic as { title?: unknown }).title) : ''
+      return text ? [{ topic: topic || null, text }] : []
+    })
+    .slice(0, HINT_LIMIT)
+}
+
+export function hintLine(hint: Hint): string {
+  return `↳ ${hint.topic ?? 'note'} · ${hint.text}`
+}

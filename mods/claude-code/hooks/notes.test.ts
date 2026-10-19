@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ago, bandLine, decide, encodeProjectDir, parseStatus, transcriptPathFor } from './notes'
+import { ago, bandLine, decide, encodeProjectDir, hintLine, parseHints, parseStatus, transcriptPathFor } from './notes'
 
 const typed = (text: string) => ({ text, origin: { kind: 'composer' as const } })
 
@@ -71,4 +71,18 @@ test('ages round down to the largest unit', () => {
   expect(ago(3_599_000)).toBe('59m')
   expect(ago(7_200_000)).toBe('2h')
   expect(ago(3 * 86_400_000)).toBe('3d')
+})
+
+test('hints parsing keeps up to three readable hints, and anything else is none', () => {
+  const hint = (text: unknown, topic: unknown = null) => ({ entryId: 'e', text, at: '', score: 1, topic })
+  const body = (hints: unknown) => JSON.stringify({ hints })
+  expect(parseHints(body([hint('a  b\nc', { slug: 's', title: 'Shopping' }), hint(''), hint(7), hint('d', { slug: 's' })]))).toEqual([
+    { topic: 'Shopping', text: 'a b c' },
+    { topic: null, text: 'd' },
+  ])
+  expect(parseHints(body(['1', '2', '3', '4'].map(t => hint(t))))).toHaveLength(3)
+  expect(parseHints('<html>')).toEqual([])
+  expect(parseHints('null')).toEqual([])
+  expect(parseHints('{"hints":{}}')).toEqual([])
+  expect(hintLine({ topic: null, text: 'call mum' })).toBe('↳ note · call mum')
 })

@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { HttpInit, On } from 'claude-code'
+import type { Engine, EngineCall } from 'claude-code/testing'
+import type { HttpInit, On, PromptEditInput } from 'claude-code'
 
 type Fetched = { url: string; init?: HttpInit }
 
@@ -25,13 +26,36 @@ const TOGGLE = {
 
 const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' as const } })
 
-// Stands in for the engine: one session, a server answering `status` (or refusing, or hanging), a model that echoes.
-function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'hangs' } = {}) {
+/** Typing `added` at the end of `draft`. */
+const keyed = (draft: string, added: string): PromptEditInput => ({
+  origin: { kind: 'composer' },
+  text: draft,
+  cursor: draft.length,
+  start: draft.length,
+  end: draft.length,
+  inputText: added,
+})
+
+// The kit raises these as the engine does, but its `Engine` type lists only what a plugin's own `$` may call.
+const box = ($: Engine) => $.prompt as Engine['prompt'] & { edit: EngineCall<'prompt.edit'>; change: EngineCall<'prompt.change'> }
+
+const HINTS = JSON.stringify({
+  hints: [
+    { entryId: 'e1', text: 'oat milk is cheaper\nat the corner shop', at: '2026-10-18T09:00:00Z', score: 0.9, topic: { slug: 'groceries', title: 'Groceries' } },
+    { entryId: 'e2', text: 'call mum', at: '2026-10-17T09:00:00Z', score: 0.4, topic: null },
+  ],
+})
+
+// Stands in for the engine: one session, a server answering `status` and `hints` (or refusing, or hanging), a model that echoes.
+// `hints: 'held'` keeps each hints request open until the test answers it through `answer`.
+function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'hangs'; hints?: string | 'held' } = {}) {
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.env(on, { HOME: '/Users/me' })
   const session = mock.session(on)
-  const seen = { filled: [] as string[], fetched: [] as Fetched[] }
+  const seen = { filled: [] as string[], fetched: [] as Fetched[], edits: [] as PromptEditInput[] }
   const status = { text: opts.status }
+  const held: Array<(text: string) => void> = []
+  const reply = (text: string) => ({ value: { status: 200, ok: true, headers: {}, text } })
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.root', () => ({ value: '/Users/me/ai-workspace/zephyr' }))
   if (opts.deny) on('session.append', { door: 'note' }, () => ({ deny: opts.deny ?? '' }))
@@ -43,9 +67,16 @@ function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'ha
     seen.fetched.push(e)
     if (status.text === 'refused') throw new Error('connection refused')
     if (status.text === 'hangs') return new Promise<never>(() => undefined)
-    const text = e.url.endsWith('/status') ? (status.text ?? '{"up":true,"runsInFlight":0,"lastViewAt":null}') : '{}'
-    return { value: { status: 200, ok: true, headers: {}, text } }
+    if (e.url.endsWith('/status')) return reply(status.text ?? '{"up":true,"runsInFlight":0,"lastViewAt":null}')
+    if (!e.url.includes('/hints?')) return reply('{}')
+    if (opts.hints === 'held') return new Promise<ReturnType<typeof reply>>(resolve => held.push(text => resolve(reply(text))))
+    return reply(opts.hints ?? HINTS)
   })
+  on('prompt.edit', (_$, e) => {
+    seen.edits.push(e)
+    return { text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }
+  })
+  on('prompt.change', (_$, e) => ({ text: e.text }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
@@ -65,7 +96,16 @@ function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'ha
       })
   const notes = () => rows('user')
   const notices = () => rows('system')
-  return { clock, seen, status, notes, notices }
+  const hintRequests = () => seen.fetched.filter(f => f.url.includes('/hints?')).map(f => f.url)
+  const answer = (i: number, text: string) => held[i]?.(text)
+  return { clock, seen, status, notes, notices, hintRequests, answer }
+}
+
+async function bandTexts($: Engine) {
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+  await ui.unmount()
+  return texts
 }
 
 test('off by default: a prompt reaches the model', async ($, on) => {
@@ -166,4 +206,122 @@ test('a server that hangs counts as down once the request times out', async ($, 
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ text: /server down/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('hints wait for 1 s of quiet, and an edit within it restarts the wait', async ($, on) => {
+  const { clock, hintRequests } = engine(on)
+  await $.command.run(TOGGLE)
+  await clock.settle()
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(999)
+  expect(hintRequests()).toEqual([])
+  await box($).edit(keyed('buy oat milk', ' today'))
+  await clock.advance(999)
+  expect(hintRequests()).toEqual([])
+  await clock.advance(1)
+  expect(hintRequests()).toEqual(['http://127.0.0.1:7317/hints?q=buy%20oat%20milk%20today&limit=3'])
+  await clock.advance(5000)
+  expect(hintRequests()).toHaveLength(1)
+})
+
+test('moving the cursor through a settled draft asks for nothing new', async ($, on) => {
+  const { clock, hintRequests } = engine(on)
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  await box($).edit({ ...keyed('buy oat milk', ''), start: 3, end: 3 })
+  await clock.advance(2000)
+  expect(hintRequests()).toHaveLength(1)
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toHaveLength(2)
+})
+
+test('a one-word draft asks for no hints', async ($, on) => {
+  const { clock, hintRequests } = engine(on)
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('', 'milk '))
+  await clock.advance(2000)
+  expect(hintRequests()).toEqual([])
+})
+
+test('hints show dim under the status line, one line each, above what is beneath', async ($, on) => {
+  const { clock } = engine(on)
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  expect(await bandTexts($)).toEqual([
+    'zephyr · notes on · server up',
+    '↳ Groceries · oat milk is cheaper at the corner shop',
+    '↳ note · call mum',
+    'beneath',
+  ])
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ text: /^↳ note/ }))?.props).toMatchObject({ dimColor: true, wrap: 'truncate-end' })
+  await ui.unmount()
+})
+
+test('a reply that arrives after a newer edit is never shown', async ($, on) => {
+  const { clock, hintRequests, answer } = engine(on, { hints: 'held' })
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  expect(hintRequests()).toHaveLength(1)
+  await box($).edit(keyed('buy oat milk', ' today'))
+  answer(0, HINTS)
+  await clock.settle()
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toEqual([])
+
+  await clock.advance(1000)
+  answer(1, JSON.stringify({ hints: [{ entryId: 'e3', text: 'today is market day', at: '', score: 1, topic: null }] }))
+  await clock.settle()
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toEqual(['↳ note · today is market day'])
+})
+
+test('submitting a note clears the hints, and so does an emptied box', async ($, on) => {
+  const { clock } = engine(on)
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toHaveLength(2)
+  expect(await $.prompt.submit(typed('buy oat milk'))).toEqual({ drop: 'noted' })
+  await clock.settle()
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toEqual([])
+
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toHaveLength(2)
+  await box($).change({ text: '', cursor: 0, origin: { kind: 'clear' } })
+  expect((await bandTexts($)).filter(t => t.startsWith('↳'))).toEqual([])
+})
+
+test('with notes mode off there are no hint requests and no hints', async ($, on) => {
+  const { clock, hintRequests } = engine(on, { status: '{"up":true,"runsInFlight":1,"lastViewAt":null}' })
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  expect(hintRequests()).toHaveLength(1)
+  await $.command.run(TOGGLE)
+  expect(await bandTexts($)).toEqual(['zephyr · notes off · server up · 1 run', 'beneath'])
+
+  await box($).edit(keyed('buy oat milk', ' today'))
+  await clock.advance(2000)
+  expect(hintRequests()).toHaveLength(1)
+  expect(await bandTexts($)).toEqual(['zephyr · notes off · server up · 1 run', 'beneath'])
+})
+
+test('a server that is down shows no hints and no error beyond server down', async ($, on) => {
+  const { clock, hintRequests } = engine(on, { status: 'refused' })
+  await $.command.run(TOGGLE)
+  await box($).edit(keyed('buy oat', ' milk'))
+  await clock.advance(1000)
+  expect(hintRequests()).toHaveLength(1)
+  expect(await bandTexts($)).toEqual(['zephyr · notes on · server down', 'beneath'])
+})
+
+test('edits pass through unchanged, notes mode on or off', async ($, on) => {
+  const { seen } = engine(on)
+  const edit = keyed('buy oat', ' milk')
+  expect(await box($).edit(edit)).toEqual({ text: 'buy oat milk', cursor: 12 })
+  await $.command.run(TOGGLE)
+  expect(await box($).edit(edit)).toEqual({ text: 'buy oat milk', cursor: 12 })
+  expect(seen.edits).toEqual([edit, edit])
 })

@@ -2,7 +2,21 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, HttpInit, Register, Timer } from 'claude-code'
 
 import type { Server } from '../types'
-import { bandLine, decide, isBandShown, parseStatus, transcriptPathFor } from './notes'
+import type { Hints } from './notes'
+import {
+  bandLine,
+  decide,
+  draftChanged,
+  HINT_LIMIT,
+  hintLine,
+  hintsArrived,
+  isBandShown,
+  NO_DRAFT,
+  parseHints,
+  parseStatus,
+  shownHints,
+  transcriptPathFor,
+} from './notes'
 
 const notesFor = atom({ plugin: 'zephyr', key: 'notesFor' } as const, null)
 const server = atom({ plugin: 'zephyr', key: 'server' } as const, { kind: 'unknown' } as Server)
@@ -10,10 +24,14 @@ const server = atom({ plugin: 'zephyr', key: 'server' } as const, { kind: 'unkno
 const DEFAULT_PORT = 7317
 const POLL_MS = 5000
 const TIMEOUT_MS = 1500
+const QUIET_MS = 1000
 
 let base = `http://127.0.0.1:${DEFAULT_PORT}`
 let poller: Timer | null = null
 let isPolling = false
+let hints: Hints = NO_DRAFT
+let lastSeq = 0
+let quiet: Timer | null = null
 
 async function isNotesOn($: EngineInterface) {
   return (await read($, notesFor)) === (await $.session.id())
@@ -45,6 +63,41 @@ async function poll($: EngineInterface) {
     }
   } finally {
     isPolling = false
+  }
+}
+
+function setHints($: EngineInterface, next: Hints) {
+  const before = shownHints(hints)
+  hints = next
+  if (shownHints(next) !== before) $.ui.invalidate('ui.render')
+}
+
+function clearHints($: EngineInterface) {
+  quiet?.cancel()
+  quiet = null
+  setHints($, NO_DRAFT)
+}
+
+async function requestHints($: EngineInterface, seq: number) {
+  if (hints.kind !== 'waiting' || hints.seq !== seq) return
+  const path = `/hints?q=${encodeURIComponent(hints.draft)}&limit=${HINT_LIMIT}`
+  const res = (await isNotesOn($)) ? await call($, path) : null
+  setHints($, hintsArrived(hints, seq, res?.ok ? parseHints(res.text) : []))
+}
+
+// Synchronous, so edits apply in the order they were typed; notes mode is checked once the draft settles.
+function onDraft($: EngineInterface, draft: string) {
+  try {
+    const next = draftChanged(hints, draft, ++lastSeq)
+    if (next === hints) return
+    quiet?.cancel()
+    quiet = null
+    setHints($, next)
+    if (hints.kind !== 'waiting') return
+    const seq = hints.seq
+    quiet = $.clock.after(QUIET_MS, () => void requestHints($, seq).catch(() => undefined))
+  } catch {
+    // Hints never stand in the way of typing.
   }
 }
 
@@ -89,6 +142,7 @@ export const register: Register = (on, options) => {
     if (r.deny !== undefined) return { drop: `not noted: ${r.deny}` }
     // The note row is meta, which the transcript never draws; this notice is what the person sees, and the model never reads it.
     await $.session.append({ message: { type: 'system', content: [{ type: 'text', text: decision.echo }] } })
+    clearHints($)
     // A drop hands the draft back after this hook returns, so clear it on the next tick.
     $.clock.after(0, () => void $.prompt.fill({ text: '' }))
     return { drop: 'noted' }
@@ -97,13 +151,28 @@ export const register: Register = (on, options) => {
   on('session.end', async ($, e, next) => {
     poller?.cancel()
     poller = null
+    quiet?.cancel()
+    quiet = null
+    return next(e)
+  })
+
+  on('prompt.edit', async ($, e, next) => {
+    const box = await next(e)
+    onDraft($, box.text)
+    return box
+  })
+
+  on('prompt.change', async ($, e, next) => {
+    onDraft($, e.text)
     return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const line = bandLine(await isNotesOn($), await read($, server), await $.clock.now())
+    const isOn = await isNotesOn($)
+    const line = bandLine(isOn, await read($, server), await $.clock.now())
     if (!line) return next(e)
+    const shown = isOn ? shownHints(hints) : []
 
     const { Box, Text } = $.ui.resolve(e)
     // The band is one tree for every plugin: keep what the hooks beneath drew.
@@ -113,6 +182,11 @@ export const register: Register = (on, options) => {
         <Text color="claude" wrap="truncate-end">
           {line}
         </Text>
+        {shown.map((hint, i) => (
+          <Text key={`hint-${i}`} dimColor wrap="truncate-end">
+            {hintLine(hint)}
+          </Text>
+        ))}
         {below}
       </Box>
     )
