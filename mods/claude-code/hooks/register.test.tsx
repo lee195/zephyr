@@ -55,12 +55,17 @@ function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'ha
       </Box>
     )
   })
-  const notes = () =>
-    session.appended().map(r => {
-      const block = r.message.content[0]
-      return block && 'text' in block ? String(block.text) : ''
-    })
-  return { clock, seen, status, notes }
+  const rows = (type: string) =>
+    session
+      .appended()
+      .filter(r => r.message.type === type)
+      .map(r => {
+        const block = r.message.content[0]
+        return block && 'text' in block ? String(block.text) : ''
+      })
+  const notes = () => rows('user')
+  const notices = () => rows('system')
+  return { clock, seen, status, notes, notices }
 }
 
 test('off by default: a prompt reaches the model', async ($, on) => {
@@ -70,10 +75,11 @@ test('off by default: a prompt reaches the model', async ($, on) => {
 })
 
 test('in notes mode a prompt is appended as a note and dropped, and the box clears', async ($, on) => {
-  const { clock, seen, notes } = engine(on)
+  const { clock, seen, notes, notices } = engine(on)
   await $.command.run(TOGGLE)
   expect(await $.prompt.submit(typed('buy milk'))).toEqual({ drop: 'noted' })
   expect(notes()).toEqual(['[zephyr] buy milk'])
+  expect(notices()).toEqual(['✎ buy milk'])
   await clock.settle()
   expect(seen.filled).toEqual([''])
 })
@@ -89,9 +95,10 @@ test('in notes mode slash commands and plugin prompts pass through', async ($, o
 })
 
 test('a refused append drops with the reason and keeps the draft', async ($, on) => {
-  const { clock, seen } = engine(on, { deny: 'quota' })
+  const { clock, seen, notices } = engine(on, { deny: 'quota' })
   await $.command.run(TOGGLE)
   expect(await $.prompt.submit(typed('buy milk'))).toEqual({ drop: 'not noted: quota' })
+  expect(notices()).toEqual([])
   await clock.settle()
   expect(seen.filled).toEqual([])
 })

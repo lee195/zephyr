@@ -7,7 +7,7 @@ export const NOTE_PREFIX = '[zephyr] '
 /** Origins where a person typed the text; everything else reaches the model untouched. */
 const TYPED: ReadonlySet<PromptSubmitInput['origin']['kind']> = new Set(['composer', 'bridge'])
 
-export type SubmitDecision = { kind: 'pass' } | { kind: 'note'; text: string } | { kind: 'refuse'; reason: string }
+export type SubmitDecision = { kind: 'pass' } | { kind: 'note'; text: string; echo: string } | { kind: 'refuse'; reason: string }
 
 export function decide(
   e: Pick<PromptSubmitInput, 'text' | 'command' | 'isMeta' | 'origin' | 'attachments'>,
@@ -17,7 +17,7 @@ export function decide(
   if (!isNotesOn || e.command || e.isMeta || !TYPED.has(e.origin.kind) || !text) return { kind: 'pass' }
   // The transcript row takes text blocks only, and passing through would send the note to the model.
   if (e.attachments?.length) return { kind: 'refuse', reason: 'not noted: attachments are not supported' }
-  return { kind: 'note', text: `${NOTE_PREFIX}${text}` }
+  return { kind: 'note', text: `${NOTE_PREFIX}${text}`, echo: `✎ ${text}` }
 }
 
 /** Claude Code's name for a project folder under ~/.claude/projects. */

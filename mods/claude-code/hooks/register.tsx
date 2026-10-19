@@ -87,6 +87,8 @@ export const register: Register = (on, options) => {
     const r = await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: decision.text }] } })
     // A refused append keeps the draft in the box: the drop hands it back and nothing clears it.
     if (r.deny !== undefined) return { drop: `not noted: ${r.deny}` }
+    // The note row is meta, which the transcript never draws; this notice is what the person sees, and the model never reads it.
+    await $.session.append({ message: { type: 'system', content: [{ type: 'text', text: decision.echo }] } })
     // A drop hands the draft back after this hook returns, so clear it on the next tick.
     $.clock.after(0, () => void $.prompt.fill({ text: '' }))
     return { drop: 'noted' }

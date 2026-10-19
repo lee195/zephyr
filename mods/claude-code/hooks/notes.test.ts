@@ -5,10 +5,11 @@ import { ago, bandLine, decide, encodeProjectDir, parseStatus, transcriptPathFor
 const typed = (text: string) => ({ text, origin: { kind: 'composer' as const } })
 
 test('in notes mode a typed prompt becomes a prefixed note', () => {
-  expect(decide(typed('  buy milk \n'), true)).toEqual({ kind: 'note', text: '[zephyr] buy milk' })
+  expect(decide(typed('  buy milk \n'), true)).toEqual({ kind: 'note', text: '[zephyr] buy milk', echo: '✎ buy milk' })
   expect(decide({ text: 'from my phone', origin: { kind: 'bridge' } }, true)).toEqual({
     kind: 'note',
     text: '[zephyr] from my phone',
+    echo: '✎ from my phone',
   })
 })
 
