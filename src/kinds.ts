@@ -33,7 +33,7 @@ Reply with JSON only: {"upserts":[{"slug":string,"title":string,"sources":string
 - Put each new entry into exactly one topic. Reuse an existing topic's slug when the entry belongs there; create a new topic only for a clearly different subject.
 - Return only topics you create or change. For a changed topic, return its full rewritten page.
 - sources lists the ids of ALL entries on that topic, including ones already listed on the existing page.
-- slug is lowercase kebab-case. body is markdown that summarizes the topic's notes; do not add facts the notes do not contain.`
+- slug is lowercase kebab-case. body is markdown that summarizes the topic's notes; do not add facts the notes do not contain, and do not repeat the title as a heading.`
 
 const organizer: AgentKind = {
   kind: 'organizer',
