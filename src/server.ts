@@ -41,22 +41,26 @@ function sse(zephyr: Zephyr, signal: AbortSignal) {
 }
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]'])
+/** The Vite dev server's port; viewer/vite.config.ts pins it with strictPort so the two cannot drift apart. */
+export const VIEWER_DEV_PORT = 5173
 
 /**
- * Every mutating route passes this first. A browser page on another host, including a rebound DNS name that
- * resolves here, sends its own Origin and is refused; the harness plugins send none. Requiring a JSON body keeps a
- * cross-site form post, which cannot set that content type, from reaching a route at all.
+ * Every mutating route passes this first. Only pages served by this server or by the viewer's dev server may send
+ * an Origin; any other page, including another local app or a rebound DNS name that resolves here, is refused. The
+ * harness plugins send none. Requiring a JSON body keeps a cross-site form post, which cannot set that content type,
+ * from reaching a route at all.
  */
-function refuseMutation(req: Request): Response | null {
+function refuseMutation(req: Request, ownPort: number): Response | null {
   const origin = req.headers.get('origin')
-  if (origin !== null && !isLoopback(origin)) return fail('cross-origin requests are refused', 403)
+  if (origin !== null && !isOwnOrigin(origin, ownPort)) return fail('cross-origin requests are refused', 403)
   if (!/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') ?? '')) return fail('content-type must be application/json', 415)
   return null
 }
 
-function isLoopback(origin: string) {
+function isOwnOrigin(origin: string, ownPort: number) {
   try {
-    return LOOPBACK.has(new URL(origin).hostname)
+    const url = new URL(origin)
+    return url.protocol === 'http:' && LOOPBACK.has(url.hostname) && [ownPort, VIEWER_DEV_PORT].includes(Number(url.port))
   } catch {
     return false
   }
@@ -125,11 +129,11 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
     hostname: '127.0.0.1',
     port: opts.port,
     idleTimeout: 0,
-    async fetch(req) {
+    async fetch(req, server) {
       const { pathname, searchParams } = new URL(req.url)
       const route = `${req.method} ${pathname}`
       if (req.method !== 'GET') {
-        const refused = refuseMutation(req)
+        const refused = refuseMutation(req, server.port!)
         if (refused) return refused
       }
       switch (route) {

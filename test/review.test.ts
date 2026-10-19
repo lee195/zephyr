@@ -242,7 +242,7 @@ test('done refuses an until in the future, before the cursor, or not a timestamp
   }
 })
 
-test('every mutating route refuses a foreign Origin with 403 and a non-JSON body with 415; local and absent Origins pass', async () => {
+test('every mutating route refuses a foreign Origin, another local port included, with 403 and a non-JSON body with 415; its own, the viewer dev and absent Origins pass', async () => {
   const s = await running()
   try {
     const { until } = await s.digest()
@@ -255,6 +255,8 @@ test('every mutating route refuses a foreign Origin with 403 and a non-JSON body
     ] as const) {
       expect((await post(path, { ...json, origin: 'http://evil.example' }, body)).status).toBe(403)
       expect((await post(path, { ...json, origin: 'http://127.0.0.1.evil.example:7317' }, body)).status).toBe(403)
+      expect((await post(path, { ...json, origin: 'http://127.0.0.1:8080' }, body)).status).toBe(403)
+      expect((await post(path, { ...json, origin: 'http://localhost' }, body)).status).toBe(403)
       expect((await post(path, { 'content-type': 'text/plain' }, body)).status).toBe(415)
       expect((await post(path, {}, body)).status).toBe(415)
       expect((await post(path, json, body)).status).toBe(passed)
