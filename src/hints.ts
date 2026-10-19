@@ -1,4 +1,5 @@
 import type { Entry, EntryId, View } from './domain'
+import { topicsIn } from './kinds/organizer'
 import { tokenize, type RelevanceBackend } from './relevance'
 
 export interface Hint {
@@ -31,7 +32,7 @@ export async function hintsFor(draft: string, limit: number, entries: readonly E
   const same = draft.trim()
   const byId = new Map(entries.filter((e) => e.text.trim() !== same).map((e) => [e.id, e]))
   const topics = new Map<EntryId, View>()
-  for (const v of views) if (v.kind === 'organizer') for (const id of v.sources) if (!topics.has(id)) topics.set(id, v)
+  for (const v of topicsIn(views)) for (const id of v.sources) if (!topics.has(id)) topics.set(id, v)
   const { backend, scored, partial, minRelatedScore } = await relevance.rank(query, [...byId.values()])
   const hints = scored
     .filter((s) => s.score >= minRelatedScore)

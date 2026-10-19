@@ -96,8 +96,10 @@ export function organizerMessages(newEntries: Entry[], views: ViewContext, recen
   })
 }
 
-const topicDocs = (views: readonly View[]): RelevanceDoc[] =>
-  views.filter((v) => v.kind === 'organizer').map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` }))
+/** The topic pages among all views. */
+export const topicsIn = (views: readonly View[]): View[] => views.filter((v) => v.kind === 'organizer')
+
+const topicDocs = (views: readonly View[]): RelevanceDoc[] => topicsIn(views).map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` }))
 
 /** Waits for every topic to be ranked: a topic left out could not open, and the model would then duplicate it. */
 async function viewContext(world: World, own: View[], newEntries: Entry[]): Promise<ViewContext> {
@@ -139,7 +141,7 @@ export const organizer: AgentKind = {
     const runIds = new Set(run.entryIds)
     const newEntries = world.entries.filter((e) => runIds.has(e.id))
     const recent = world.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
-    const own = world.views.filter((v) => v.kind === 'organizer')
+    const own = topicsIn(world.views)
     const views = await viewContext(world, own, newEntries)
     const ctx: ReplyContext = {
       knownIds: new Set(world.entries.map((e) => e.id)),
