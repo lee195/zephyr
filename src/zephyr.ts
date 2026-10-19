@@ -472,7 +472,8 @@ export class Zephyr {
       run.error = (err as Error).message
       console.error(`[zephyr] ${kind.kind} ${run.id} attempt ${run.attempt} failed: ${run.error}`)
     }
-    run.endedAt = new Date().toISOString()
+    // On the stamp clock, which can run a few ms ahead of the wall clock, since a digest window compares it with until.
+    run.endedAt = this.stamp()
     if (run.status === 'failed') this.scheduleRetry(run, run.viewIds ? { viewId: run.viewIds[0]! } : { entryIds: run.entryIds })
     else if (run.uncovered) this.scheduleRetry(run, { entryIds: run.uncovered })
     this.emit({ type: 'run', data: run })
