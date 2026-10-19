@@ -145,7 +145,7 @@ test('a scheduled retry counts as in flight until it runs', async () => {
   expect(z.status().runsInFlight).toBe(0)
 })
 
-test('a retry coalesces with the waiting run and keeps the higher attempt', async () => {
+test('a retry never merges with new work of another attempt; work of the same attempt still coalesces', async () => {
   const gates: Array<() => void> = []
   const calls: string[][] = []
   const backend: ModelBackend = {
@@ -165,6 +165,7 @@ test('a retry coalesces with the waiting run and keeps the higher attempt', asyn
   gates.shift()!()
   await eventually(() => calls.length === 2)
   await z.ingest([entry('e3')])
+  await z.ingest([entry('e4')])
   await eventually(() => z.listRuns().some((r) => r.status === 'queued' && r.entryIds.includes('e1')))
   while (gates.length || z.status().runsInFlight) {
     gates.shift()?.()
@@ -172,11 +173,13 @@ test('a retry coalesces with the waiting run and keeps the higher attempt', asyn
   }
   await z.idle()
 
-  expect(calls).toEqual([['e1'], ['e2'], ['e1', 'e3']])
-  expect(z.listRuns().map((r) => [r.entryIds, r.status, r.attempt])).toEqual([
-    [['e1'], 'failed', 1],
-    [['e2'], 'done', 1],
-    [['e3', 'e1'], 'done', 2],
+  expect(calls).toEqual([['e1'], ['e2'], ['e3', 'e4'], ['e1']])
+  const [failed] = z.listRuns()
+  expect(z.listRuns().map((r) => [r.entryIds, r.status, r.attempt, r.retryOf])).toEqual([
+    [['e1'], 'failed', 1, undefined],
+    [['e2'], 'done', 1, undefined],
+    [['e3', 'e4'], 'done', 1, undefined],
+    [['e1'], 'done', 2, failed!.id],
   ])
 })
 

@@ -14,7 +14,10 @@ const RETRY_DELAYS_MS = [5_000, 30_000, 120_000]
 type Work = { entryIds: EntryId[] } | { viewId: string }
 
 interface KindQueue {
-  /** Keyed by what a run covers, so work on the same thing coalesces: one key for all entries, one per source view. */
+  /**
+   * Keyed by attempt and what a run covers, so work on the same thing at the same attempt coalesces: one key for all
+   * entries, one per source view. Work of different attempts never merges, so each keeps its own retries.
+   */
   waiting: Map<string, Run>
   draining: Promise<void> | null
 }
@@ -259,16 +262,15 @@ export class Zephyr {
     return q
   }
 
-  /** Coalesces into the waiting run that covers the same thing; the merged run carries the highest attempt of its parts. */
+  /** Coalesces into the waiting run of the same attempt that covers the same thing. */
   private enqueue(kind: string, work: Work, attempt = 1, retryOf?: string) {
     const q = this.queue(kind)
-    const key = 'viewId' in work ? work.viewId : ''
+    const key = `${attempt}:${'viewId' in work ? work.viewId : ''}`
     const ids = 'entryIds' in work ? work.entryIds : []
     let run = q.waiting.get(key)
     if (run) {
       const have = new Set(run.entryIds)
       run.entryIds.push(...ids.filter((id) => !have.has(id)))
-      run.attempt = Math.max(run.attempt, attempt)
       run.retryOf ??= retryOf
     } else {
       run = { id: `run-${Date.now()}-${this.runSeq++}`, kind, entryIds: [...ids], ...('viewId' in work && { viewIds: [work.viewId] }), status: 'queued', attempt, retryOf }
