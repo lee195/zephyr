@@ -1,5 +1,7 @@
 import { isAbsolute, join, normalize, resolve } from 'node:path'
 import { parseAdjustment } from './adjust'
+import { mcp } from './mcp'
+import { reviewBrief } from './review'
 import type { Zephyr } from './zephyr'
 
 const json = (data: unknown, status = 200) =>
@@ -158,8 +160,14 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
           return finishReview(zephyr, req)
         case 'POST /api/adjustments':
           return adjust(zephyr, req)
+        case 'POST /mcp':
+          return mcp(zephyr, req)
+        case 'GET /mcp':
+          return new Response(null, { status: 405, headers: { allow: 'POST' } })
         case 'GET /api/review':
           return json(await zephyr.review())
+        case 'GET /api/review/brief':
+          return new Response(reviewBrief(await zephyr.review()), { headers: { 'content-type': 'text/plain; charset=utf-8' } })
         case 'GET /status':
           return json(zephyr.status())
         case 'GET /api/views':

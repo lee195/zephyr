@@ -133,3 +133,18 @@ export function closeWindow(until: unknown, cursor: string | null, now: string):
   if (cursor !== null && until < cursor) return { ok: false, error: 'until is before the last review' }
   return { ok: true, until }
 }
+
+/**
+ * The prompt a harness's review command submits: the person's authority over the review, the tools to act with,
+ * and the digest. The server owns it because it names the server's MCP tools.
+ */
+export function reviewBrief(digest: Digest): string {
+  return [
+    'Zephyr review. The person directs this review of the notes taken since the last one; the digest below lists them.',
+    'Apply only the changes the person asks for, with the zephyr MCP tools. You may suggest fixes, but apply a suggestion only after the person says yes.',
+    `When the person says the review is done, call finish_review with until "${digest.until}".`,
+    'Start with a short summary of the digest and ask what to change.',
+    '',
+    JSON.stringify(digest),
+  ].join('\n')
+}

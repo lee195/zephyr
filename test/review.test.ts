@@ -253,6 +253,7 @@ test('every mutating route refuses a foreign Origin, another local port included
       ['/api/review/done', { until }, 200],
       ['/sessions', {}, 400],
       ['/api/adjustments', { op: 'renameTopic', slug: 'nowhere', title: 'X' }, 409],
+      ['/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'rename_topic', arguments: { slug: 'nowhere', title: 'X' } } }, 200],
     ] as const) {
       expect((await post(path, { ...json, origin: 'http://evil.example' }, body)).status).toBe(403)
       expect((await post(path, { ...json, origin: 'http://127.0.0.1.evil.example:7317' }, body)).status).toBe(403)

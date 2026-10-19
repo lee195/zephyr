@@ -103,10 +103,34 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 | `GET /api/review` | The digest since the last review, computed on each request: `{ since, until, notes: { count, ids }, newTopics, topics, sharedNotes, renames, tasks, unfiled, rewrites }`. Every list is about the notes the server received after `since` and up to `until`, or about writes in that window. `since` is `null` before the first review. |
 | `POST /api/review/done` `{ until }` | Ends a review: the next digest starts after `until`, the value the digest that was reviewed returned. A note received after that digest was read stays in the next one. Refuses an `until` in the future or before the last review. |
 | `POST /api/adjustments` `{ op, ... }` | Apply one adjustment (below). 200 with `{ id, ok: true, written, deleted, rewrites, warnings }`; 400 for a malformed op; 409 with `{ id, ok: false, error }` when the data refuses it, such as an unknown topic. |
+| `GET /api/review/brief` | The prompt a harness's review command submits, as text: the review's rules, naming the MCP tools, then the digest as JSON. |
+| `POST /mcp` | MCP for the harness agent; see below. `GET /mcp` answers 405, since there is no server-to-client stream. |
 | `GET /events` | SSE stream of `entry`, `run`, `view` and `removed` (`{ of: 'entry' \| 'view', id }`) events |
 | `GET /` | Viewer |
 
 Every request other than `GET` must send `content-type: application/json` (else 415) and either no `Origin` or a loopback one (else 403). The harness plugins send no `Origin`. A web page on another site, including one reaching this port through a DNS name that resolves to 127.0.0.1, sends its own and is refused.
+
+## MCP
+
+`POST /mcp` speaks MCP over Streamable HTTP, statelessly: each request is one JSON-RPC message and gets one JSON reply, or 202 for a notification. There is no session id and no SSE stream. It answers `initialize`, `ping`, `tools/list` and `tools/call`. Any other method gets -32601, which is also how a client's `server/discover` probe learns to fall back to `initialize`.
+
+| Tool | Does |
+| --- | --- |
+| `get_review` | The digest, as `GET /api/review` returns it |
+| `finish_review` `{ until }` | As `POST /api/review/done` |
+| `list_topics` | Every topic: slug, title, note ids |
+| `get_topic` `{ slug }` | The page body and the cited notes with their text |
+| `search_notes` `{ query, limit? }` | As `GET /hints`, including which backend ranked |
+| `rename_topic`, `merge_topics`, `split_topic`, `move_note`, `detach_note`, `edit_note`, `tombstone_note`, `edit_task`, `complete_task`, `delete_task` | One adjustment op each, with the op's fields as arguments |
+
+Each op tool's input schema comes from the same field table (`OPS` in `src/adjust.ts`) that `POST /api/adjustments` validates with. A result is the JSON the HTTP route returns, as text. A malformed op or one the data refuses is a tool error carrying the 400 or 409 message.
+
+Add the server to a harness once:
+
+- Claude Code: `claude mcp add --transport http --scope user zephyr http://127.0.0.1:7317/mcp`
+- opencode, in `opencode.json`: `"mcp": { "zephyr": { "type": "remote", "url": "http://127.0.0.1:7317/mcp" } }`
+
+The review commands (`/zephyr review` in Claude Code, `/zephyr-review` in opencode) look for a server named `zephyr`. MCP requests pass the same guard as every other POST; Claude Code 2.1.303 and opencode 1.18.33 send no `Origin`.
 
 ## Duplication
 

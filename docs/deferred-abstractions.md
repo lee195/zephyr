@@ -17,6 +17,7 @@ Reviewed on 2026-10-19 at commit `d5b510f`.
 | Tolerant JSONL load that skips torn lines | `src/store.ts` `readText` + `parseJsonl`, `src/embedding.ts` `load` | Export from a small `src/jsonl.ts` |
 | A done run with timestamps | `src/zephyr.ts` `migrateCoverage`, `scripts/measure-organizer-prompt.ts` | An exported `doneRun` in `src/` |
 | Fake relevance that gives every doc one score | `test/hints.test.ts` `scoring`, `test/relevance.test.ts` `fixed` | A helper with a call counter in `test/helpers.ts` |
+| Hint limit check, an integer from 1 to 5 | `src/server.ts` `hints` (query string), `src/mcp.ts` `search_notes` (JSON) | `parseHintLimit(raw)` in `src/hints.ts` taking the raw value |
 | `afterEach` cleanup arrays | `test/hints.test.ts`, `test/warm.test.ts` | `useCleanup()` in `test/helpers.ts` |
 
 ## Leave as two copies
