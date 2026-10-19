@@ -14,6 +14,7 @@ const svgOf = (title: string) => `<svg viewBox="0 0 100 20"><text x="2" y="14">$
 /**
  * Plays both kinds. As organizer it files an entry "<slug>: text" under topic <slug>, writing or
  * appending as the page requires; "<slug>: text => Title" appends with that new title. As visualizer it draws the topic's title, optionally held until released.
+ * Asked to rewrite a topic, it makes the page one line per note.
  */
 function world() {
   const drawn: string[] = []
@@ -22,6 +23,8 @@ function world() {
   const backend: ModelBackend = {
     async complete(messages: ChatMessage[]) {
       const payload = payloadOf(messages)
+      if ('notes' in payload)
+        return { json: { slug: payload.slug, title: payload.title, sources: payload.notes.map((n: any) => n.id), body: payload.notes.map((n: any) => `- ${n.text}`).join('\n') } }
       if (!('newEntries' in payload)) {
         drawn.push(payload.title)
         await held.pass()
@@ -117,6 +120,19 @@ test('changes to a topic while its diagram is drawn coalesce into one redraw; ot
   expect(z.listRuns().filter((r) => r.kind === 'visualizer').map((r) => r.viewIds![0]).sort()).toEqual(['organizer/garden', 'organizer/party', 'organizer/party'])
   const party = z.listViews().find((v) => v.id === 'organizer/party')!
   expect(diagramOf(z, 'party')?.derivedFrom?.updatedAt).toBe(party.updatedAt)
+})
+
+test('a drawn topic that is rewritten is redrawn from the rewritten page', async () => {
+  const { z, w, note } = await started()
+  for (let i = 0; i < 6; i++) await note(`party: item ${i}`)
+  expect(w.drawn).toHaveLength(3)
+  await z.sweep()
+  await z.idle()
+
+  const party = z.listViews().find((v) => v.id === 'organizer/party')!
+  expect(party.body).toStartWith('- party: item 0')
+  expect(w.drawn).toHaveLength(4)
+  expect(diagramOf(z, 'party')?.derivedFrom).toEqual({ id: party.id, updatedAt: party.updatedAt })
 })
 
 test('a topic that changes in the same millisecond it was drawn is still redrawn', async () => {
