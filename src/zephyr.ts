@@ -74,7 +74,7 @@ export class Zephyr {
     for (const v of await this.store.loadViews()) this.views.set(v.id, v)
     const finished = await this.store.loadRuns()
     this.runs = (finished ?? []).slice(-RUN_HISTORY)
-    for (const kind of this.kindsOn('entry')) {
+    for (const kind of this.entryKinds()) {
       const covered = finished ? doneEntryIds(finished, kind.kind) : await this.migrateCoverage(kind.kind)
       const uncovered = this.entries.filter((e) => !covered.has(e.id)).map((e) => e.id)
       if (uncovered.length > 0) this.enqueue(kind.kind, { entryIds: uncovered })
@@ -180,12 +180,12 @@ export class Zephyr {
     await this.store.appendEntries(fresh)
     this.entries.push(...fresh)
     for (const e of fresh) this.emit({ type: 'entry', data: e })
-    for (const kind of this.kindsOn('entry')) this.enqueue(kind.kind, { entryIds: fresh.map((e) => e.id) })
+    for (const kind of this.entryKinds()) this.enqueue(kind.kind, { entryIds: fresh.map((e) => e.id) })
     return fresh
   }
 
-  private kindsOn(on: 'entry'): AgentKind[] {
-    return Object.values(this.kinds).filter((k) => k.trigger.on === on)
+  private entryKinds(): AgentKind[] {
+    return Object.values(this.kinds).filter((k) => k.trigger.on === 'entry')
   }
 
   /** Queues every view-triggered kind that wants to derive from this view. */
