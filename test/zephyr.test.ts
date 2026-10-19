@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { doneRun, entry, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, gate, seedDataDir, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -20,26 +20,17 @@ const noteRow = (uuid: string, text: string) =>
 /** Groups every entry it is shown into one "all" topic; optionally holds each call until released. */
 function fakeBackend() {
   const calls: string[][] = []
-  const gates: Array<() => void> = []
-  let hold = false
+  const held = gate()
   const backend: ModelBackend = {
     async complete(messages: ChatMessage[]) {
       const payload = JSON.parse(messages.at(-1)!.content)
       const ids: string[] = payload.newEntries.map((e: any) => e.id)
       calls.push(ids)
-      if (hold) await new Promise<void>((r) => gates.push(r))
+      await held.pass()
       return { json: { ops: [{ op: 'write', slug: 'all', title: 'All', sources: ids, body: ids.join(',') }] } }
     },
   }
-  return {
-    backend,
-    calls,
-    holdCalls: () => (hold = true),
-    release: () => {
-      hold = false
-      gates.splice(0).forEach((r) => r())
-    },
-  }
+  return { backend, calls, holdCalls: () => held.hold(), release: held.release }
 }
 
 async function eventually(check: () => boolean | Promise<boolean>, ms = 3000) {

@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { kinds } from '../src/kinds'
 import { checkAscii, checkSvg, parseDiagram } from '../src/kinds/visualizer'
 import { Zephyr } from '../src/zephyr'
-import { doneRun, entry, eventually, filesUnder, payloadOf, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, eventually, gate, filesUnder, payloadOf, seedDataDir, tempDir } from './helpers'
 
 const organizerAndVisualizer = { organizer: kinds.organizer!, visualizer: kinds.visualizer! }
 
@@ -17,15 +17,14 @@ const svgOf = (title: string) => `<svg viewBox="0 0 100 20"><text x="2" y="14">$
  */
 function world() {
   const drawn: string[] = []
-  const gates: Array<() => void> = []
-  let hold = false
+  const held = gate()
   let diagram: (title: string) => unknown = (title) => ({ format: 'svg', body: svgOf(title) })
   const backend: ModelBackend = {
     async complete(messages: ChatMessage[]) {
       const payload = payloadOf(messages)
       if (!('newEntries' in payload)) {
         drawn.push(payload.title)
-        if (hold) await new Promise<void>((r) => gates.push(r))
+        await held.pass()
         return { json: diagram(payload.title) }
       }
       const known = new Set<string>([...payload.openTopics.map((t: any) => t.slug), ...payload.topicIndex.map((l: string) => l.split(' | ')[0])])
@@ -41,11 +40,8 @@ function world() {
   return {
     backend,
     drawn,
-    hold: () => (hold = true),
-    release: () => {
-      hold = false
-      gates.splice(0).forEach((r) => r())
-    },
+    hold: () => held.hold(),
+    release: held.release,
     replyWith: (fn: typeof diagram) => (diagram = fn),
   }
 }
