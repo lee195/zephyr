@@ -92,7 +92,19 @@ export function parseReviewCount(text: string): number | null {
 
 /** What ending notes mode says about the notes waiting for review; null when there are none. */
 export function reviewNotice(count: number): string | null {
-  return count > 0 ? `${count} ${count === 1 ? 'note' : 'notes'} since last review` : null
+  return count > 0 ? `${count} ${count === 1 ? 'note' : 'notes'} since last review · /zephyr review` : null
+}
+
+/** The review acts only through the zephyr MCP server's tools; this one stands for all of them. */
+export const REVIEW_TOOL = 'mcp__zephyr__finish_review'
+
+/** What `/zephyr review` says when the session has no zephyr MCP tools, so no review turn could act. */
+export function mcpMissing(base: string): string {
+  return [
+    'The zephyr MCP server is not connected in this session, so a review could not change anything.',
+    `Set it up once with: claude mcp add --transport http --scope user zephyr ${base}/mcp`,
+    'then start a new session, or reconnect it with /mcp if it is set up.',
+  ].join('\n')
 }
 
 /** One hint as the band shows it: the matching note's topic title, when it has one, and its text. */

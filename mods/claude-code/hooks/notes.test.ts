@@ -88,8 +88,8 @@ test('hints parsing keeps up to three readable hints, and anything else is none'
 })
 
 test('the review notice counts notes, singular for one, and is absent for none', () => {
-  expect(reviewNotice(1)).toBe('1 note since last review')
-  expect(reviewNotice(12)).toBe('12 notes since last review')
+  expect(reviewNotice(1)).toBe('1 note since last review · /zephyr review')
+  expect(reviewNotice(12)).toBe('12 notes since last review · /zephyr review')
   expect(reviewNotice(0)).toBeNull()
 })
 

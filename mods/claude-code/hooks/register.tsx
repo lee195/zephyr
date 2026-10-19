@@ -11,10 +11,12 @@ import {
   hintLine,
   hintsArrived,
   isBandShown,
+  mcpMissing,
   NO_DRAFT,
   parseHints,
   parseReviewCount,
   parseStatus,
+  REVIEW_TOOL,
   reviewNotice,
   shownHints,
   transcriptPathFor,
@@ -124,17 +126,35 @@ async function noticeUnreviewed($: EngineInterface) {
   if (text) await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } })
 }
 
+// The brief is the server's: the digest and the rules of the review, naming the server's tools. The model reads it as
+// this plugin's message and the person directs the turns after it.
+async function startReview($: EngineInterface) {
+  const res = await call($, '/api/review/brief')
+  if (!res?.ok) return { text: `Zephyr is not reachable on ${base}.` }
+  if (!(await $.tool.list()).some(t => t.name === REVIEW_TOOL)) return { text: mcpMissing(base) }
+  // A submit from inside command.run would wait on the turn this hook holds, so it goes on the next tick.
+  $.clock.after(0, () => void $.prompt.submit({ text: res.text }).catch(err => $.ui.log(`zephyr review did not start: ${String(err)}`)))
+  return { text: 'Zephyr review started.' }
+}
+
 export const register: Register = (on, options) => {
   const port = options.port
   if (typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536) base = `http://127.0.0.1:${port}`
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'zephyr', description: 'Toggle notes mode: prompts are kept as notes, with no reply' })
+    await $.command.register({
+      name: 'zephyr',
+      description: 'Toggle notes mode: prompts are kept as notes, with no reply. /zephyr review reviews the notes.',
+      argumentHint: '[review]',
+    })
     if (await isNotesOn($)) void announce($).catch(() => undefined)
     return next(e)
   })
 
-  on('command.run', { command: 'zephyr' }, async $ => {
+  on('command.run', { command: 'zephyr' }, async ($, e) => {
+    const args = e.args.trim()
+    if (args === 'review') return startReview($)
+    if (args) return { text: '/zephyr toggles notes mode; /zephyr review reviews the notes since the last review.' }
     const sessionId = await $.session.id()
     const now = await update($, notesFor, was => (was === sessionId ? null : sessionId))
     if (now === null) {

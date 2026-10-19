@@ -1,4 +1,4 @@
-import type { TuiPlugin, TuiPluginApi } from '@opencode-ai/plugin/tui'
+import type { TuiPlugin } from '@opencode-ai/plugin/tui'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
@@ -16,7 +16,7 @@ function dbPath(env = process.env) {
 function reviewToast(body: unknown): string | null {
   const count = (body as { notes?: { count?: unknown } } | null)?.notes?.count
   if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0) return null
-  return `${count} ${count === 1 ? 'note' : 'notes'} since last review`
+  return `${count} ${count === 1 ? 'note' : 'notes'} since last review · /zephyr-review`
 }
 
 const tui: TuiPlugin = async (api, options) => {
@@ -78,14 +78,37 @@ const tui: TuiPlugin = async (api, options) => {
     )
   }
 
-  // From the home screen there is no session yet; a new one starts with the first note instead of a model turn.
-  async function notes(api: TuiPluginApi) {
+  // From the home screen there is no session yet, so one is started.
+  async function currentSession(what: string) {
     const route = api.route.current
-    if (route.name === 'session' && typeof route.params?.sessionID === 'string') return ask(route.params.sessionID)
+    if (route.name === 'session' && typeof route.params?.sessionID === 'string') return route.params.sessionID
     const created = await api.client.session.create({})
-    if (!created.data) return api.ui.toast({ variant: 'error', message: 'could not start a session for notes' })
+    if (!created.data) {
+      api.ui.toast({ variant: 'error', message: `could not start a session for ${what}` })
+      return null
+    }
     api.route.navigate('session', { sessionID: created.data.id })
-    ask(created.data.id)
+    return created.data.id
+  }
+
+  async function notes() {
+    const sessionID = await currentSession('notes')
+    if (sessionID) ask(sessionID)
+  }
+
+  // The brief is the server's: the digest and the rules of the review, naming the server's tools. It is sent as a
+  // prompt, so the model's first turn reads it and the person directs the turns after it.
+  async function review() {
+    const brief = await fetch(`${base}/api/review/brief`, { signal: AbortSignal.timeout(1500) })
+      .then((res) => (res.ok ? res.text() : null))
+      .catch(() => null)
+    if (brief === null) return api.ui.toast({ variant: 'error', message: `Zephyr is not reachable on ${base}` })
+    if (!api.state.mcp().some((m) => m.name === 'zephyr' && m.status === 'connected'))
+      return api.ui.toast({ variant: 'error', message: `The zephyr MCP server is not connected, so a review could not change anything. Add "mcp": { "zephyr": { "type": "remote", "url": "${base}/mcp" } } to opencode.json and restart opencode.`, duration: 15_000 })
+    const sessionID = await currentSession('the review')
+    if (!sessionID) return
+    const sent = await api.client.session.promptAsync({ sessionID, parts: [{ type: 'text', text: brief }] })
+    if (sent.error) api.ui.toast({ variant: 'error', message: 'the review did not start' })
   }
 
   const dispose = api.keymap.registerLayer({
@@ -97,7 +120,16 @@ const tui: TuiPlugin = async (api, options) => {
         desc: 'Keep what you type as notes, with no model reply',
         category: 'Zephyr',
         slashName: 'note',
-        run: () => void notes(api),
+        run: () => void notes(),
+      },
+      {
+        namespace: 'palette',
+        name: 'zephyr.review',
+        title: 'Zephyr: review notes',
+        desc: 'Start a review of the notes since the last review, with the zephyr MCP tools',
+        category: 'Zephyr',
+        slashName: 'zephyr-review',
+        run: () => void review(),
       },
     ],
     bindings: [],

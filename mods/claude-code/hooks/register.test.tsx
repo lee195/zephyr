@@ -4,6 +4,8 @@ import type { HttpInit, On, PromptEditInput } from 'claude-code'
 
 type Fetched = { url: string; init?: HttpInit }
 
+const BRIEF = 'Zephyr review. The person directs this review.\n{"until":"2026-10-19T12:00:00.000Z"}'
+
 const BAND = {
   plugin: 'zephyr',
   component: 'AbovePrompt',
@@ -48,11 +50,11 @@ const HINTS = JSON.stringify({
 
 // Stands in for the engine: one session, a server answering `status` and `hints` (or refusing, or hanging), a model that echoes.
 // `hints: 'held'` keeps each hints request open until the test answers it through `answer`.
-function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'hangs'; hints?: string | 'held'; review?: string } = {}) {
+function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'hangs'; hints?: string | 'held'; review?: string; tools?: string[] } = {}) {
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.env(on, { HOME: '/Users/me' })
   const session = mock.session(on)
-  const seen = { filled: [] as string[], fetched: [] as Fetched[], edits: [] as PromptEditInput[] }
+  const seen = { filled: [] as string[], fetched: [] as Fetched[], edits: [] as PromptEditInput[], submitted: [] as string[] }
   const status = { text: opts.status }
   const held: Array<(text: string) => void> = []
   const reply = (text: string) => ({ value: { status: 200, ok: true, headers: {}, text } })
@@ -69,6 +71,7 @@ function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'ha
     if (status.text === 'hangs') return new Promise<never>(() => undefined)
     if (e.url.endsWith('/status')) return reply(status.text ?? '{"up":true,"runsInFlight":0,"lastViewAt":null}')
     if (e.url.endsWith('/api/review')) return reply(opts.review ?? '{}')
+    if (e.url.endsWith('/api/review/brief')) return reply(BRIEF)
     if (!e.url.includes('/hints?')) return reply('{}')
     if (opts.hints === 'held') return new Promise<ReturnType<typeof reply>>(resolve => held.push(text => resolve(reply(text))))
     return reply(opts.hints ?? HINTS)
@@ -78,7 +81,11 @@ function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'ha
     return { text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }
   })
   on('prompt.change', (_$, e) => ({ text: e.text }))
-  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('prompt.submit', (_$, e) => {
+    if (e.origin.kind === 'plugin') seen.submitted.push(e.text)
+    return { text: e.text }
+  })
+  on('tool.list', () => ({ value: (opts.tools ?? []).map(name => ({ name, description: '', mcp: true })) }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
@@ -335,7 +342,7 @@ test('turning notes mode off says how many notes wait for review, below the repl
   expect(notices()).toEqual([])
   expect(await $.command.run(TOGGLE)).toEqual({ text: 'Notes mode off.' })
   await clock.settle()
-  expect(notices()).toEqual(['3 notes since last review'])
+  expect(notices()).toEqual(['3 notes since last review · /zephyr review'])
 })
 
 test('turning notes mode off says nothing more when no note waits for review', async ($, on) => {
@@ -358,4 +365,39 @@ test('turning notes mode off says nothing more when the server is down or hangs'
   expect(await $.command.run(TOGGLE)).toEqual({ text: 'Notes mode off.' })
   await clock.advance(2000)
   expect(notices()).toEqual([])
+})
+
+const REVIEW_CMD = { ...TOGGLE, args: 'review' }
+const ZEPHYR_TOOLS = ['mcp__zephyr__get_review', 'mcp__zephyr__finish_review', 'mcp__zephyr__rename_topic']
+
+test('/zephyr review submits the server\'s brief as a turn when the zephyr MCP tools are there', async ($, on) => {
+  const { clock, seen } = engine(on, { tools: ['Read', ...ZEPHYR_TOOLS] })
+  expect(await $.command.run(REVIEW_CMD)).toEqual({ text: 'Zephyr review started.' })
+  await clock.settle()
+  expect(seen.submitted).toEqual([BRIEF])
+  expect(seen.fetched.map(f => f.url)).toContain('http://127.0.0.1:7317/api/review/brief')
+})
+
+test('/zephyr review without the zephyr MCP server says how to add it and starts no turn', async ($, on) => {
+  const { clock, seen } = engine(on, { tools: ['Read', 'mcp__other__finish_review'] })
+  const { text } = await $.command.run(REVIEW_CMD)
+  expect(text).toContain('claude mcp add --transport http --scope user zephyr http://127.0.0.1:7317/mcp')
+  await clock.settle()
+  expect(seen.submitted).toEqual([])
+})
+
+test('/zephyr review with the server down says so and starts no turn', async ($, on) => {
+  const { clock, seen, status } = engine(on, { tools: ZEPHYR_TOOLS })
+  status.text = 'refused'
+  expect(await $.command.run(REVIEW_CMD)).toEqual({ text: 'Zephyr is not reachable on http://127.0.0.1:7317.' })
+  await clock.settle()
+  expect(seen.submitted).toEqual([])
+})
+
+test('/zephyr review and an unknown argument leave notes mode as it was', async ($, on) => {
+  const { notes } = engine(on, { tools: ZEPHYR_TOOLS })
+  await $.command.run(REVIEW_CMD)
+  expect((await $.command.run({ ...TOGGLE, args: 'reveiw' })).text).toContain('/zephyr review reviews')
+  expect(await $.prompt.submit(typed('hello'))).toEqual({ text: 'hello' })
+  expect(notes()).toEqual([])
 })
