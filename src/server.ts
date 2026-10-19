@@ -61,15 +61,22 @@ async function registerSession(zephyr: Zephyr, req: Request) {
   return json({ ok: true })
 }
 
+/** Defense in depth behind the viewer's own rendering rules: no inline or foreign script can run in the page. */
+export const CSP = "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
+
+function fileResponse(file: ReturnType<typeof Bun.file>) {
+  return new Response(file, file.type.startsWith('text/html') ? { headers: { 'content-security-policy': CSP } } : undefined)
+}
+
 async function serveStatic(distDir: string, pathname: string) {
   const root = resolve(distDir)
   const target = resolve(join(root, normalize(decodeURIComponent(pathname))))
   if (target.startsWith(root + '/')) {
     const file = Bun.file(target)
-    if (await file.exists()) return new Response(file)
+    if (await file.exists()) return fileResponse(file)
   }
   const index = Bun.file(join(root, 'index.html'))
-  if (await index.exists()) return new Response(index)
+  if (await index.exists()) return fileResponse(index)
   return new Response('viewer not built; run `bun run build`', { status: 503 })
 }
 

@@ -28,7 +28,20 @@ data/
   sessions.json                 registered transcripts and their byte offsets
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
   views/<kind>/<slug>.json      view metadata: title, sources, updatedAt
+  runs.jsonl                    every finished run, append-only
 ```
+
+## Kinds
+
+Each kind writes only `views/<kind>/`, through its own serial queue.
+
+| Kind | Runs on | Writes |
+| --- | --- | --- |
+| `organizer` | each new entry | topic pages `organizer/<slug>.md` |
+| `tasks` | each new entry | `tasks/tasks.json` holds the tasks as data (`{ id, text, due?, done, sources }`), `tasks/tasks.md` renders them |
+| `visualizer` | an organizer topic with 4 or more sources whose diagram is missing or older than the topic | `visualizer/<slug>.svg` or `.txt`, with `derivedFrom` naming the topic version it drew |
+
+The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram never run, and HTML responses carry a Content-Security-Policy that allows only the viewer's own scripts.
 
 ## HTTP
 

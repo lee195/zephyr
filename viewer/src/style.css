@@ -44,6 +44,7 @@ h3 { font-size: 16px; margin: 0 0 8px; }
 .run.running, .run.queued { border-color: var(--warn); color: var(--warn); }
 .run.done { color: var(--ok); }
 .run.failed { border-color: var(--bad); color: var(--bad); }
+.run.dropped { border-style: dashed; }
 
 main { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
 @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
@@ -72,7 +73,16 @@ main { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
 .md :first-child { margin-top: 0; }
 .md :last-child { margin-bottom: 0; }
 .md pre, .ascii { overflow-x: auto; font-size: 13px; }
-.svg { max-width: 100%; }
+.svg { max-width: 100%; height: auto; display: block; }
+.derived { margin-top: 12px; }
+
+.tasks { list-style: none; padding: 0; margin: 0; }
+.tasks li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.tasks li:last-child { border-bottom: 0; }
+.tasks.done li { color: var(--muted); text-decoration: line-through; }
+.due { color: var(--warn); font-size: 13px; white-space: nowrap; }
+details { margin-top: 8px; font-size: 14px; }
+summary { cursor: pointer; }
 
 .entries ol { list-style: none; padding: 0; margin: 0; font-size: 13px; }
 .entries li { padding: 6px 0; border-bottom: 1px solid var(--border); }
