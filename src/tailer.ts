@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
+import type { Batch } from './domain'
 
 export interface Chunk {
   lines: string[]
@@ -31,7 +32,7 @@ export async function readComplete(path: string, offset: number): Promise<Chunk>
   }
 }
 
-/** Watches one file and delivers each new batch of complete lines, serially. */
+/** Watches one transcript and delivers each batch its adapter reads, serially. */
 export class Tailer {
   private watcher: FSWatcher | null = null
   private timer: ReturnType<typeof setInterval> | null = null
@@ -41,7 +42,8 @@ export class Tailer {
   constructor(
     private path: string,
     private offset: number,
-    private onChunk: (chunk: Chunk) => Promise<void>,
+    private read: (offset: number) => Promise<Batch>,
+    private onBatch: (batch: Batch) => Promise<void>,
     private pollMs = 1000,
   ) {}
 
@@ -72,10 +74,10 @@ export class Tailer {
     try {
       do {
         this.again = false
-        const chunk = await readComplete(this.path, this.offset)
-        if (chunk.offset !== this.offset) {
-          await this.onChunk(chunk)
-          this.offset = chunk.offset
+        const batch = await this.read(this.offset)
+        if (batch.rows.length > 0 || batch.offset !== this.offset) {
+          await this.onBatch(batch)
+          this.offset = batch.offset
         }
       } while (this.again)
     } catch (err) {

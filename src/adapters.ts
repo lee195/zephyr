@@ -1,4 +1,5 @@
-import { NOTE_MARKER, type Entry, type TranscriptAdapter } from './domain'
+import type { Row, TranscriptAdapter } from './domain'
+import { readComplete } from './tailer'
 
 function firstText(content: unknown): string | null {
   if (typeof content === 'string') return content
@@ -11,26 +12,33 @@ function firstText(content: unknown): string | null {
   return null
 }
 
-const claudeCode: TranscriptAdapter = {
-  harness: 'claude-code',
-  parseLine(line) {
-    let row: any
-    try {
-      row = JSON.parse(line)
-    } catch {
-      return null
-    }
-    if (!row || row.type !== 'user' || typeof row.uuid !== 'string') return null
-    const text = firstText(row.message?.content)
-    if (text === null || !text.startsWith(NOTE_MARKER)) return null
-    const entry: Entry = {
+/** One line of a Claude Code session .jsonl. Tool results, summaries and torn lines carry no row. */
+export function parseClaudeCode(line: string): Row[] {
+  let row: any
+  try {
+    row = JSON.parse(line)
+  } catch {
+    return []
+  }
+  if (!row || (row.type !== 'user' && row.type !== 'assistant') || typeof row.uuid !== 'string') return []
+  const text = firstText(row.message?.content)
+  if (text === null) return []
+  return [
+    {
       id: row.uuid,
-      harness: 'claude-code',
       sessionId: String(row.sessionId ?? ''),
       at: typeof row.timestamp === 'string' ? row.timestamp : new Date().toISOString(),
-      text: text.slice(NOTE_MARKER.length),
-    }
-    return entry
+      role: row.type,
+      text,
+    },
+  ]
+}
+
+const claudeCode: TranscriptAdapter = {
+  harness: 'claude-code',
+  async read(transcriptPath, _sessionId, offset) {
+    const chunk = await readComplete(transcriptPath, offset)
+    return { rows: chunk.lines.flatMap(parseClaudeCode), offset: chunk.offset }
   },
 }
 

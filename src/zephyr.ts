@@ -1,10 +1,10 @@
 import { adapters } from './adapters'
 import { hintsFor, type HintReply } from './hints'
-import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewWrite, World, ZephyrEvent } from './domain'
+import { isNote, noteEntry, type AgentKind, type Entry, type EntryId, type ModelBackend, type Run, type Session, type View, type ViewWrite, type World, type ZephyrEvent } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
 import { relevanceBackends, type RelevanceBackend, type RelevanceDoc } from './relevance'
 import { Store } from './store'
-import { Tailer, type Chunk } from './tailer'
+import { Tailer } from './tailer'
 
 const RUN_HISTORY = 50
 /** Wait before attempts 2, 3 and 4 of a failed run, or of the entries a done run left uncovered; after the last, they wait for a restart. */
@@ -193,11 +193,12 @@ export class Zephyr {
     const tailer = new Tailer(
       session.transcriptPath,
       session.offset,
-      async (chunk: Chunk) => {
-        const parsed = chunk.lines.map((l) => adapter.parseLine(l)).filter((e): e is Entry => e !== null)
-        await this.ingest(parsed)
+      (offset) => adapter.read(session.transcriptPath, session.sessionId, offset),
+      async (batch) => {
+        await this.ingest(batch.rows.filter(isNote).map((row) => noteEntry(session.harness, row)))
         // Offset is persisted only after the entries are on disk; a crash in between replays and dedupes.
-        session.offset = chunk.offset
+        if (batch.offset === session.offset) return
+        session.offset = batch.offset
         await this.saveSessions()
       },
       this.pollMs,

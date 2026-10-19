@@ -63,14 +63,43 @@ export interface Run {
 export interface Session {
   harness: Harness
   sessionId: string
+  /** The file that holds the session's transcript, in the harness's own format. */
   transcriptPath: string
+  /** Where the adapter's next read resumes, in the adapter's own unit. */
   offset: number
 }
 
+/** One message in a harness transcript, reduced to what notes need. A message with no text is not a row. */
+export interface Row {
+  /** The harness's own message id; stable across re-reads, so it doubles as the entry id. */
+  id: string
+  sessionId: string
+  at: string
+  role: 'user' | 'assistant'
+  text: string
+}
+
+export interface Batch {
+  rows: Row[]
+  offset: number
+}
+
+/** How one harness's transcript is read. Which rows are notes is the same rule for every harness: isNote. */
 export interface TranscriptAdapter {
   harness: Harness
-  parseLine(line: string): Entry | null
+  /** The rows written after `offset`, and the offset the next read resumes from. Rows may repeat across reads. */
+  read(transcriptPath: string, sessionId: string, offset: number): Promise<Batch>
 }
+
+export const isNote = (row: Row) => row.role === 'user' && row.text.startsWith(NOTE_MARKER)
+
+export const noteEntry = (harness: Harness, row: Row): Entry => ({
+  id: row.id,
+  harness,
+  sessionId: row.sessionId,
+  at: row.at,
+  text: row.text.slice(NOTE_MARKER.length),
+})
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
