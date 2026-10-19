@@ -4,6 +4,8 @@ import type { Zephyr } from './zephyr'
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 
+const fail = (error: string, status = 400) => json({ ok: false, error }, status)
+
 function sse(zephyr: Zephyr, signal: AbortSignal) {
   const enc = new TextEncoder()
   let unsubscribe: () => unknown = () => {}
@@ -46,26 +48,26 @@ async function registerSession(zephyr: Zephyr, req: Request) {
   try {
     body = await req.json()
   } catch {
-    return json({ ok: false, error: 'body must be JSON' }, 400)
+    return fail('body must be JSON')
   }
   const { harness, sessionId, transcriptPath } = body ?? {}
   if (typeof harness !== 'string' || typeof sessionId !== 'string' || !sessionId)
-    return json({ ok: false, error: 'harness and sessionId are required strings' }, 400)
+    return fail('harness and sessionId are required strings')
   if (typeof transcriptPath !== 'string' || !isAbsolute(transcriptPath))
-    return json({ ok: false, error: 'transcriptPath must be an absolute path' }, 400)
+    return fail('transcriptPath must be an absolute path')
   try {
     await zephyr.registerSession(harness, sessionId, transcriptPath)
   } catch (err) {
-    return json({ ok: false, error: (err as Error).message }, 400)
+    return fail((err as Error).message)
   }
   return json({ ok: true })
 }
 
 async function hints(zephyr: Zephyr, params: URLSearchParams) {
   const q = params.get('q')
-  if (q === null) return json({ ok: false, error: 'q is required' }, 400)
+  if (q === null) return fail('q is required')
   const limit = params.get('limit') ?? '3'
-  if (!/^[1-5]$/.test(limit)) return json({ ok: false, error: 'limit must be an integer from 1 to 5' }, 400)
+  if (!/^[1-5]$/.test(limit)) return fail('limit must be an integer from 1 to 5')
   return json(await zephyr.hints(q, Number(limit)))
 }
 
@@ -113,7 +115,7 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
           return sse(zephyr, req.signal)
       }
       if (req.method === 'GET') return serveStatic(opts.distDir, pathname)
-      return json({ ok: false, error: 'not found' }, 404)
+      return fail('not found', 404)
     },
   })
 }
