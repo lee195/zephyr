@@ -1,12 +1,11 @@
-import { appendFile, mkdtemp, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { appendFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import { readComplete } from '../src/tailer'
+import { tempDir } from './helpers'
 
 async function tempFile(content: string) {
-  const dir = await mkdtemp(join(tmpdir(), 'zephyr-tail-'))
-  const path = join(dir, 't.jsonl')
+  const path = join(await tempDir(), 't.jsonl')
   await writeFile(path, content)
   return path
 }

@@ -1,12 +1,11 @@
-import { appendFile, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import type { ChatMessage, Entry, ModelBackend } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { entry } from './helpers'
+import { entry, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -42,8 +41,6 @@ function fakeBackend() {
     },
   }
 }
-
-const tempDir = () => mkdtemp(join(tmpdir(), 'zephyr-test-'))
 
 async function eventually(check: () => boolean | Promise<boolean>, ms = 3000) {
   const end = Date.now() + ms
