@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test'
-import type { ReplyContext } from '../src/domain'
-import { kinds } from '../src/kinds'
+import { organizerMessages, validateOps, type ReplyContext } from '../src/kinds/organizer'
 
-const organizer = kinds.organizer!
+const organizer = { validate: validateOps, buildMessages: organizerMessages }
 const ctx: ReplyContext = { knownIds: new Set(['e1', 'e2']), existingSlugs: new Set(), openSlugs: new Set() }
 
 test('a good reply yields sanitized ops', () => {

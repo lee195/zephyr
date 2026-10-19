@@ -1,3 +1,5 @@
+import type { RelevanceBackend } from './relevance'
+
 export type EntryId = string
 export type Harness = string
 
@@ -73,30 +75,31 @@ export interface ModelBackend {
   complete(messages: ChatMessage[], opts: { json: true }): Promise<Completion>
 }
 
-/** write replaces a view's body (new slug, or an open one); append adds a section to an existing view. */
-export type ViewOp =
-  | { op: 'write'; slug: string; title: string; sources: EntryId[]; body: string }
-  | { op: 'append'; slug: string; sources: EntryId[]; body: string }
-
-export type Validation = { ok: true; ops: ViewOp[]; dropped: string[] } | { ok: false; error: string }
-
-/** What the model was shown: open views in full, indexed views as one line each. */
-export interface ViewContext {
-  open: View[]
-  indexed: View[]
+/** What a kind's run may read: every entry and every view, of any kind. */
+export interface World {
+  entries: readonly Entry[]
+  views: readonly View[]
+  relevance: RelevanceBackend
 }
 
-export interface ReplyContext {
-  knownIds: ReadonlySet<EntryId>
-  existingSlugs: ReadonlySet<string>
-  openSlugs: ReadonlySet<string>
+/** A view as a kind returns it; the server adds id, kind and updatedAt, so a kind can only write its own views. */
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt'>
+
+export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[] } | { ok: false; error: string }
+
+/** One run's prompt, and how the reply to exactly that prompt becomes views. */
+export interface Plan {
+  messages: ChatMessage[]
+  settle(json: unknown): Settled
 }
+
+export type Trigger = { on: 'entry' }
 
 export interface AgentKind {
   kind: string
-  format: ViewFormat
-  buildMessages(newEntries: Entry[], views: ViewContext, recentEntries: Entry[]): ChatMessage[]
-  validate(json: unknown, ctx: ReplyContext): Validation
+  trigger: Trigger
+  /** null when there is nothing to ask the model; the run is then done without a call. */
+  plan(run: Run, world: World): Plan | null
 }
 
 export type ZephyrEvent =

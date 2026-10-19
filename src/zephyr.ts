@@ -1,14 +1,11 @@
 import { adapters } from './adapters'
-import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewContext, ViewOp, ZephyrEvent } from './domain'
-import { kinds as defaultKinds } from './kinds'
+import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewWrite, World, ZephyrEvent } from './domain'
+import { kinds as defaultKinds, sanitizeSlug } from './kinds'
 import { relevanceBackends, type RelevanceBackend } from './relevance'
 import { Store } from './store'
 import { Tailer, type Chunk } from './tailer'
 
 const RUN_HISTORY = 50
-const RECENT_CONTEXT = 30
-/** Views the model sees in full per run, picked by relevance to the run's entries; the rest are index lines. */
-const OPEN_VIEWS = 3
 /** Wait before attempts 2, 3 and 4 of a failed run; after the last, the run stays failed. */
 const RETRY_DELAYS_MS = [5_000, 30_000, 120_000]
 
@@ -235,20 +232,14 @@ export class Zephyr {
     run.startedAt = new Date().toISOString()
     this.emit({ type: 'run', data: run })
     try {
-      const runIds = new Set(run.entryIds)
-      const newEntries = this.entries.filter((e) => runIds.has(e.id))
-      const recent = this.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
-      const ownViews = this.listViews().filter((v) => v.kind === kind.kind)
-      const views = this.viewContext(ownViews, newEntries)
-      const { json: reply } = await this.backend.complete(kind.buildMessages(newEntries, views, recent), { json: true })
-      const result = kind.validate(reply, {
-        knownIds: this.entryIds,
-        existingSlugs: new Set(ownViews.map((v) => v.slug)),
-        openSlugs: new Set(views.open.map((v) => v.slug)),
-      })
-      if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
-      for (const op of result.ops) await this.applyOp(kind, op)
-      if (result.dropped.length > 0) run.dropped = result.dropped
+      const plan = kind.plan(run, this.world())
+      if (plan) {
+        const { json: reply } = await this.backend.complete(plan.messages, { json: true })
+        const result = plan.settle(reply)
+        if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
+        for (const w of result.writes) await this.writeView(kind, w)
+        if (result.dropped.length > 0) run.dropped = result.dropped
+      }
       run.status = 'done'
     } catch (err) {
       run.status = 'failed'
@@ -261,15 +252,8 @@ export class Zephyr {
     await this.store.appendRun(run).catch((err) => console.error(`[zephyr] could not record ${run.id}: ${(err as Error).message}`))
   }
 
-  private viewContext(ownViews: View[], newEntries: Entry[]): ViewContext {
-    const query = newEntries.map((e) => e.text).join('\n')
-    const ranked = this.relevance.rank(query, ownViews.map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` })))
-    const openIds = new Set(ranked.slice(0, OPEN_VIEWS).map((r) => r.id))
-    const byId = new Map(ownViews.map((v) => [v.id, v]))
-    return {
-      open: [...openIds].map((id) => byId.get(id)!),
-      indexed: ownViews.filter((v) => !openIds.has(v.id)),
-    }
+  private world(): World {
+    return { entries: this.entries, views: this.listViews(), relevance: this.relevance }
   }
 
   private scheduleRetry(run: Run) {
@@ -292,31 +276,14 @@ export class Zephyr {
     this.retries.add(retry)
   }
 
-  /** Validation guarantees an append targets an existing view. */
-  private async applyOp(kind: AgentKind, op: ViewOp) {
-    const id = `${kind.kind}/${op.slug}`
-    const prior = this.views.get(id)
-    // Union with prior sources: a page update should never silently orphan an entry it already cited.
-    const cited = new Set([...(prior?.sources ?? []), ...op.sources])
-    const page = op.op === 'write' ? { title: op.title, body: op.body } : { title: prior!.title, body: appendSection(prior!.body, op.body) }
-    const view: View = {
-      id,
-      kind: kind.kind,
-      slug: op.slug,
-      ...page,
-      sources: this.entries.filter((e) => cited.has(e.id)).map((e) => e.id),
-      format: kind.format,
-      updatedAt: new Date().toISOString(),
-    }
+  /** The id and directory come from the kind, never from the write, so a kind can only ever write its own views. */
+  private async writeView(kind: AgentKind, write: ViewWrite) {
+    if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
+    const view: View = { ...write, id: `${kind.kind}/${write.slug}`, kind: kind.kind, updatedAt: new Date().toISOString() }
     await this.store.writeView(view)
-    this.views.set(id, view)
+    this.views.set(view.id, view)
     this.emit({ type: 'view', data: view })
   }
-}
-
-function appendSection(body: string, section: string): string {
-  const [head, tail] = [body.trimEnd(), section.trim()]
-  return head && tail ? `${head}\n\n${tail}` : head || tail
 }
 
 function doneEntryIds(runs: Run[], kind: string): Set<EntryId> {
