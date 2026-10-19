@@ -48,7 +48,8 @@ The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram nev
 | Route | Purpose |
 | --- | --- |
 | `POST /sessions` `{ harness, sessionId, transcriptPath }` | Register a transcript. Idempotent. A new session is read from the start, so earlier notes are backfilled. |
-| `GET /status` | `{ up, entries, runsInFlight, lastViewAt, sessions }` |
+| `GET /status` | `{ up, entries, runsInFlight, lastViewAt, sessions, relevance: { warmup, pending } }`. `warmup` is `running`, `done` or `failed` for the background embedding of stored docs on start; `pending` counts docs being embedded now. |
+| `GET /hints?q=<draft>&limit=1..5` | `{ hints, backend, partial }`: stored entries related to the draft. Never waits on embedding entries; `partial` is true when some were not embedded yet and so were left out. |
 | `GET /api/views`, `/api/entries`, `/api/runs` | Current state |
 | `GET /events` | SSE stream of `entry`, `run`, and `view` events |
 | `GET /` | Viewer |
