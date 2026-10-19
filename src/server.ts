@@ -61,6 +61,14 @@ async function registerSession(zephyr: Zephyr, req: Request) {
   return json({ ok: true })
 }
 
+function hints(zephyr: Zephyr, params: URLSearchParams) {
+  const q = params.get('q')
+  if (q === null) return json({ ok: false, error: 'q is required' }, 400)
+  const limit = params.get('limit') ?? '3'
+  if (!/^[1-5]$/.test(limit)) return json({ ok: false, error: 'limit must be an integer from 1 to 5' }, 400)
+  return json({ hints: zephyr.hints(q, Number(limit)) })
+}
+
 /** Defense in depth behind the viewer's own rendering rules: no inline or foreign script can run in the page. */
 export const CSP = "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
 
@@ -86,7 +94,7 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
     port: opts.port,
     idleTimeout: 0,
     async fetch(req) {
-      const { pathname } = new URL(req.url)
+      const { pathname, searchParams } = new URL(req.url)
       const route = `${req.method} ${pathname}`
       switch (route) {
         case 'POST /sessions':
@@ -99,6 +107,8 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
           return json(zephyr.listEntries())
         case 'GET /api/runs':
           return json(zephyr.listRuns())
+        case 'GET /hints':
+          return hints(zephyr, searchParams)
         case 'GET /events':
           return sse(zephyr, req.signal)
       }

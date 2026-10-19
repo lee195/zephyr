@@ -1,4 +1,5 @@
 import { adapters } from './adapters'
+import { hintsFor } from './hints'
 import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewWrite, World, ZephyrEvent } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
 import { relevanceBackends, type RelevanceBackend } from './relevance'
@@ -28,6 +29,7 @@ export interface ZephyrOptions {
   dataDir: string
   backend: ModelBackend
   kinds?: Record<string, AgentKind>
+  /** Ranks entries for organizer runs and for hints; tfidf when absent. */
   relevance?: RelevanceBackend
   pollMs?: number
   retryDelaysMs?: readonly number[]
@@ -117,6 +119,10 @@ export class Zephyr {
   }
   listRuns() {
     return this.runs
+  }
+
+  hints(draft: string, limit: number) {
+    return hintsFor(draft, limit, this.entries, this.listViews(), this.relevance)
   }
 
   status() {
