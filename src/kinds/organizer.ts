@@ -29,6 +29,13 @@ export interface ReplyContext {
 }
 
 const MAX_TITLE_CHARS = 80
+const TITLE_DROPPED = `title dropped, not a non-empty string of at most ${MAX_TITLE_CHARS} characters`
+
+/** A title the model proposed, trimmed, or undefined when it is not a non-empty string of at most MAX_TITLE_CHARS. */
+function usableTitle(raw: unknown): string | undefined {
+  const title = typeof raw === 'string' ? raw.trim() : ''
+  return title.length > 0 && title.length <= MAX_TITLE_CHARS ? title : undefined
+}
 
 const LEADING_HEADING = /^\s*#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*(?:\r?\n|$)/
 
@@ -69,10 +76,9 @@ export function validateOps(json: unknown, ctx: ReplyContext): Validation {
         dropped.push(`append ${slug}: no such topic`)
         continue
       }
-      const title = typeof o.title === 'string' ? o.title.trim() : ''
-      const usable = title.length > 0 && title.length <= MAX_TITLE_CHARS
-      if (o.title != null && !usable) dropped.push(`append ${slug}: title dropped, not a non-empty string of at most ${MAX_TITLE_CHARS} characters`)
-      out.push({ op: 'append', slug, ...(usable && { title }), sources, body: o.body })
+      const title = usableTitle(o.title)
+      if (o.title != null && !title) dropped.push(`append ${slug}: ${TITLE_DROPPED}`)
+      out.push({ op: 'append', slug, ...(title && { title }), sources, body: o.body })
       continue
     }
     if (existing.has(slug) && !writable.has(slug)) {
@@ -181,10 +187,9 @@ export function validateRewrite(json: unknown, topic: View, knownIds: ReadonlySe
     return { ok: false, error: 'reply needs slug and body strings and a sources array' }
   if (sanitizeSlug(r.slug) !== topic.slug) return { ok: false, error: `slug ${r.slug} is not the topic's slug ${topic.slug}` }
   const dropped: string[] = []
-  const proposed = typeof r.title === 'string' ? r.title.trim() : ''
-  const usable = proposed.length > 0 && proposed.length <= MAX_TITLE_CHARS
-  if (!usable) dropped.push(`rewrite ${topic.slug}: title dropped, not a non-empty string of at most ${MAX_TITLE_CHARS} characters`)
-  const title = usable ? proposed : topic.title
+  const proposed = usableTitle(r.title)
+  if (!proposed) dropped.push(`rewrite ${topic.slug}: ${TITLE_DROPPED}`)
+  const title = proposed ?? topic.title
   const body = stripTitleHeading(r.body, title)
   if (!body.trim()) return { ok: false, error: 'body is empty' }
   const cited = new Set<EntryId>(r.sources.filter((s: unknown) => typeof s === 'string'))
