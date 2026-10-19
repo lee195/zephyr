@@ -1,11 +1,14 @@
 import { adapters } from './adapters'
-import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewOp, ZephyrEvent } from './domain'
+import type { AgentKind, Entry, EntryId, ModelBackend, Run, Session, View, ViewContext, ViewOp, ZephyrEvent } from './domain'
 import { kinds as defaultKinds } from './kinds'
+import { relevanceBackends, type RelevanceBackend } from './relevance'
 import { Store } from './store'
 import { Tailer, type Chunk } from './tailer'
 
 const RUN_HISTORY = 50
 const RECENT_CONTEXT = 30
+/** Views the model sees in full per run, picked by relevance to the run's entries; the rest are index lines. */
+const OPEN_VIEWS = 3
 /** Wait before attempts 2, 3 and 4 of a failed run; after the last, the run stays failed. */
 const RETRY_DELAYS_MS = [5_000, 30_000, 120_000]
 
@@ -24,6 +27,7 @@ export interface ZephyrOptions {
   dataDir: string
   backend: ModelBackend
   kinds?: Record<string, AgentKind>
+  relevance?: RelevanceBackend
   pollMs?: number
   retryDelaysMs?: readonly number[]
 }
@@ -34,6 +38,7 @@ export class Zephyr {
   readonly store: Store
   private backend: ModelBackend
   private kinds: Record<string, AgentKind>
+  private relevance: RelevanceBackend
   private pollMs: number
   private retryDelaysMs: readonly number[]
 
@@ -52,6 +57,7 @@ export class Zephyr {
     this.store = new Store(opts.dataDir)
     this.backend = opts.backend
     this.kinds = opts.kinds ?? defaultKinds
+    this.relevance = opts.relevance ?? relevanceBackends.tfidf!()
     this.pollMs = opts.pollMs ?? 1000
     this.retryDelaysMs = opts.retryDelaysMs ?? RETRY_DELAYS_MS
   }
@@ -233,7 +239,7 @@ export class Zephyr {
       const newEntries = this.entries.filter((e) => runIds.has(e.id))
       const recent = this.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
       const ownViews = this.listViews().filter((v) => v.kind === kind.kind)
-      const views = { open: ownViews, indexed: [] }
+      const views = this.viewContext(ownViews, newEntries)
       const { json: reply } = await this.backend.complete(kind.buildMessages(newEntries, views, recent), { json: true })
       const result = kind.validate(reply, {
         knownIds: this.entryIds,
@@ -253,6 +259,17 @@ export class Zephyr {
     if (run.status === 'failed') this.scheduleRetry(run)
     this.emit({ type: 'run', data: run })
     await this.store.appendRun(run).catch((err) => console.error(`[zephyr] could not record ${run.id}: ${(err as Error).message}`))
+  }
+
+  private viewContext(ownViews: View[], newEntries: Entry[]): ViewContext {
+    const query = newEntries.map((e) => e.text).join('\n')
+    const ranked = this.relevance.rank(query, ownViews.map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` })))
+    const openIds = new Set(ranked.slice(0, OPEN_VIEWS).map((r) => r.id))
+    const byId = new Map(ownViews.map((v) => [v.id, v]))
+    return {
+      open: [...openIds].map((id) => byId.get(id)!),
+      indexed: ownViews.filter((v) => !openIds.has(v.id)),
+    }
   }
 
   private scheduleRetry(run: Run) {

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import type { ChatMessage, Entry, ModelBackend } from '../src/domain'
+import type { RelevanceBackend } from '../src/relevance'
 import { Zephyr } from '../src/zephyr'
 
 const entry = (id: string, text = id): Entry => ({ id, harness: 'claude-code', sessionId: 's', at: '2026-10-19T00:00:00Z', text })
@@ -321,4 +322,57 @@ test('append to an unknown topic is dropped with a reason, and the rest of the r
     ['fresh', ['e3'], 'kept'],
   ])
   expect(z.listRuns().at(-1)).toMatchObject({ status: 'done', dropped: ['append ghost: no such topic'] })
+})
+
+/** Scores views by a fixed table, so the expected open set is known without running tfidf. */
+function fixedRelevance(scores: Record<string, number>) {
+  const queries: string[] = []
+  const relevance: RelevanceBackend = {
+    rank(query, docs) {
+      queries.push(query)
+      return docs.map((d) => ({ id: d.id, score: scores[d.id] ?? 0 })).sort((a, b) => b.score - a.score)
+    },
+  }
+  return { relevance, queries }
+}
+
+/** Five topics a..e over e1..e5, and e6 waiting to be organized. */
+async function fiveTopicDir() {
+  const ids = ['e1', 'e2', 'e3', 'e4', 'e5']
+  const dir = await seedDataDir([...ids, 'e6'].map((id) => entry(id, `text of ${id}`)), [{ id: 'r1', kind: 'organizer', entryIds: ids, status: 'done', attempt: 1 }])
+  await seedViews(dir, ['a', 'b', 'c', 'd', 'e'].map((slug, i) => ({ slug, sources: [ids[i]!], body: `body of ${slug}` })))
+  return dir
+}
+
+const scores = { 'organizer/e': 0.9, 'organizer/c': 0.7, 'organizer/a': 0.5, 'organizer/b': 0.3, 'organizer/d': 0.1 }
+
+test('the three views most relevant to the new entries are open, every other view is one index line', async () => {
+  const fake = scripted([])
+  const rel = fixedRelevance(scores)
+  const z = new Zephyr({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance: rel.relevance })
+  await z.start()
+  await z.idle()
+
+  expect(rel.queries).toEqual(['text of e6'])
+  const content = fake.sent[0]!.map((m) => m.content).join('\n')
+  const user = JSON.parse(fake.sent[0]!.at(-1)!.content)
+  expect(user.openTopics.map((t: any) => [t.slug, t.body])).toEqual([['e', 'body of e'], ['c', 'body of c'], ['a', 'body of a']])
+  expect(user.topicIndex.sort()).toEqual(['b | B | 1 sources', 'd | D | 1 sources'])
+  expect(content).not.toContain('body of b')
+  expect(content).not.toContain('body of d')
+})
+
+test('a write to an existing topic that was not open is dropped; a write to an open one applies', async () => {
+  const reply = [
+    { op: 'write', slug: 'b', title: 'B', sources: ['e6'], body: 'clobbered' },
+    { op: 'write', slug: 'c', title: 'C', sources: ['e6'], body: 'rewritten' },
+  ]
+  const z = new Zephyr({ dataDir: await fiveTopicDir(), backend: scripted(reply).backend, relevance: fixedRelevance(scores).relevance })
+  await z.start()
+  await z.idle()
+
+  const bySlug = Object.fromEntries(z.listViews().map((v) => [v.slug, [v.sources, v.body]]))
+  expect(bySlug.b).toEqual([['e2'], 'body of b'])
+  expect(bySlug.c).toEqual([['e3', 'e6'], 'rewritten'])
+  expect(z.listRuns().at(-1)).toMatchObject({ status: 'done', dropped: ['write b: topic exists but was not open'] })
 })
