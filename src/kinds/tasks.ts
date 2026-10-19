@@ -1,0 +1,147 @@
+import type { AgentKind, ChatMessage, Entry, EntryId, Run, Task, TaskId, View, World } from '../domain'
+import { inEntryOrder, knownSources } from './common'
+
+/** Open tasks the model sees per run, the ones most relevant to the run's entries; done tasks are never shown. */
+const OPEN_SHOWN = 30
+const MAX_DUE_LENGTH = 60
+
+export type TaskOp =
+  | { op: 'add'; text: string; due?: string; sources: EntryId[] }
+  | { op: 'complete'; taskId: TaskId; sources: EntryId[] }
+  | { op: 'update'; taskId: TaskId; text?: string; due?: string; sources: EntryId[] }
+
+export type TaskValidation = { ok: true; ops: TaskOp[]; dropped: string[] } | { ok: false; error: string }
+
+export interface TaskReplyContext {
+  /** The run's new entries: the only notes an op may cite. */
+  entryIds: ReadonlySet<EntryId>
+  /** The open tasks the prompt showed: the only tasks an op may change. */
+  openIds: ReadonlySet<TaskId>
+}
+
+const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+const due = (v: unknown) => {
+  const d = text(v)
+  return d && d.length <= MAX_DUE_LENGTH ? d : undefined
+}
+
+/**
+ * Parses `{ ops: [...] }`. A malformed reply fails as a whole. A well-formed op the rules refuse is
+ * dropped with a reason: an op with no known sources, an add with no text, a change to a task the
+ * prompt did not show as open, or an update that changes nothing.
+ */
+export function validateTaskOps(json: unknown, ctx: TaskReplyContext): TaskValidation {
+  const ops = (json as any)?.ops
+  if (!Array.isArray(ops)) return { ok: false, error: 'reply has no ops array' }
+  const out: TaskOp[] = []
+  const dropped: string[] = []
+  for (const [i, o] of ops.entries()) {
+    if (!o || typeof o !== 'object') return { ok: false, error: `op ${i} is not an object` }
+    if (o.op !== 'add' && o.op !== 'complete' && o.op !== 'update') return { ok: false, error: `op ${i} is not add, complete or update` }
+    if (!Array.isArray(o.sources)) return { ok: false, error: `op ${i} sources is not an array` }
+    const label = o.op === 'add' ? 'add' : `${o.op} ${String(o.taskId)}`
+    const sources = knownSources(o.sources, ctx.entryIds)
+    if (sources.length === 0) {
+      dropped.push(`${label}: no known sources`)
+      continue
+    }
+    if (o.op === 'add') {
+      const t = text(o.text)
+      if (!t) dropped.push('add: empty text')
+      else out.push({ op: 'add', text: t, ...(due(o.due) && { due: due(o.due) }), sources })
+      continue
+    }
+    if (typeof o.taskId !== 'string' || !ctx.openIds.has(o.taskId)) {
+      dropped.push(`${label}: no such open task`)
+      continue
+    }
+    if (o.op === 'complete') {
+      out.push({ op: 'complete', taskId: o.taskId, sources })
+      continue
+    }
+    const change = { ...(text(o.text) && { text: text(o.text) }), ...(due(o.due) && { due: due(o.due) }) }
+    if (Object.keys(change).length === 0) dropped.push(`${label}: nothing to change`)
+    else out.push({ op: 'update', taskId: o.taskId, ...change, sources })
+  }
+  return { ok: true, ops: out, dropped }
+}
+
+const TASKS_SYSTEM = `You keep a person's task list from their notes.
+Reply with JSON only: {"ops":[op, ...]} where op is one of
+  {"op":"add","text":string,"due":string,"sources":string[]}
+  {"op":"complete","taskId":string,"sources":string[]}
+  {"op":"update","taskId":string,"text":string,"due":string,"sources":string[]}
+The input has openTasks (id, text, due) and newEntries (id, at, text).
+- Most notes contain no task. Then reply {"ops":[]}.
+- add a task only for something the person still has to do (a TODO, a reminder, "need to"). text is a short imperative in the note's words.
+- complete an open task when a new entry says it is done, by its id.
+- update an open task when a new entry changes it, such as a new date. Never add a task that duplicates an open one.
+- due: when the note names a time, resolve it to an ISO date (YYYY-MM-DD) taking the entry's at as today. If you cannot resolve it, copy the note's words. Leave due out when the note names no time; in update, leave out text or due you do not change.
+- sources lists the ids of the new entries the op comes from.`
+
+export function tasksMessages(openTasks: Task[], newEntries: Entry[]): ChatMessage[] {
+  const payload = {
+    openTasks: openTasks.map((t) => ({ id: t.id, text: t.text, ...(t.due && { due: t.due }) })),
+    newEntries: newEntries.map((e) => ({ id: e.id, at: e.at, text: e.text })),
+  }
+  return [
+    { role: 'system', content: TASKS_SYSTEM },
+    { role: 'user', content: JSON.stringify(payload) },
+  ]
+}
+
+function shownOpenTasks(world: World, tasks: Task[], newEntries: Entry[]): Task[] {
+  const open = tasks.filter((t) => !t.done)
+  if (open.length <= OPEN_SHOWN) return open
+  const ranked = world.relevance.rank(newEntries.map((e) => e.text).join('\n'), open.map((t) => ({ id: t.id, text: t.text })))
+  const shown = new Set(ranked.slice(0, OPEN_SHOWN).map((r) => r.id))
+  return open.filter((t) => shown.has(t.id))
+}
+
+const idNumber = (id: TaskId) => Number(/^t(\d+)$/.exec(id)?.[1] ?? 0)
+
+export function applyTaskOps(tasks: Task[], ops: TaskOp[]): Task[] {
+  const byId = new Map(tasks.map((t) => [t.id, { ...t }]))
+  let next = Math.max(0, ...tasks.map((t) => idNumber(t.id))) + 1
+  for (const op of ops) {
+    if (op.op === 'add') {
+      const id = `t${next++}`
+      byId.set(id, { id, text: op.text, ...(op.due && { due: op.due }), done: false, sources: op.sources })
+      continue
+    }
+    const task = byId.get(op.taskId)!
+    task.sources = [...new Set([...task.sources, ...op.sources])]
+    if (op.op === 'complete') task.done = true
+    else Object.assign(task, op.text && { text: op.text }, op.due && { due: op.due })
+  }
+  return [...byId.values()]
+}
+
+export function renderTasks(tasks: Task[]): string {
+  const line = (t: Task) => `- [${t.done ? 'x' : ' '}] ${t.text}${t.due ? ` (due ${t.due})` : ''}`
+  return [...tasks.filter((t) => !t.done), ...tasks.filter((t) => t.done)].map(line).join('\n')
+}
+
+export const tasks: AgentKind = {
+  kind: 'tasks',
+  trigger: { on: 'entry' },
+  plan(run: Run, world: World) {
+    const runIds = new Set(run.entryIds)
+    const newEntries = world.entries.filter((e) => runIds.has(e.id))
+    const current = world.views.find((v): v is View & { tasks: Task[] } => v.kind === 'tasks' && v.slug === 'tasks' && !!v.tasks)?.tasks ?? []
+    const shown = shownOpenTasks(world, current, newEntries)
+    const ctx: TaskReplyContext = { entryIds: runIds, openIds: new Set(shown.map((t) => t.id)) }
+    return {
+      messages: tasksMessages(shown, newEntries),
+      settle(json) {
+        const result = validateTaskOps(json, ctx)
+        if (!result.ok) return result
+        if (result.ops.length === 0) return { ok: true, writes: [], dropped: result.dropped }
+        const next = applyTaskOps(current, result.ops)
+        const cited = new Set(next.flatMap((t) => t.sources))
+        const write = { slug: 'tasks', title: 'Tasks', format: 'md' as const, body: renderTasks(next), tasks: next, sources: inEntryOrder(world.entries, cited) }
+        return { ok: true, writes: [write], dropped: result.dropped }
+      },
+    }
+  },
+}

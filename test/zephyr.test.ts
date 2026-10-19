@@ -4,7 +4,15 @@ import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import type { ChatMessage, Entry, ModelBackend } from '../src/domain'
 import type { RelevanceBackend } from '../src/relevance'
-import { Zephyr } from '../src/zephyr'
+import { kinds } from '../src/kinds'
+import { Zephyr, type ZephyrOptions } from '../src/zephyr'
+
+/** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
+class OrganizerOnly extends Zephyr {
+  constructor(opts: ZephyrOptions) {
+    super({ kinds: { organizer: kinds.organizer! }, ...opts })
+  }
+}
 
 const entry = (id: string, text = id): Entry => ({ id, harness: 'claude-code', sessionId: 's', at: '2026-10-19T00:00:00Z', text })
 
@@ -49,7 +57,7 @@ async function eventually(check: () => boolean | Promise<boolean>, ms = 3000) {
 
 test('entries arriving during a run coalesce into exactly one next run', async () => {
   const fake = fakeBackend()
-  const z = new Zephyr({ dataDir: await tempDir(), backend: fake.backend })
+  const z = new OrganizerOnly({ dataDir: await tempDir(), backend: fake.backend })
   await z.start()
   fake.holdCalls()
 
@@ -75,7 +83,7 @@ const runLines = async (dir: string) =>
 
 test('a bad model reply fails the run and writes nothing', async () => {
   const dir = await tempDir()
-  const z = new Zephyr({ dataDir: dir, backend: { complete: async () => ({ json: { nope: true } }) }, retryDelaysMs: [] })
+  const z = new OrganizerOnly({ dataDir: dir, backend: { complete: async () => ({ json: { nope: true } }) }, retryDelaysMs: [] })
   await z.start()
   await z.ingest([entry('e1')])
   await z.idle()
@@ -94,7 +102,7 @@ test('a run that fails once is retried, and both outcomes are persisted', async 
       return fake.backend.complete(messages, opts)
     },
   }
-  const z = new Zephyr({ dataDir: dir, backend, retryDelaysMs: fastRetries })
+  const z = new OrganizerOnly({ dataDir: dir, backend, retryDelaysMs: fastRetries })
   await z.start()
   await z.ingest([entry('e1')])
   await z.idle()
@@ -105,7 +113,7 @@ test('a run that fails once is retried, and both outcomes are persisted', async 
   expect(done).toMatchObject({ kind: 'organizer', entryIds: ['e1'], status: 'done', attempt: 2, retryOf: failed.id })
   expect(z.status().runsInFlight).toBe(0)
 
-  const reloaded = new Zephyr({ dataDir: dir, backend: fake.backend })
+  const reloaded = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
   await reloaded.start()
   expect(reloaded.listRuns().map((r) => [r.status, r.attempt])).toEqual([['failed', 1], ['done', 2]])
 })
@@ -113,7 +121,7 @@ test('a run that fails once is retried, and both outcomes are persisted', async 
 test('a run that always fails stops after four attempts', async () => {
   const dir = await tempDir()
   let calls = 0
-  const z = new Zephyr({
+  const z = new OrganizerOnly({
     dataDir: dir,
     backend: { complete: async () => (calls++, Promise.reject(new Error('unreachable'))) },
     retryDelaysMs: fastRetries,
@@ -127,7 +135,7 @@ test('a run that always fails stops after four attempts', async () => {
 })
 
 test('a scheduled retry counts as in flight until it runs', async () => {
-  const z = new Zephyr({ dataDir: await tempDir(), backend: { complete: async () => ({ json: { nope: true } }) }, retryDelaysMs: [60_000] })
+  const z = new OrganizerOnly({ dataDir: await tempDir(), backend: { complete: async () => ({ json: { nope: true } }) }, retryDelaysMs: [60_000] })
   await z.start()
   await z.ingest([entry('e1')])
   await eventually(() => z.listRuns()[0]?.status === 'failed')
@@ -149,7 +157,7 @@ test('a retry coalesces with the waiting run and keeps the higher attempt', asyn
       return { json: { ops: [{ op: 'write', slug: 'all', title: 'All', sources: ids, body: '' }] } }
     },
   }
-  const z = new Zephyr({ dataDir: await tempDir(), backend, retryDelaysMs: [200] })
+  const z = new OrganizerOnly({ dataDir: await tempDir(), backend, retryDelaysMs: [200] })
   await z.start()
   await z.ingest([entry('e1')])
   await eventually(() => calls.length === 1)
@@ -189,7 +197,7 @@ test('on start, entries not covered by a done run are queued and covered ones ar
     ],
   )
   const fake = fakeBackend()
-  const z = new Zephyr({ dataDir: dir, backend: fake.backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
   await z.start()
   await z.idle()
   expect(fake.calls).toEqual([['e2', 'e3']])
@@ -204,13 +212,13 @@ test('a data dir without runs.jsonl treats entries its views cite as organized, 
   await writeFile(join(dir, 'views/organizer/a.json'), JSON.stringify(meta))
 
   const fake = fakeBackend()
-  const z = new Zephyr({ dataDir: dir, backend: fake.backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
   await z.start()
   await z.idle()
   expect(fake.calls).toEqual([['e2']])
 
   const again = fakeBackend()
-  const restarted = new Zephyr({ dataDir: dir, backend: again.backend })
+  const restarted = new OrganizerOnly({ dataDir: dir, backend: again.backend })
   await restarted.start()
   await restarted.idle()
   expect(again.calls).toEqual([])
@@ -218,7 +226,7 @@ test('a data dir without runs.jsonl treats entries its views cite as organized, 
 
 test('a data dir without runs.jsonl or views organizes every entry', async () => {
   const fake = fakeBackend()
-  const z = new Zephyr({ dataDir: await seedDataDir([entry('e1'), entry('e2')]), backend: fake.backend })
+  const z = new OrganizerOnly({ dataDir: await seedDataDir([entry('e1'), entry('e2')]), backend: fake.backend })
   await z.start()
   await z.idle()
   expect(fake.calls).toEqual([['e1', 'e2']])
@@ -226,13 +234,13 @@ test('a data dir without runs.jsonl or views organizes every entry', async () =>
 
 test('views persist as files and reload after restart', async () => {
   const dir = await tempDir()
-  const z = new Zephyr({ dataDir: dir, backend: fakeBackend().backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend })
   await z.start()
   await z.ingest([entry('e1')])
   await z.idle()
   expect(await readFile(join(dir, 'views/organizer/all.md'), 'utf8')).toBe('e1')
 
-  const reloaded = new Zephyr({ dataDir: dir, backend: fakeBackend().backend })
+  const reloaded = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend })
   await reloaded.start()
   expect(reloaded.listViews().map((v) => [v.id, v.sources, v.body])).toEqual([['organizer/all', ['e1'], 'e1']])
 })
@@ -242,7 +250,7 @@ test('a registered transcript is backfilled, tailed, and never duplicated across
   const transcript = join(await tempDir(), 'session.jsonl')
   await writeFile(transcript, noteRow('n1', 'first') + JSON.stringify({ type: 'assistant', uuid: 'a1' }) + '\n')
 
-  const z = new Zephyr({ dataDir: dir, backend: fakeBackend().backend, pollMs: 50 })
+  const z = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend, pollMs: 50 })
   await z.start()
   await z.registerSession('claude-code', 's1', transcript)
   await z.registerSession('claude-code', 's1', transcript)
@@ -258,7 +266,7 @@ test('a registered transcript is backfilled, tailed, and never duplicated across
 
   // Simulate a crash that lost the offset: the whole transcript is re-read.
   await writeFile(join(dir, 'sessions.json'), JSON.stringify([{ harness: 'claude-code', sessionId: 's1', transcriptPath: transcript, offset: 0 }]))
-  const restarted = new Zephyr({ dataDir: dir, backend: fakeBackend().backend, pollMs: 50 })
+  const restarted = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend, pollMs: 50 })
   await restarted.start()
   await appendFile(transcript, noteRow('n3', 'third'))
   await eventually(() => restarted.listEntries().length === 3)
@@ -299,7 +307,7 @@ async function organizedDir() {
 
 test('append adds a section to an existing topic and unions its sources', async () => {
   const dir = await organizedDir()
-  const z = new Zephyr({ dataDir: dir, backend: scripted([{ op: 'append', slug: 'a', sources: ['e3'], body: 'Second section.' }]).backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted([{ op: 'append', slug: 'a', sources: ['e3'], body: 'Second section.' }]).backend })
   await z.start()
   await z.idle()
   expect(z.listViews().map((v) => [v.slug, v.title, v.sources, v.body])).toEqual([['a', 'A', ['e1', 'e2', 'e3'], 'First section.\n\nSecond section.']])
@@ -314,7 +322,7 @@ test('append to an unknown topic is dropped with a reason, and the rest of the r
     { op: 'append', slug: 'ghost', sources: ['e3'], body: 'lost' },
     { op: 'write', slug: 'fresh', title: 'Fresh', sources: ['e3'], body: 'kept' },
   ]
-  const z = new Zephyr({ dataDir: dir, backend: scripted(reply).backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted(reply).backend })
   await z.start()
   await z.idle()
   expect(z.listViews().map((v) => [v.slug, v.sources, v.body]).sort()).toEqual([
@@ -349,7 +357,7 @@ const scores = { 'organizer/e': 0.9, 'organizer/c': 0.7, 'organizer/a': 0.5, 'or
 test('the three views most relevant to the new entries are open, every other view is one index line', async () => {
   const fake = scripted([])
   const rel = fixedRelevance(scores)
-  const z = new Zephyr({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance: rel.relevance })
+  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance: rel.relevance })
   await z.start()
   await z.idle()
 
@@ -367,7 +375,7 @@ test('a write to an existing topic that was not open is dropped; a write to an o
     { op: 'write', slug: 'b', title: 'B', sources: ['e6'], body: 'clobbered' },
     { op: 'write', slug: 'c', title: 'C', sources: ['e6'], body: 'rewritten' },
   ]
-  const z = new Zephyr({ dataDir: await fiveTopicDir(), backend: scripted(reply).backend, relevance: fixedRelevance(scores).relevance })
+  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: scripted(reply).backend, relevance: fixedRelevance(scores).relevance })
   await z.start()
   await z.idle()
 

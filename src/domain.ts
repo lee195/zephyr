@@ -13,6 +13,17 @@ export interface Entry {
 
 export type ViewFormat = 'md' | 'svg' | 'ascii'
 
+export type TaskId = string
+
+export interface Task {
+  id: TaskId
+  text: string
+  /** An ISO date when the model resolved one against the note's time, else the note's own words. */
+  due?: string
+  done: boolean
+  sources: EntryId[]
+}
+
 export interface View {
   id: string
   kind: string
@@ -22,6 +33,8 @@ export interface View {
   format: ViewFormat
   body: string
   updatedAt: string
+  /** The task list as data, on the tasks view only; body is its markdown rendering for plain-file readers. */
+  tasks?: Task[]
 }
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed'
