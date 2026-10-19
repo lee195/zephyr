@@ -1,8 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import { expect, spyOn, test } from 'bun:test'
-import { embeddingBackend } from '../src/embedding'
 import { hintsFor } from '../src/hints'
-import { entry, eventually, fakeEmbeddings, tempDir } from './helpers'
+import { entry, eventually, fakeEmbeddings, tempDir, testEmbedding } from './helpers'
 
 const docs = [
   { id: 'A', text: 'aaa' },
@@ -10,11 +9,8 @@ const docs = [
   { id: 'C', text: 'ccc' },
 ]
 
-const backend = (cacheDir: string, fetch: typeof globalThis.fetch, model = 'gemma') =>
-  embeddingBackend({ baseUrl: 'http://embed.test/v1', model, apiKey: 'k', cacheDir, fetch })
-
 test('ranks prepared docs by cosine similarity and names itself in the ranking', async () => {
-  const b = backend(await tempDir(), fakeEmbeddings().fetch)
+  const b = testEmbedding(await tempDir(), fakeEmbeddings().fetch)
   await b.prepare!(docs)
   const ranking = await b.rank('aab', docs)
   expect(ranking.backend).toBe('embedding-gemma')
@@ -26,7 +22,7 @@ test('ranks prepared docs by cosine similarity and names itself in the ranking',
 
 test('a ranking never waits on doc embedding: it scores the cached docs, is partial, and embeds the rest', async () => {
   const end = fakeEmbeddings()
-  const b = backend(await tempDir(), end.fetch)
+  const b = testEmbedding(await tempDir(), end.fetch)
   await b.prepare!([docs[0]!])
   end.hold((input) => input.includes('bbb'))
   const ranking = await b.rank('aab', docs)
@@ -40,11 +36,11 @@ test('a ranking never waits on doc embedding: it scores the cached docs, is part
 test('a cached doc is never sent again, in the same process or after a restart', async () => {
   const dir = await tempDir()
   const end = fakeEmbeddings()
-  await backend(dir, end.fetch).prepare!(docs)
+  await testEmbedding(dir, end.fetch).prepare!(docs)
   expect(end.sentTexts().sort()).toEqual(['aaa', 'bbb', 'ccc'])
 
   const same = fakeEmbeddings()
-  const b = backend(dir, same.fetch)
+  const b = testEmbedding(dir, same.fetch)
   await b.prepare!(docs)
   await b.rank('abc', docs)
   await b.rank('cab', docs)
@@ -53,15 +49,15 @@ test('a cached doc is never sent again, in the same process or after a restart',
 
 test('a doc whose text changed is embedded again, and only that doc', async () => {
   const dir = await tempDir()
-  await backend(dir, fakeEmbeddings().fetch).prepare!(docs)
+  await testEmbedding(dir, fakeEmbeddings().fetch).prepare!(docs)
   const end = fakeEmbeddings()
-  await backend(dir, end.fetch).prepare!([docs[0]!, { id: 'B', text: 'bbbc' }, docs[2]!])
+  await testEmbedding(dir, end.fetch).prepare!([docs[0]!, { id: 'B', text: 'bbbc' }, docs[2]!])
   expect(end.sentTexts()).toEqual(['bbbc'])
 })
 
 test('concurrent prepares of the same new docs embed each doc once, and both wait for it', async () => {
   const end = fakeEmbeddings()
-  const b = backend(await tempDir(), end.fetch)
+  const b = testEmbedding(await tempDir(), end.fetch)
   await Promise.all([b.prepare!(docs), b.prepare!(docs)])
   expect(end.sentTexts()).toEqual(['aaa', 'bbb', 'ccc'])
   expect((await b.rank('abc', docs)).partial).toBeUndefined()
@@ -69,9 +65,9 @@ test('concurrent prepares of the same new docs embed each doc once, and both wai
 
 test('each backend id keeps its own vectors: another model embeds every doc itself', async () => {
   const dir = await tempDir()
-  await backend(dir, fakeEmbeddings().fetch, 'gemma').prepare!(docs)
+  await testEmbedding(dir, fakeEmbeddings().fetch, 'gemma').prepare!(docs)
   const other = fakeEmbeddings()
-  await backend(dir, other.fetch, 'other-model').prepare!(docs)
+  await testEmbedding(dir, other.fetch, 'other-model').prepare!(docs)
   expect(other.sentTexts().sort()).toEqual(['aaa', 'bbb', 'ccc'])
   expect((await readdir(dir)).sort()).toEqual(['embedding-gemma.jsonl', 'embedding-other-model.jsonl'])
 })
@@ -79,17 +75,17 @@ test('each backend id keeps its own vectors: another model embeds every doc itse
 test('an endpoint error rejects prepare and rank, and caches nothing', async () => {
   const dir = await tempDir()
   const failing = (async () => new Response('upstream unreachable', { status: 503 })) as unknown as typeof fetch
-  const down = backend(dir, failing)
+  const down = testEmbedding(dir, failing)
   await expect(down.prepare!(docs)).rejects.toThrow('503')
   await expect(down.rank('abc', docs)).rejects.toThrow('503')
   const end = fakeEmbeddings()
-  await backend(dir, end.fetch).prepare!(docs)
+  await testEmbedding(dir, end.fetch).prepare!(docs)
   expect(end.sentTexts().sort()).toEqual(['aaa', 'bbb', 'ccc'])
 })
 
 test('each batch of a large prepare is usable as soon as it lands', async () => {
   const end = fakeEmbeddings()
-  const b = backend(await tempDir(), end.fetch)
+  const b = testEmbedding(await tempDir(), end.fetch)
   const many = Array.from({ length: 300 }, (_, i) => ({ id: `d${i}`, text: `a${i}` }))
   end.hold((input) => input.includes('a299'))
   const preparing = b.prepare!(many)
@@ -105,7 +101,7 @@ test('each batch of a large prepare is usable as soon as it lands', async () => 
 test('a ranking carries the measured threshold of its model', async () => {
   const warn = spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    const b = backend(await tempDir(), fakeEmbeddings().fetch, 'embeddinggemma2')
+    const b = testEmbedding(await tempDir(), fakeEmbeddings().fetch, 'embeddinggemma2')
     expect((await b.rank('aab', docs)).minRelatedScore).toBe(0.8)
     expect(warn).not.toHaveBeenCalled()
   } finally {
@@ -116,7 +112,7 @@ test('a ranking carries the measured threshold of its model', async () => {
 test('a model with no measured threshold warns once, when built, and gives no hints', async () => {
   const warn = spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    const b = backend(await tempDir(), fakeEmbeddings().fetch, 'unmeasured')
+    const b = testEmbedding(await tempDir(), fakeEmbeddings().fetch, 'unmeasured')
     await b.prepare!(docs)
     const entries = docs.map((d) => entry(d.id, d.text))
     const reply = await hintsFor('aab aab', 5, entries, [], b)

@@ -1,10 +1,9 @@
 import { afterEach, expect, test } from 'bun:test'
-import { embeddingBackend } from '../src/embedding'
 import { kinds } from '../src/kinds'
 import { relevanceBackends, withFallback } from '../src/relevance'
 import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
-import { doneRun, entry, eventually, fakeEmbeddings, scripted, seedDataDir } from './helpers'
+import { doneRun, entry, eventually, fakeEmbeddings, scripted, seedDataDir, testEmbedding } from './helpers'
 
 const entries = [
   entry('e1', 'sourdough starter fed with rye'),
@@ -26,7 +25,7 @@ afterEach(() => {
 
 /** The production composition: embeddings over a fake endpoint, falling back to tfidf. */
 async function server(dataDir: string, fetch: typeof globalThis.fetch, cooldownMs = 30_000) {
-  const embedding = embeddingBackend({ baseUrl: 'http://embed.test/v1', model: 'gemma', apiKey: 'k', cacheDir: `${dataDir}/embeddings`, fetch })
+  const embedding = testEmbedding(`${dataDir}/embeddings`, fetch)
   const relevance = withFallback(embedding, relevanceBackends.tfidf(), { timeoutMs: 1000, cooldownMs })
   const z = new Zephyr({ dataDir, backend: scripted({ ops: [] }).backend, kinds: { organizer: kinds.organizer!, tasks: kinds.tasks! }, relevance })
   await z.start()
@@ -124,7 +123,7 @@ test('an organizer run waits for its topics to be embedded, so every topic can o
   const end = fakeEmbeddings()
   end.hold((input) => input.includes('Bread\nabout sourdough'))
   const model = scripted({ ops: [] })
-  const embedding = embeddingBackend({ baseUrl: 'http://embed.test/v1', model: 'gemma', apiKey: 'k', cacheDir: `${dir}/embeddings`, fetch: end.fetch })
+  const embedding = testEmbedding(`${dir}/embeddings`, end.fetch)
   const z = new Zephyr({ dataDir: dir, backend: model.backend, kinds: { organizer: kinds.organizer! }, relevance: embedding, retryDelaysMs: [] })
   await z.start()
   cleanup.push(() => z.stop())

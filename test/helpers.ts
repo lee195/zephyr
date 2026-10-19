@@ -2,6 +2,7 @@ import { mkdtemp, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ChatMessage, Entry, ModelBackend, Run, View } from '../src/domain'
+import { embeddingBackend } from '../src/embedding'
 import { Store } from '../src/store'
 
 export const entry = (id: string, text = id, at = '2026-10-19T09:00:00Z'): Entry => ({ id, harness: 'claude-code', sessionId: 's', at, text })
@@ -65,6 +66,10 @@ export function gate<Args extends unknown[] = []>() {
     },
   }
 }
+
+/** The embedding backend for model, on the fake endpoint that fetch serves, keeping its vectors in cacheDir. */
+export const testEmbedding = (cacheDir: string, fetch: typeof globalThis.fetch, model = 'gemma') =>
+  embeddingBackend({ baseUrl: 'http://embed.test/v1', model, apiKey: 'k', cacheDir, fetch })
 
 /**
  * A fake /embeddings endpoint: a text's vector counts its a, b and c characters. Keeps every input batch it was
