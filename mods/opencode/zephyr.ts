@@ -12,6 +12,13 @@ function dbPath(env = process.env) {
   return join(data, 'opencode.db')
 }
 
+/** What closing the note box says about the notes waiting for review; null when there are none or the reply is unreadable. */
+function reviewToast(body: unknown): string | null {
+  const count = (body as { notes?: { count?: unknown } } | null)?.notes?.count
+  if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0) return null
+  return `${count} ${count === 1 ? 'note' : 'notes'} since last review`
+}
+
 const tui: TuiPlugin = async (api, options) => {
   const port = typeof options?.port === 'number' ? options.port : 7317
   const base = `http://127.0.0.1:${port}`
@@ -27,9 +34,21 @@ const tui: TuiPlugin = async (api, options) => {
     )
   }
 
+  // Silent when the server is down or slow: the first note's registration already warned.
+  function endNotes() {
+    api.ui.dialog.clear()
+    fetch(`${base}/api/review`, { signal: AbortSignal.timeout(1500) })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        const message = reviewToast(body)
+        if (message) api.ui.toast({ variant: 'info', message })
+      })
+      .catch(() => undefined)
+  }
+
   async function keep(sessionID: string, value: string) {
     const text = value.trim()
-    if (!text) return api.ui.dialog.clear()
+    if (!text) return endNotes()
     const res = await api.client.session.prompt({ sessionID, noReply: true, parts: [{ type: 'text', text: NOTE_PREFIX + text }] })
     if (res.error) {
       api.ui.toast({ variant: 'error', message: 'not noted' })
@@ -46,7 +65,7 @@ const tui: TuiPlugin = async (api, options) => {
         title: 'Zephyr note',
         placeholder: 'Enter keeps it, with no model reply. Esc ends notes.',
         onConfirm: (value) => void keep(sessionID, value),
-        onCancel: () => api.ui.dialog.clear(),
+        onCancel: endNotes,
       }),
     )
   }

@@ -13,7 +13,9 @@ import {
   isBandShown,
   NO_DRAFT,
   parseHints,
+  parseReviewCount,
   parseStatus,
+  reviewNotice,
   shownHints,
   transcriptPathFor,
 } from './notes'
@@ -114,6 +116,14 @@ async function announce($: EngineInterface) {
   await call($, '/sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
 }
 
+// A notice row is drawn in the transcript and never read by the model; nothing shows when the server is down.
+async function noticeUnreviewed($: EngineInterface) {
+  const res = await call($, '/api/review')
+  const count = res?.ok ? parseReviewCount(res.text) : null
+  const text = count === null ? null : reviewNotice(count)
+  if (text) await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } })
+}
+
 export const register: Register = (on, options) => {
   const port = options.port
   if (typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536) base = `http://127.0.0.1:${port}`
@@ -127,7 +137,10 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'zephyr' }, async $ => {
     const sessionId = await $.session.id()
     const now = await update($, notesFor, was => (was === sessionId ? null : sessionId))
-    if (now === null) return { text: 'Notes mode off.' }
+    if (now === null) {
+      void noticeUnreviewed($).catch(() => undefined)
+      return { text: 'Notes mode off.' }
+    }
     void announce($).catch(() => undefined)
     return { text: 'Notes mode on. Prompts are kept as notes, with no reply.' }
   })

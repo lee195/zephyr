@@ -77,6 +77,24 @@ export function bandLine(isNotesOn: boolean, server: Server, now: number): strin
   return parts.join(' · ')
 }
 
+/** `notes.count` from the body of `GET /api/review`; null when unreadable. */
+export function parseReviewCount(text: string): number | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return null
+  }
+  const notes = typeof raw === 'object' && raw !== null ? (raw as { notes?: unknown }).notes : undefined
+  const count = typeof notes === 'object' && notes !== null ? (notes as { count?: unknown }).count : undefined
+  return typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : null
+}
+
+/** What ending notes mode says about the notes waiting for review; null when there are none. */
+export function reviewNotice(count: number): string | null {
+  return count > 0 ? `${count} ${count === 1 ? 'note' : 'notes'} since last review` : null
+}
+
 /** One hint as the band shows it: the matching note's topic title, when it has one, and its text. */
 export type Hint = { topic: string | null; text: string }
 

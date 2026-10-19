@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ago, bandLine, decide, encodeProjectDir, hintLine, parseHints, parseStatus, transcriptPathFor } from './notes'
+import { ago, bandLine, decide, encodeProjectDir, hintLine, parseHints, parseReviewCount, parseStatus, reviewNotice, transcriptPathFor } from './notes'
 
 const typed = (text: string) => ({ text, origin: { kind: 'composer' as const } })
 
@@ -85,4 +85,16 @@ test('hints parsing keeps up to three readable hints, and anything else is none'
   expect(parseHints('null')).toEqual([])
   expect(parseHints('{"hints":{}}')).toEqual([])
   expect(hintLine({ topic: null, text: 'call mum' })).toBe('↳ note · call mum')
+})
+
+test('the review notice counts notes, singular for one, and is absent for none', () => {
+  expect(reviewNotice(1)).toBe('1 note since last review')
+  expect(reviewNotice(12)).toBe('12 notes since last review')
+  expect(reviewNotice(0)).toBeNull()
+})
+
+test('the review count is read from notes.count; anything unreadable is no count', () => {
+  expect(parseReviewCount('{"notes":{"count":4,"ids":["a","b","c","d"]}}')).toBe(4)
+  expect(parseReviewCount('{"notes":{"count":0,"ids":[]}}')).toBe(0)
+  for (const text of ['not json', '{}', '{"notes":{"count":"4"}}', '{"notes":{"count":-1}}', 'null']) expect(parseReviewCount(text)).toBeNull()
 })

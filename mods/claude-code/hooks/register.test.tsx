@@ -48,7 +48,7 @@ const HINTS = JSON.stringify({
 
 // Stands in for the engine: one session, a server answering `status` and `hints` (or refusing, or hanging), a model that echoes.
 // `hints: 'held'` keeps each hints request open until the test answers it through `answer`.
-function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'hangs'; hints?: string | 'held' } = {}) {
+function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'hangs'; hints?: string | 'held'; review?: string } = {}) {
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.env(on, { HOME: '/Users/me' })
   const session = mock.session(on)
@@ -68,6 +68,7 @@ function engine(on: On, opts: { deny?: string; status?: string | 'refused' | 'ha
     if (status.text === 'refused') throw new Error('connection refused')
     if (status.text === 'hangs') return new Promise<never>(() => undefined)
     if (e.url.endsWith('/status')) return reply(status.text ?? '{"up":true,"runsInFlight":0,"lastViewAt":null}')
+    if (e.url.endsWith('/api/review')) return reply(opts.review ?? '{}')
     if (!e.url.includes('/hints?')) return reply('{}')
     if (opts.hints === 'held') return new Promise<ReturnType<typeof reply>>(resolve => held.push(text => resolve(reply(text))))
     return reply(opts.hints ?? HINTS)
@@ -324,4 +325,37 @@ test('edits pass through unchanged, notes mode on or off', async ($, on) => {
   await $.command.run(TOGGLE)
   expect(await box($).edit(edit)).toEqual({ text: 'buy oat milk', cursor: 12 })
   expect(seen.edits).toEqual([edit, edit])
+})
+
+const REVIEW = (count: number) => JSON.stringify({ since: null, until: '2026-10-19T12:00:00.000Z', notes: { count, ids: [] } })
+
+test('turning notes mode off says how many notes wait for review, below the reply', async ($, on) => {
+  const { clock, notices } = engine(on, { review: REVIEW(3) })
+  await $.command.run(TOGGLE)
+  expect(notices()).toEqual([])
+  expect(await $.command.run(TOGGLE)).toEqual({ text: 'Notes mode off.' })
+  await clock.settle()
+  expect(notices()).toEqual(['3 notes since last review'])
+})
+
+test('turning notes mode off says nothing more when no note waits for review', async ($, on) => {
+  const { clock, notices } = engine(on, { review: REVIEW(0) })
+  await $.command.run(TOGGLE)
+  await $.command.run(TOGGLE)
+  await clock.settle()
+  expect(notices()).toEqual([])
+})
+
+test('turning notes mode off says nothing more when the server is down or hangs', async ($, on) => {
+  const { clock, status, notices } = engine(on, { review: REVIEW(3), status: 'refused' })
+  await $.command.run(TOGGLE)
+  await $.command.run(TOGGLE)
+  await clock.settle()
+  expect(notices()).toEqual([])
+
+  status.text = 'hangs'
+  await $.command.run(TOGGLE)
+  expect(await $.command.run(TOGGLE)).toEqual({ text: 'Notes mode off.' })
+  await clock.advance(2000)
+  expect(notices()).toEqual([])
 })
