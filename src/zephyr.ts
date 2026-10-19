@@ -7,7 +7,7 @@ import { Store } from './store'
 import { Tailer, type Chunk } from './tailer'
 
 const RUN_HISTORY = 50
-/** Wait before attempts 2, 3 and 4 of a failed run; after the last, the run stays failed. */
+/** Wait before attempts 2, 3 and 4 of a failed run, or of the entries a done run left uncovered; after the last, they wait for a restart. */
 const RETRY_DELAYS_MS = [5_000, 30_000, 120_000]
 
 /** What one queued run covers: the new entries for an entry-triggered kind, one source view for a view-triggered kind. */
@@ -308,6 +308,9 @@ export class Zephyr {
         if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
         for (const w of result.writes) await this.writeView(kind, w)
         if (result.dropped.length > 0) run.dropped = result.dropped
+        const covered = new Set(result.covered)
+        const uncovered = run.entryIds.filter((id) => !covered.has(id))
+        if (uncovered.length > 0) run.uncovered = uncovered
       }
       run.status = 'done'
     } catch (err) {
@@ -316,7 +319,8 @@ export class Zephyr {
       console.error(`[zephyr] ${kind.kind} ${run.id} attempt ${run.attempt} failed: ${run.error}`)
     }
     run.endedAt = new Date().toISOString()
-    if (run.status === 'failed') this.scheduleRetry(run)
+    if (run.status === 'failed') this.scheduleRetry(run, run.viewIds ? { viewId: run.viewIds[0]! } : { entryIds: run.entryIds })
+    else if (run.uncovered) this.scheduleRetry(run, { entryIds: run.uncovered })
     this.emit({ type: 'run', data: run })
     await this.store.appendRun(run).catch((err) => console.error(`[zephyr] could not record ${run.id}: ${(err as Error).message}`))
   }
@@ -325,14 +329,14 @@ export class Zephyr {
     return { entries: this.entries, views: this.listViews(), relevance: this.relevance }
   }
 
-  private scheduleRetry(run: Run) {
+  /** Queues the work a run left undone as its next attempt, after that attempt's delay; none after the last attempt. */
+  private scheduleRetry(run: Run, work: Work) {
     const delay = this.retryDelaysMs[run.attempt - 1]
     if (delay === undefined) return
     let settle!: () => void
     const done = new Promise<void>((r) => (settle = r))
     const timer = setTimeout(() => {
       this.retries.delete(retry)
-      const work: Work = run.viewIds ? { viewId: run.viewIds[0]! } : { entryIds: run.entryIds }
       this.enqueue(run.kind, work, run.attempt + 1, run.id)
       settle()
     }, delay)
@@ -364,6 +368,13 @@ export class Zephyr {
   }
 }
 
+/** Entries some done run of this kind covered. A line from before `uncovered` existed counts as covering all its entries. */
 function doneEntryIds(runs: Run[], kind: string): Set<EntryId> {
-  return new Set(runs.filter((r) => r.kind === kind && r.status === 'done').flatMap((r) => r.entryIds))
+  const covered = new Set<EntryId>()
+  for (const r of runs) {
+    if (r.kind !== kind || r.status !== 'done') continue
+    const uncovered = new Set(r.uncovered)
+    for (const id of r.entryIds) if (!uncovered.has(id)) covered.add(id)
+  }
+  return covered
 }

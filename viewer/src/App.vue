@@ -26,7 +26,7 @@ const due = (d: string) =>
 const taskSources = (t: Task) => t.sources.map((id) => state.entries.get(id)?.text ?? id).join('\n')
 
 const runSubject = (r: Run) => (r.viewIds ? r.viewIds.map((id) => id.split('/').at(-1)).join(', ') : r.entryIds.length)
-const runDetail = (r: Run) => [r.error, ...(r.dropped ?? []).map((d) => `dropped: ${d}`)].filter(Boolean).join('\n')
+const runDetail = (r: Run) => [r.error, ...(r.dropped ?? []).map((d) => `dropped: ${d}`), r.uncovered && `not covered: ${r.uncovered.length} notes`].filter(Boolean).join('\n')
 
 onMounted(connect)
 </script>

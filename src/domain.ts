@@ -56,6 +56,8 @@ export interface Run {
   error?: string
   /** Ops the reply asked for that validation refused, one reason each; the rest of the reply still applied. */
   dropped?: string[]
+  /** On a done run, the entries its reply did not cover; they are retried like a failed run. Absent when it covered all. */
+  uncovered?: EntryId[]
 }
 
 export interface Session {
@@ -102,7 +104,8 @@ export interface World {
 /** A view as a kind returns it; the server adds id, kind and updatedAt, so a kind can only write its own views. */
 export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt'>
 
-export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[] } | { ok: false; error: string }
+/** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
+export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }
 
 /** One run's prompt, and how the reply to exactly that prompt becomes views. */
 export interface Plan {
@@ -111,7 +114,7 @@ export interface Plan {
 }
 
 /**
- * entry: every new entry is queued for the kind, and on start every entry no done run covered.
+ * entry: every new entry is queued for the kind, and on start every entry no done run's reply covered.
  * view: a written view of `kind` is queued when `wants` says so, and on start every view it wants.
  */
 export type Trigger = { on: 'entry' } | { on: 'view'; kind: string; wants(source: View, own: readonly View[]): boolean }
@@ -119,7 +122,7 @@ export type Trigger = { on: 'entry' } | { on: 'view'; kind: string; wants(source
 export interface AgentKind {
   kind: string
   trigger: Trigger
-  /** null when there is nothing to ask the model; the run is then done without a call. */
+  /** null when there is nothing to ask the model; the run is then done without a call, covering all its entries. */
   plan(run: Run, world: World): Promise<Plan | null>
   /** The docs, drawn from these views, that this kind's runs will ask the relevance backend to rank. */
   relevanceDocs?(views: readonly View[]): RelevanceDoc[]

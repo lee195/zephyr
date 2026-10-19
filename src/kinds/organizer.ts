@@ -155,7 +155,9 @@ export const organizer: AgentKind = {
       settle(json) {
         const result = validateOps(json, ctx)
         if (!result.ok) return result
-        return { ok: true, writes: applyOps(world, own, result.ops), dropped: result.dropped }
+        // An entry is organized only once an applied op cites it; one the reply skipped, or cited only in a dropped op, is not.
+        const cited = new Set(result.ops.flatMap((o) => o.sources))
+        return { ok: true, writes: applyOps(world, own, result.ops), dropped: result.dropped, covered: run.entryIds.filter((id) => cited.has(id)) }
       },
     }
   },

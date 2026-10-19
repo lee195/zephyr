@@ -125,7 +125,7 @@ test('an organizer run waits for its topics to be embedded, so every topic can o
   end.hold((input) => input.includes('Bread\nabout sourdough'))
   const model = scripted({ ops: [] })
   const embedding = embeddingBackend({ baseUrl: 'http://embed.test/v1', model: 'gemma', apiKey: 'k', cacheDir: `${dir}/embeddings`, fetch: end.fetch })
-  const z = new Zephyr({ dataDir: dir, backend: model.backend, kinds: { organizer: kinds.organizer! }, relevance: embedding })
+  const z = new Zephyr({ dataDir: dir, backend: model.backend, kinds: { organizer: kinds.organizer! }, relevance: embedding, retryDelaysMs: [] })
   await z.start()
   cleanup.push(() => z.stop())
   await Bun.sleep(50)

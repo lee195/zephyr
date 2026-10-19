@@ -96,13 +96,13 @@ test('ops on unknown or done tasks, with empty text, or citing no new entry are 
   })
 })
 
-test('a reply with no ops is a done run that writes nothing', async () => {
+test('a reply with no ops is a done run that covers its note and writes nothing', async () => {
   const dir = await tempDir()
   const z = new Zephyr({ dataDir: dir, backend: scripted({ ops: [] }).backend, kinds: onlyTasks })
   await z.start()
   await z.ingest([entry('e1', 'the sky was nice today')])
   await z.idle()
-  expect(z.listRuns().map((r) => r.status)).toEqual(['done'])
+  expect(z.listRuns().map((r) => [r.status, r.uncovered])).toEqual([['done', undefined]])
   expect(z.listViews()).toEqual([])
   expect(await filesUnder(join(dir, 'views'))).toEqual([])
 })

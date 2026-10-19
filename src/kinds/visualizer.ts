@@ -121,7 +121,7 @@ export const visualizer: AgentKind = {
       settle(json) {
         const result = parseDiagram(json)
         if (!result.ok) return result
-        return { ok: true, writes: [{ slug: topic.slug, title: topic.title, sources: topic.sources, ...result.diagram, derivedFrom }], dropped: [] }
+        return { ok: true, writes: [{ slug: topic.slug, title: topic.title, sources: topic.sources, ...result.diagram, derivedFrom }], dropped: [], covered: [] }
       },
     }
   },

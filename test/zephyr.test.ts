@@ -183,6 +183,31 @@ test('a retry never merges with new work of another attempt; work of the same at
   ])
 })
 
+test('a note the reply skipped is retried like a failed run, and stays unorganized across a restart', async () => {
+  const dir = await tempDir()
+  const skipsE2 = scripted([{ op: 'write', slug: 'one', title: 'One', sources: ['e1'], body: 'e1' }])
+  const z = new OrganizerOnly({ dataDir: dir, backend: skipsE2.backend, retryDelaysMs: fastRetries })
+  await z.start()
+  await z.ingest([entry('e1'), entry('e2')])
+  await z.idle()
+
+  expect(skipsE2.sent.map((m) => JSON.parse(m.at(-1)!.content).newEntries.map((e: any) => e.id))).toEqual([['e1', 'e2'], ['e2'], ['e2'], ['e2']])
+  const lines = await runLines(dir)
+  expect(lines.map((r) => [r.entryIds, r.status, r.attempt, r.uncovered])).toEqual([
+    [['e1', 'e2'], 'done', 1, ['e2']],
+    [['e2'], 'done', 2, ['e2']],
+    [['e2'], 'done', 3, ['e2']],
+    [['e2'], 'done', 4, ['e2']],
+  ])
+  expect(lines.slice(1).map((r) => r.retryOf)).toEqual(lines.slice(0, -1).map((r) => r.id))
+
+  const fake = fakeBackend()
+  const restarted = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
+  await restarted.start()
+  await restarted.idle()
+  expect(fake.calls).toEqual([['e2']])
+})
+
 async function seedDataDir(entries: Entry[], runs?: object[]) {
   const dir = await tempDir()
   await writeFile(join(dir, 'entries.jsonl'), entries.map((e) => JSON.stringify(e) + '\n').join(''))
@@ -382,7 +407,7 @@ const scores = { 'organizer/e': 0.9, 'organizer/c': 0.7, 'organizer/a': 0.5, 'or
 test('the three views most relevant to the new entries are open, every other view is one index line', async () => {
   const fake = scripted([])
   const rel = fixedRelevance(scores)
-  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance: rel.relevance })
+  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance: rel.relevance, retryDelaysMs: [] })
   await z.start()
   await z.idle()
 
@@ -414,7 +439,7 @@ test('with the primary relevance backend down, the open set comes from the fallb
   const fake = scripted([])
   const down: RelevanceBackend = { rank: async () => Promise.reject(new Error('endpoint down')) }
   const relevance = withFallback(down, fixedRelevance(scores).relevance, { timeoutMs: 1000, cooldownMs: 30_000 })
-  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance })
+  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance, retryDelaysMs: [] })
   await z.start()
   await z.idle()
 

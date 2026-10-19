@@ -147,11 +147,13 @@ export const tasks: AgentKind = {
       settle(json) {
         const result = validateTaskOps(json, ctx)
         if (!result.ok) return result
-        if (result.ops.length === 0) return { ok: true, writes: [], dropped: result.dropped }
+        // Most notes hold no task, so a valid reply covers every entry of the run, even with no ops.
+        const covered = run.entryIds
+        if (result.ops.length === 0) return { ok: true, writes: [], dropped: result.dropped, covered }
         const next = applyTaskOps(current, result.ops)
         const cited = new Set(next.flatMap((t) => t.sources))
         const write = { slug: 'tasks', title: 'Tasks', format: 'md' as const, body: renderTasks(next), tasks: next, sources: inEntryOrder(world.entries, cited) }
-        return { ok: true, writes: [write], dropped: result.dropped }
+        return { ok: true, writes: [write], dropped: result.dropped, covered }
       },
     }
   },
