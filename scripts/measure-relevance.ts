@@ -1,14 +1,21 @@
 /**
  * Measures a relevance backend on a subject-labelled corpus, offline and without a model.
  *
- *   bun scripts/measure-relevance.ts [corpus.json] [--backend tfidf]
+ *   bun scripts/measure-relevance.ts [corpus.json] [--backend tfidf|embedding] [--cache dir]
+ *   wick exec --only vllm -- bun scripts/measure-relevance.ts --backend embedding
  *
  * Each note is ranked against every other note; a hit is relevant when it shares the note's subject.
- * Prints JSON: top-1 / recall@3 / recall@5 / MRR over all notes, and how a score threshold splits the
- * top-5 hits into same-subject and other-subject ones, with the share of kept hits that are same-subject (precision).
+ * Prints JSON: top-1 / recall@3 / recall@5 / MRR over all notes and over the notes that share no content word
+ * with any other note of their subject, and how a score threshold splits the top-5 hits into same-subject and
+ * other-subject ones, with the share of kept hits that are same-subject (precision). For embedding, also the
+ * requests and tokens the run cost; --cache defaults to a fresh directory, so the count is for a cold cache.
  */
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { relevanceBackends } from '../src/relevance'
+import { embeddingBackend } from '../src/embedding'
+import { relevanceBackends, tokenize, type RelevanceBackend } from '../src/relevance'
 
 interface Note {
   id: string
@@ -16,18 +23,53 @@ interface Note {
   text: string
 }
 
-const THRESHOLDS = [0.1, 0.12, 0.14, 0.15, 0.2]
+const THRESHOLDS: Record<string, number[]> = { tfidf: [0.1, 0.12, 0.14, 0.15, 0.2], embedding: [0.75, 0.78, 0.8, 0.82, 0.84, 0.86] }
 const TOP_K = 5
 
-const { values, positionals } = parseArgs({ args: Bun.argv.slice(2), allowPositionals: true, options: { backend: { type: 'string', default: 'tfidf' } } })
+const { values, positionals } = parseArgs({
+  args: Bun.argv.slice(2),
+  allowPositionals: true,
+  options: { backend: { type: 'string', default: 'tfidf' }, cache: { type: 'string' } },
+})
 const corpusPath = positionals[0] ?? new URL('./fixtures/organizer-corpus.json', import.meta.url).pathname
-const makeBackend = relevanceBackends[values.backend!]
-if (!makeBackend) throw new Error(`unknown backend ${values.backend}; known: ${Object.keys(relevanceBackends).join(', ')}`)
-const backend = makeBackend()
+const cost = { requests: 0, inputs: 0, tokens: 0 }
+
+async function makeBackend(name: string): Promise<RelevanceBackend> {
+  if (name === 'embedding') {
+    const apiKey = process.env.DEEPSEEK_API_KEY
+    if (!apiKey) throw new Error('DEEPSEEK_API_KEY missing; run under `wick exec --only vllm --`')
+    const counting = (async (url: string, init: RequestInit) => {
+      const res = await fetch(url, init)
+      cost.requests++
+      cost.inputs += (JSON.parse(String(init.body)) as { input: string[] }).input.length
+      cost.tokens += ((await res.clone().json()) as { usage?: { prompt_tokens?: number } }).usage?.prompt_tokens ?? 0
+      return res
+    }) as typeof fetch
+    return embeddingBackend({
+      baseUrl: process.env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1',
+      model: process.env.ZEPHYR_EMBED_MODEL ?? 'embeddinggemma2',
+      apiKey,
+      cacheDir: values.cache ?? (await mkdtemp(join(tmpdir(), 'zephyr-embeddings-'))),
+      fetch: counting,
+    })
+  }
+  const make = relevanceBackends[name]
+  if (!make) throw new Error(`unknown backend ${name}; known: embedding, ${Object.keys(relevanceBackends).join(', ')}`)
+  return make()
+}
+const backend = await makeBackend(values.backend!)
+const thresholds = THRESHOLDS[values.backend!] ?? THRESHOLDS.tfidf!
 
 const corpus = (await Bun.file(corpusPath).json()) as { subjects: { slug: string; notes: string[] }[] }
 const notes: Note[] = corpus.subjects.flatMap((s) => s.notes.map((text, i) => ({ id: `${s.slug}#${i}`, subject: s.slug, text })))
 const subjectOf = new Map(notes.map((n) => [n.id, n.subject]))
+const tokensOf = new Map(notes.map((n) => [n.id, new Set(tokenize(n.text))]))
+/** Notes that share no content word with any other note of their subject: lexical matching cannot find their subject. */
+const disjoint = new Set(
+  notes.filter((q) => notes.every((n) => n === q || n.subject !== q.subject || ![...tokensOf.get(n.id)!].some((t) => tokensOf.get(q.id)!.has(t)))).map((n) => n.id),
+)
+let disjointTop1 = 0
+let disjointAt5 = 0
 
 let top1 = 0
 let at3 = 0
@@ -42,6 +84,8 @@ for (const q of notes) {
   if (firstHit >= 0 && firstHit < 3) at3++
   if (firstHit >= 0 && firstHit < 5) at5++
   if (firstHit >= 0) reciprocalRanks += 1 / (firstHit + 1)
+  if (disjoint.has(q.id) && firstHit === 0) disjointTop1++
+  if (disjoint.has(q.id) && firstHit >= 0 && firstHit < 5) disjointAt5++
   for (const r of ranked.slice(0, TOP_K)) (subjectOf.get(r.id) === q.subject ? sameScores : otherScores).push(r.score)
 }
 
@@ -62,15 +106,17 @@ console.log(
       recallAt3: round(at3 / notes.length),
       recallAt5: round(at5 / notes.length),
       mrr: round(reciprocalRanks / notes.length),
+      noSharedWord: { notes: disjoint.size, top1: disjointTop1, at5: disjointAt5 },
       top5Scores: {
         same: { n: sameScores.length, p25: quantile(sameScores, 0.25), p50: quantile(sameScores, 0.5), p75: quantile(sameScores, 0.75) },
         other: { n: otherScores.length, p50: quantile(otherScores, 0.5), p75: quantile(otherScores, 0.75), p90: quantile(otherScores, 0.9) },
       },
-      thresholds: THRESHOLDS.map((t) => {
+      thresholds: thresholds.map((t) => {
         const same = sameScores.filter((x) => x >= t).length
         const other = otherScores.filter((x) => x >= t).length
         return { threshold: t, keepsSame: round(same / sameScores.length), keepsOther: round(other / otherScores.length), precision: round(same / (same + other)) }
       }),
+      ...(values.backend === 'embedding' && { cost }),
     },
     null,
     2,
