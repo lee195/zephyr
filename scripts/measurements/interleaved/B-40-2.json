@@ -1,0 +1,190 @@
+{
+  "summary": {
+    "label": "B",
+    "topics": 40,
+    "entries": 216,
+    "runs": 5,
+    "meanPromptTokens": 5047,
+    "meanCompletionTokens": 91,
+    "medianLatencyMs": 530,
+    "latencyRangeMs": [
+      490,
+      722
+    ],
+    "correct": 4,
+    "duplicates": 0,
+    "failed": 0
+  },
+  "results": [
+    {
+      "rep": 0,
+      "probe": "sourdough",
+      "expect": "sourdough-baking",
+      "status": "done",
+      "promptTokens": 5085,
+      "cachedTokens": 4992,
+      "completionTokens": 89,
+      "latencyMs": 505,
+      "replyOps": [
+        "append:sourdough-baking"
+      ],
+      "open": [
+        "pizza-dough",
+        "guitar-practice",
+        "kubernetes-costs"
+      ],
+      "landed": [
+        "sourdough-baking"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "sourdough-baking 369->512 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 1100,
+        "topicIndex": 1925,
+        "openTopics": 2129,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "forgejo",
+      "expect": "forgejo-ci-pipelines",
+      "status": "done",
+      "promptTokens": 5110,
+      "cachedTokens": 4992,
+      "completionTokens": 88,
+      "latencyMs": 490,
+      "replyOps": [
+        "append:bun-open-source"
+      ],
+      "open": [
+        "bun-open-source",
+        "forgejo-ci-pipelines",
+        "vllm-endpoint-ops"
+      ],
+      "landed": [
+        "bun-open-source"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "bun-open-source 466->618 chars"
+      ],
+      "correct": false,
+      "promptChars": {
+        "system": 1100,
+        "topicIndex": 1894,
+        "openTopics": 2355,
+        "recentEntries": 6745,
+        "newEntries": 235
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "marathon",
+      "expect": "marathon-training",
+      "status": "done",
+      "promptTokens": 5026,
+      "cachedTokens": 4992,
+      "completionTokens": 84,
+      "latencyMs": 539,
+      "replyOps": [
+        "append:marathon-training"
+      ],
+      "open": [
+        "marathon-training",
+        "bouldering",
+        "portugal-vacation"
+      ],
+      "landed": [
+        "marathon-training"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "marathon-training 469->625 chars"
+      ],
+      "correct": true,
+      "promptChars": {
+        "system": 1100,
+        "topicIndex": 1921,
+        "openTopics": 1997,
+        "recentEntries": 6745,
+        "newEntries": 239
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "sailing",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 5084,
+      "cachedTokens": 4992,
+      "completionTokens": 97,
+      "latencyMs": 530,
+      "replyOps": [
+        "write:dinghy-sailing-lessons"
+      ],
+      "open": [
+        "coolify-deployments",
+        "postgres-migrations",
+        "marathon-training"
+      ],
+      "landed": [
+        "dinghy-sailing-lessons"
+      ],
+      "created": [
+        "dinghy-sailing-lessons"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 1100,
+        "topicIndex": 1899,
+        "openTopics": 2273,
+        "recentEntries": 6745,
+        "newEntries": 231
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "beekeeping",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 4931,
+      "cachedTokens": 4864,
+      "completionTokens": 96,
+      "latencyMs": 722,
+      "replyOps": [
+        "write:beekeeping"
+      ],
+      "open": [
+        "conference-talk",
+        "tax-return-2026",
+        "sourdough-baking"
+      ],
+      "landed": [
+        "beekeeping"
+      ],
+      "created": [
+        "beekeeping"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "promptChars": {
+        "system": 1100,
+        "topicIndex": 1912,
+        "openTopics": 1584,
+        "recentEntries": 6745,
+        "newEntries": 228
+      }
+    }
+  ]
+}

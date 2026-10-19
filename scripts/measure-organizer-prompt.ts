@@ -144,6 +144,8 @@ for (let rep = 0; rep < reps; rep++) {
     const call = calls[0]
     const reply = call?.reply as any
     const replyOps = (reply?.ops ?? reply?.upserts ?? []).map((o: any) => `${o.op ?? 'upsert'}:${o.slug}`)
+    const shown = call ? JSON.parse(call.messages.at(-1)!.content) : {}
+    const open: string[] | undefined = shown.openTopics?.map((t: any) => t.slug)
     const row = {
       rep,
       probe: probe.name,
@@ -156,6 +158,7 @@ for (let rep = 0; rep < reps; rep++) {
       completionTokens: call?.usage?.completionTokens,
       latencyMs: call?.latencyMs,
       replyOps,
+      open,
       landed,
       created,
       duplicateTopic: 'existing' in expected && created.length > 0,
@@ -166,7 +169,7 @@ for (let rep = 0; rep < reps; rep++) {
     results.push(row)
     firstMessages ??= call?.messages
     console.log(
-      [probe.name.padEnd(10), String(row.promptTokens).padStart(6), `cached ${row.cachedTokens ?? '?'}`.padStart(12), String(row.completionTokens).padStart(5), `${row.latencyMs}ms`.padStart(8), correct ? 'ok ' : 'BAD', replyOps.join(' '), row.dropped ? `dropped=${JSON.stringify(row.dropped)}` : '', row.error ?? ''].join('  '),
+      [probe.name.padEnd(10), String(row.promptTokens).padStart(6), `cached ${row.cachedTokens ?? '?'}`.padStart(12), String(row.completionTokens).padStart(5), `${row.latencyMs}ms`.padStart(8), correct ? 'ok ' : 'BAD', replyOps.join(' '), open ? `open=${open.join(',')}` : '', row.dropped ? `dropped=${JSON.stringify(row.dropped)}` : '', row.error ?? ''].join('  '),
     )
   }
 }
