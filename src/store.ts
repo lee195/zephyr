@@ -98,6 +98,13 @@ export class Store {
     return views
   }
 
+  /** The view as it is now, kept as views/<kind>/.history/<slug>/<updatedAt>.<ext>; loadViews never reads it back. */
+  async archiveView(view: View) {
+    const dir = join(this.viewDir(view.kind), '.history', view.slug)
+    await mkdir(dir, { recursive: true })
+    await writeAtomic(join(dir, `${view.updatedAt}.${EXT[view.format]}`), view.body)
+  }
+
   async writeView(view: View) {
     const dir = this.viewDir(view.kind)
     await mkdir(dir, { recursive: true })

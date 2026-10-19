@@ -1,7 +1,7 @@
 import { appendFile, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
-import type { ChatMessage, ModelBackend, View } from '../src/domain'
+import type { AgentKind, ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
@@ -494,4 +494,34 @@ test('with the primary relevance backend down, the open set comes from the fallb
 
   expect(JSON.parse(fake.sent[0]!.at(-1)!.content).openTopics.map((t: any) => t.slug)).toEqual(['e', 'c', 'a'])
   expect(z.listRuns().at(-1)).toMatchObject({ status: 'done' })
+})
+
+test('a run on one of its own kind\'s views keeps the page it replaces under .history; an entry run does not', async () => {
+  const pad: AgentKind = {
+    kind: 'pad',
+    trigger: { on: 'view', kind: 'pad', wants: (v) => !v.body.startsWith('revised') },
+    async plan(run, world) {
+      const page = world.views.find((v) => v.id === run.viewIds?.[0])!
+      const write = { slug: page.slug, title: page.title, sources: page.sources, format: 'md' as const, body: `revised ${page.body}` }
+      return { messages: [], settle: () => ({ ok: true, writes: [write], dropped: [], covered: [] }) }
+    },
+  }
+  const at = '2026-10-19T09:00:00.000Z'
+  const dir = await seedDataDir({
+    entries: [entry('e1')],
+    views: [
+      { kind: 'pad', slug: 'p', title: 'P', sources: [], format: 'md', body: 'first draft', updatedAt: at },
+      { ...topic('a', [], 'about a'), updatedAt: at },
+    ],
+  })
+  const z = new Zephyr({ dataDir: dir, backend: scripted({ ops: [{ op: 'append', slug: 'a', sources: ['e1'], body: 'more' }] }).backend, kinds: { organizer: kinds.organizer!, pad } })
+  await z.start()
+  await z.idle()
+
+  expect(z.listViews().find((v) => v.id === 'pad/p')!.body).toBe('revised first draft')
+  expect(await filesUnder(join(dir, 'views/pad/.history/p'))).toEqual([`${at}.md`])
+  expect(await readFile(join(dir, 'views/pad/.history/p', `${at}.md`), 'utf8')).toBe('first draft')
+  expect(z.listViews().find((v) => v.id === 'organizer/a')!.body).toBe('about a\n\nmore')
+  expect(await filesUnder(join(dir, 'views/organizer'))).toEqual(['a.json', 'a.md'])
+  expect(z.listViews().map((v) => v.id).sort()).toEqual(['organizer/a', 'pad/p'])
 })

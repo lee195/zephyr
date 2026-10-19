@@ -307,7 +307,9 @@ export class Zephyr {
         const { json: reply } = await this.backend.complete(plan.messages, { json: true })
         const result = plan.settle(reply)
         if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
-        for (const w of result.writes) await this.writeView(kind, w)
+        // A run on one of the kind's own views revisits a page, so the page it replaces is kept.
+        const revisit = run.viewIds?.[0]?.startsWith(`${kind.kind}/`) === true
+        for (const w of result.writes) await this.writeView(kind, w, revisit)
         if (result.dropped.length > 0) run.dropped = result.dropped
         const covered = new Set(result.covered)
         const uncovered = run.entryIds.filter((id) => !covered.has(id))
@@ -361,10 +363,11 @@ export class Zephyr {
    * The id and directory come from the kind, never from the write, so a kind can only ever write its own views.
    * The title history is kept here, against the stored view, so it holds whichever kind or op changed the title.
    */
-  private async writeView(kind: AgentKind, write: ViewWrite) {
+  private async writeView(kind: AgentKind, write: ViewWrite, archivePrior = false) {
     if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
     const id = `${kind.kind}/${write.slug}`
     const prior = this.views.get(id)
+    if (prior && archivePrior) await this.store.archiveView(prior)
     const updatedAt = this.stamp()
     const pastTitles = prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt }] : prior?.pastTitles
     const appendsSinceWrite = prior && extendsBody(write.body, prior.body) ? (prior.appendsSinceWrite ?? 0) + 1 : 0
