@@ -10,11 +10,15 @@ export interface Hint {
 }
 
 /**
- * Measured with scripts/measure-relevance.ts on the organizer fixture corpus: among top-5 hits, 0.14 keeps 28% of
- * same-subject hits and 12% of other-subject ones (36% of kept hits are same-subject); 0.15 keeps 21% for the same
- * 37% precision. Realistic related drafts scored 0.147 and up, unrelated ones under 0.127.
+ * The lowest score a hint may have, per backend, because each backend scores on its own scale. Measured with
+ * scripts/measure-relevance.ts on the organizer fixture corpus, among top-5 hits:
+ * - tfidf 0.14 keeps 28% of same-subject hits and 12% of other-subject ones (precision 36%). Realistic related
+ *   drafts scored 0.147 and up, unrelated ones under 0.127.
+ * - embeddinggemma2 0.80 keeps 25% of same-subject hits and 7% of other-subject ones (precision 76%). Related
+ *   drafts scored 0.815 and up, unrelated ones 0.788 and under. Its scores sit in a narrow band (top-5 p25 0.76).
+ * A backend missing here has no measured threshold, so it gives no hints.
  */
-export const MIN_HINT_SCORE = 0.14
+export const MIN_HINT_SCORE: Readonly<Record<string, number>> = { tfidf: 0.14, 'embedding-embeddinggemma2': 0.8 }
 /** A longer draft is ranked on its first this-many characters. */
 export const MAX_DRAFT_CHARS = 2000
 const MIN_DRAFT_TOKENS = 2
@@ -27,9 +31,10 @@ export async function hintsFor(draft: string, limit: number, entries: readonly E
   const byId = new Map(entries.filter((e) => e.text.trim() !== same).map((e) => [e.id, e]))
   const topics = new Map<EntryId, View>()
   for (const v of views) if (v.kind === 'organizer') for (const id of v.sources) if (!topics.has(id)) topics.set(id, v)
-  const { scored } = await relevance.rank(query, [...byId.values()])
+  const { backend, scored } = await relevance.rank(query, [...byId.values()])
+  const min = MIN_HINT_SCORE[backend] ?? Infinity
   return scored
-    .filter((s) => s.score >= MIN_HINT_SCORE)
+    .filter((s) => s.score >= min)
     .slice(0, limit)
     .map(({ id, score }) => {
       const e = byId.get(id)!

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import type { ModelBackend } from '../src/domain'
-import { relevanceBackends } from '../src/relevance'
+import { hintsFor } from '../src/hints'
+import { relevanceBackends, type RelevanceBackend } from '../src/relevance'
 import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
 import { entry, seedDataDir } from './helpers'
@@ -110,4 +111,23 @@ test('hints never call the model', async () => {
   expect(await ask(get, 'sourdough loaf')).not.toEqual([])
   expect(await ask(get, 'x')).toEqual([])
   expect(calls).toBe(0)
+})
+
+/** Gives every entry the same score and says it came from `backend`. */
+const scoring = (backend: string, score: number): RelevanceBackend => ({
+  async rank(_q, docs) {
+    return { backend, scored: docs.map((d) => ({ id: d.id, score })) }
+  },
+})
+
+test('hints apply the threshold of the backend that answered', async () => {
+  const hint = (backend: string, score: number) => hintsFor('sourdough loaf', 5, entries, [], scoring(backend, score))
+  expect(await hint('tfidf', 0.5)).toHaveLength(5)
+  expect(await hint('embedding-embeddinggemma2', 0.5)).toEqual([])
+  expect(await hint('embedding-embeddinggemma2', 0.85)).toHaveLength(5)
+  expect(await hint('tfidf', 0.1)).toEqual([])
+})
+
+test('a backend with no measured threshold gives no hints', async () => {
+  expect(await hintsFor('sourdough loaf', 5, entries, [], scoring('embedding-unmeasured', 0.99))).toEqual([])
 })
