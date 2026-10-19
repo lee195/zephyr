@@ -5,7 +5,7 @@ import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
-import { doneRun, entry, gate, payloadOf, seedDataDir, tempDir } from './helpers'
+import { doneRun, entry, eventually, gate, payloadOf, scripted, seedDataDir, tempDir } from './helpers'
 
 /** These tests pin core behavior with the organizer as the only kind, so call counts are one kind's. */
 class OrganizerOnly extends Zephyr {
@@ -30,15 +30,6 @@ function fakeBackend() {
     },
   }
   return { backend, calls, holdCalls: () => held.hold(), release: held.release }
-}
-
-async function eventually(check: () => boolean | Promise<boolean>, ms = 3000) {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    if (await check()) return
-    await Bun.sleep(25)
-  }
-  throw new Error('condition not met in time')
 }
 
 test('entries arriving during a run coalesce into exactly one next run', async () => {
@@ -174,7 +165,7 @@ test('a retry never merges with new work of another attempt; work of the same at
 
 test('a note the reply skipped is retried like a failed run, and stays unorganized across a restart', async () => {
   const dir = await tempDir()
-  const skipsE2 = scripted([{ op: 'write', slug: 'one', title: 'One', sources: ['e1'], body: 'e1' }])
+  const skipsE2 = scripted({ ops: [{ op: 'write', slug: 'one', title: 'One', sources: ['e1'], body: 'e1' }] })
   const z = new OrganizerOnly({ dataDir: dir, backend: skipsE2.backend, retryDelaysMs: fastRetries })
   await z.start()
   await z.ingest([entry('e1'), entry('e2')])
@@ -305,18 +296,6 @@ test('a note whose entry append failed is re-read from its transcript and kept',
   expect(z.listViews().map((v) => v.sources)).toEqual([['n1']])
 })
 
-/** Replies with the given ops for every call, and keeps the messages it was sent. */
-function scripted(ops: object[]) {
-  const sent: ChatMessage[][] = []
-  const backend: ModelBackend = {
-    async complete(messages) {
-      sent.push(messages)
-      return { json: { ops } }
-    },
-  }
-  return { backend, sent }
-}
-
 /** A data dir where e1 and e2 are organized into topic "a", and e3 is waiting to be organized. */
 function organizedDir() {
   return seedDataDir({
@@ -328,7 +307,7 @@ function organizedDir() {
 
 test('append adds a section to an existing topic and unions its sources', async () => {
   const dir = await organizedDir()
-  const z = new OrganizerOnly({ dataDir: dir, backend: scripted([{ op: 'append', slug: 'a', sources: ['e3'], body: 'Second section.' }]).backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: [{ op: 'append', slug: 'a', sources: ['e3'], body: 'Second section.' }] }).backend })
   await z.start()
   await z.idle()
   expect(z.listViews().map((v) => [v.slug, v.title, v.sources, v.body])).toEqual([['a', 'A', ['e1', 'e2', 'e3'], 'First section.\n\nSecond section.']])
@@ -343,7 +322,7 @@ test('append to an unknown topic is dropped with a reason, and the rest of the r
     { op: 'append', slug: 'ghost', sources: ['e3'], body: 'lost' },
     { op: 'write', slug: 'fresh', title: 'Fresh', sources: ['e3'], body: 'kept' },
   ]
-  const z = new OrganizerOnly({ dataDir: dir, backend: scripted(reply).backend })
+  const z = new OrganizerOnly({ dataDir: dir, backend: scripted({ ops: reply }).backend })
   await z.start()
   await z.idle()
   expect(z.listViews().map((v) => [v.slug, v.sources, v.body]).sort()).toEqual([
@@ -378,7 +357,7 @@ function fiveTopicDir() {
 const scores = { 'organizer/e': 0.9, 'organizer/c': 0.7, 'organizer/a': 0.5, 'organizer/b': 0.3, 'organizer/d': 0.1 }
 
 test('the three views most relevant to the new entries are open, every other view is one index line', async () => {
-  const fake = scripted([])
+  const fake = scripted({ ops: [] })
   const rel = fixedRelevance(scores)
   const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance: rel.relevance, retryDelaysMs: [] })
   await z.start()
@@ -398,7 +377,7 @@ test('a write to an existing topic that was not open is dropped; a write to an o
     { op: 'write', slug: 'b', title: 'B', sources: ['e6'], body: 'clobbered' },
     { op: 'write', slug: 'c', title: 'C', sources: ['e6'], body: 'rewritten' },
   ]
-  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: scripted(reply).backend, relevance: fixedRelevance(scores).relevance })
+  const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: scripted({ ops: reply }).backend, relevance: fixedRelevance(scores).relevance })
   await z.start()
   await z.idle()
 
@@ -409,7 +388,7 @@ test('a write to an existing topic that was not open is dropped; a write to an o
 })
 
 test('with the primary relevance backend down, the open set comes from the fallback', async () => {
-  const fake = scripted([])
+  const fake = scripted({ ops: [] })
   const down: RelevanceBackend = { rank: async () => Promise.reject(new Error('endpoint down')) }
   const relevance = withFallback(down, fixedRelevance(scores).relevance, { timeoutMs: 1000, cooldownMs: 30_000 })
   const z = new OrganizerOnly({ dataDir: await fiveTopicDir(), backend: fake.backend, relevance, retryDelaysMs: [] })
