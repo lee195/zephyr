@@ -38,7 +38,6 @@ A note is a user row whose text starts with `[zephyr] `, in every harness. Each 
 | Harness | Transcript (`transcriptPath`) | Capture |
 | --- | --- | --- |
 | `claude-code` | the session `.jsonl`, tailed from a byte offset | the Zephyr mod in `jlee-mods/zephyr` |
-| `codex` | the rollout `.jsonl` under `$CODEX_HOME/sessions/YYYY/MM/DD/`, tailed from a byte offset; a message is a `response_item` keyed by its `msg_` id | you type `[zephyr] ` yourself; the `notify` script in `jlee-mods/zephyr-codex` registers the thread, and its AGENTS.md rule keeps the reply to `.` (still one model turn) |
 | `opencode` | opencode's SQLite database (`opencode db path`); each read returns the session's user text again and dedupe drops repeats | the `/note` TUI plugin in `jlee-mods/zephyr-opencode` |
 
 ## Kinds

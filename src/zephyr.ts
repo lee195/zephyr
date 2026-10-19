@@ -189,7 +189,7 @@ export class Zephyr {
   private async tail(session: Session) {
     const key = sessionKey(session.harness, session.sessionId)
     const adapter = adapters[session.harness]
-    if (!adapter) return
+    if (!adapter) return console.warn(`[zephyr] skipping session ${session.sessionId}: no adapter for harness ${session.harness}`)
     const tailer = new Tailer(
       session.transcriptPath,
       session.offset,
