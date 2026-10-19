@@ -9,6 +9,11 @@ export interface Entry {
   sessionId: string
   at: string
   text: string
+  /**
+   * When this server first stored the entry, on its own clock. A note backfilled late carries an old `at`, so only
+   * this says whether it arrived after a review. Absent on entries stored before it was recorded.
+   */
+  receivedAt?: string
 }
 
 export type ViewFormat = 'md' | 'svg' | 'ascii'
@@ -33,6 +38,8 @@ export interface View {
   format: ViewFormat
   body: string
   updatedAt: string
+  /** The updatedAt of the view's first write. Absent on views first written before it was recorded. */
+  createdAt?: string
   /** The task list as data, on the tasks view only; body is its markdown rendering for plain-file readers. */
   tasks?: Task[]
   /** The view this one was derived from, at the version it was derived from; it is stale once that view moves on. */
@@ -142,8 +149,8 @@ export interface World {
   relevance: RelevanceBackend
 }
 
-/** A view as a kind returns it; the server adds id, kind, updatedAt, pastTitles and appendsSinceWrite, so a kind can only write its own views and never its history. */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'pastTitles' | 'appendsSinceWrite'>
+/** A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, pastTitles and appendsSinceWrite, so a kind can only write its own views and never its history. */
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'pastTitles' | 'appendsSinceWrite'>
 
 /** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
 export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }

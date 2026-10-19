@@ -74,6 +74,20 @@ export class Store {
     await appendFile(this.runsPath, JSON.stringify(run) + '\n')
   }
 
+  private get reviewPath() {
+    return join(this.dir, 'review.json')
+  }
+
+  /** When the last review finished; null when there was none. */
+  async loadReviewCursor(): Promise<string | null> {
+    const text = await readText(this.reviewPath)
+    return text ? (JSON.parse(text) as { lastReviewedAt: string }).lastReviewedAt : null
+  }
+
+  async saveReviewCursor(lastReviewedAt: string) {
+    await writeAtomic(this.reviewPath, JSON.stringify({ lastReviewedAt }, null, 2))
+  }
+
   async loadSessions(): Promise<Session[]> {
     const text = await readText(this.sessionsPath)
     return text ? JSON.parse(text) : []

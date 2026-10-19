@@ -25,14 +25,15 @@ Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, p
 
 ```
 data/
-  entries.jsonl                 one Entry per line, append-only
+  entries.jsonl                 one Entry per line, append-only; receivedAt is when the server stored it
   sessions.json                 registered transcripts and where each read resumes
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
-  views/<kind>/<slug>.json      view metadata: title, sources, updatedAt, pastTitles, appendsSinceWrite
+  views/<kind>/<slug>.json      view metadata: title, sources, updatedAt, createdAt, pastTitles, appendsSinceWrite
   views/<kind>/.history/<slug>/<updatedAt>.md
                                 a page as it was before a rewrite replaced it
   embeddings/<backend>.jsonl    cached document vectors; the sweep drops those no ranking can ask about
   runs.jsonl                    every finished run, append-only
+  review.json                   { lastReviewedAt }: where the last review ended
 ```
 
 The viewer does not show `.history`; the files are plain markdown next to the page.
@@ -73,8 +74,12 @@ The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram nev
 | `GET /status` | `{ up, entries, runsInFlight, lastViewAt, sessions, relevance: { warmup, pending, compaction } }`. `warmup` is `running`, `done` or `failed` for the background embedding of stored docs on start; `pending` counts docs being embedded now. `compaction` is `{ count, bytesBefore, bytesAfter }` for the cache compactions since start and the latest one's sizes, or `null` before the first. |
 | `GET /hints?q=<draft>&limit=1..5` | `{ hints, backend, partial }`: stored entries related to the draft. Never waits on embedding entries; `partial` is true when some were not embedded yet and so were left out. |
 | `GET /api/views`, `/api/entries`, `/api/runs` | Current state |
+| `GET /api/review` | The digest since the last review, computed on each request: `{ since, until, notes: { count, ids }, newTopics, topics, sharedNotes, renames, tasks, unfiled, rewrites }`. Every list is about the notes the server received after `since` and up to `until`, or about writes in that window. `since` is `null` before the first review. |
+| `POST /api/review/done` `{ until }` | Ends a review: the next digest starts after `until`, the value the digest that was reviewed returned. A note received after that digest was read stays in the next one. Refuses an `until` in the future or before the last review. |
 | `GET /events` | SSE stream of `entry`, `run`, and `view` events |
 | `GET /` | Viewer |
+
+Every request other than `GET` must send `content-type: application/json` (else 415) and either no `Origin` or a loopback one (else 403). The harness plugins send no `Origin`. A web page on another site, including one reaching this port through a DNS name that resolves to 127.0.0.1, sends its own and is refused.
 
 ## Duplication
 

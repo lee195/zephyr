@@ -3,6 +3,7 @@ import { hintsFor, type HintReply } from './hints'
 import { isNote, noteEntry, type AgentKind, type Entry, type EntryId, type ModelBackend, type Run, type Session, type View, type ViewWrite, type World, type ZephyrEvent } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
 import { relevanceBackends, type Compaction, type RelevanceBackend, type RelevanceDoc } from './relevance'
+import { buildDigest, closeWindow, type Digest, type WindowClose } from './review'
 import { Store } from './store'
 import { Tailer } from './tailer'
 
@@ -75,6 +76,8 @@ export class Zephyr {
    */
   private exhausted = new Map<string, string | undefined>()
   private lastStamp = 0
+  /** The until of the last finished review; persisted in review.json. */
+  private lastReviewedAt: string | null = null
   /** Compactions of the relevance backend's disk cache since start, and the latest one. */
   private compactions: { count: number; last: Compaction | null } = { count: 0, last: null }
   /** Readying every doc the relevance backend will be asked about, started by start() and never awaited by it. */
@@ -92,6 +95,7 @@ export class Zephyr {
 
   async start() {
     await this.store.init()
+    this.lastReviewedAt = await this.store.loadReviewCursor()
     for (const e of await this.store.loadEntries()) {
       if (this.entryIds.has(e.id)) continue
       this.entryIds.add(e.id)
@@ -214,6 +218,21 @@ export class Zephyr {
     return reply
   }
 
+  /** The digest from the last review up to now. It reads runs.jsonl, since memory keeps only the last few runs. */
+  async review(): Promise<Digest> {
+    const until = this.stamp()
+    return buildDigest(this.entries, this.listViews(), (await this.store.loadRuns()) ?? [], this.lastReviewedAt, until)
+  }
+
+  /** Moves the cursor to the until of the digest the review covered, so notes received since then stay unreviewed. */
+  async finishReview(until: unknown): Promise<WindowClose> {
+    const closed = closeWindow(until, this.lastReviewedAt, new Date(Math.max(Date.now(), this.lastStamp)).toISOString())
+    if (!closed.ok) return closed
+    this.lastReviewedAt = closed.until
+    await this.store.saveReviewCursor(closed.until)
+    return closed
+  }
+
   status() {
     let lastViewAt: string | null = null
     for (const v of this.views.values()) if (!lastViewAt || v.updatedAt > lastViewAt) lastViewAt = v.updatedAt
@@ -274,13 +293,15 @@ export class Zephyr {
    * only once it is on disk, so a failed append leaves the row for the tailer's re-read.
    */
   async ingest(candidates: Entry[]): Promise<Entry[]> {
-    const fresh: Entry[] = []
+    const unseen: Entry[] = []
     for (const e of candidates) {
       if (this.entryIds.has(e.id) || this.appending.has(e.id)) continue
       this.appending.add(e.id)
-      fresh.push(e)
+      unseen.push(e)
     }
-    if (fresh.length === 0) return fresh
+    if (unseen.length === 0) return unseen
+    const receivedAt = this.stamp()
+    const fresh = unseen.map((e) => ({ ...e, receivedAt }))
     try {
       await this.store.appendEntries(fresh)
     } finally {
@@ -445,7 +466,8 @@ export class Zephyr {
     const updatedAt = this.stamp()
     const pastTitles = prior && prior.title !== write.title ? [...(prior.pastTitles ?? []), { title: prior.title, until: updatedAt }] : prior?.pastTitles
     const appendsSinceWrite = prior && extendsBody(write.body, prior.body) ? (prior.appendsSinceWrite ?? 0) + 1 : 0
-    const view: View = { ...write, id, kind: kind.kind, updatedAt, ...(pastTitles && { pastTitles }), ...(appendsSinceWrite > 0 && { appendsSinceWrite }) }
+    const createdAt = prior ? prior.createdAt : updatedAt
+    const view: View = { ...write, id, kind: kind.kind, updatedAt, ...(createdAt && { createdAt }), ...(pastTitles && { pastTitles }), ...(appendsSinceWrite > 0 && { appendsSinceWrite }) }
     await this.store.writeView(view)
     this.views.set(view.id, view)
     this.prepareRelevance(kind.relevanceDocs?.([view]) ?? [])
