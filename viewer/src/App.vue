@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import type { Run, Task, View } from '../../src/domain'
-import { connect, derivedBySource, state, taskList, topicsByEntry, viewsByKind } from './live'
+import { connect, derivedBySource, type FailedGroup, state, strip, taskList, topicsByEntry, viewsByKind } from './live'
 import ViewBody from './ViewBody.vue'
 
 const openSource = ref<string | null>(null)
@@ -9,7 +9,6 @@ const openHistory = reactive(new Set<string>())
 const toggleHistory = (id: string) => (openHistory.has(id) ? openHistory.delete(id) : openHistory.add(id))
 const newestFirst = (v: View) => [...(v.pastTitles ?? [])].reverse()
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-const runs = computed(() => [...state.runs.values()].slice(-12).reverse())
 const entries = computed(() => [...state.entries.values()].slice(-20).reverse())
 
 function toggleSource(viewId: string, entryId: string) {
@@ -42,6 +41,8 @@ const taskSources = (t: Task) => t.sources.map((id) => state.entries.get(id)?.te
 
 const runSubject = (r: Run) => (r.viewIds ? r.viewIds.map((id) => id.split('/').at(-1)).join(', ') : r.entryIds.length)
 const runDetail = (r: Run) => [r.error, ...(r.dropped ?? []).map((d) => `dropped: ${d}`), r.uncovered && `not covered: ${r.uncovered.length} notes`].filter(Boolean).join('\n')
+const failedDetail = (g: FailedGroup) =>
+  [`${g.count} failed, latest at ${time(g.latest.endedAt)}`, g.recoveredAt && `done since ${time(g.recoveredAt)}`, runDetail(g.latest)].filter(Boolean).join('\n')
 
 onMounted(connect)
 </script>
@@ -53,9 +54,18 @@ onMounted(connect)
   </header>
 
   <section class="activity" aria-label="Runs">
-    <span v-if="runs.length === 0" class="muted">No runs yet</span>
-    <span v-for="r in runs" :key="r.id" class="run" :class="[r.status, { dropped: r.dropped?.length }]" :title="runDetail(r)">
+    <span v-if="strip.runs.length + strip.failed.length === 0" class="muted">No runs yet</span>
+    <span v-for="r in strip.runs" :key="r.id" class="run" :class="[r.status, { dropped: r.dropped?.length }]" :title="runDetail(r)">
       {{ r.kind }} · {{ runSubject(r) }} · {{ r.status }}
+    </span>
+    <span
+      v-for="g in strip.failed"
+      :key="g.kind"
+      class="run failed"
+      :class="{ dropped: g.latest.dropped?.length, recovered: g.recoveredAt }"
+      :title="failedDetail(g)"
+    >
+      {{ g.kind }} · {{ g.count }} failed
     </span>
   </section>
 

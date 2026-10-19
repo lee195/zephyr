@@ -45,6 +45,7 @@ h3 { font-size: 16px; margin: 0 0 8px; }
 .run.done { color: var(--ok); }
 .run.failed { border-color: var(--bad); color: var(--bad); }
 .run.dropped { border-style: dashed; }
+.run.recovered { opacity: 0.55; }
 
 main { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
 @media (max-width: 760px) { main { grid-template-columns: 1fr; } }

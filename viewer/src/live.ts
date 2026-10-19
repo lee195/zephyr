@@ -41,6 +41,44 @@ export const viewsByKind = computed(() => {
   return groups
 })
 
+/** A kind's failed runs as one chip. `recoveredAt` is set when a run of that kind finished done after its latest failure. */
+export interface FailedGroup {
+  kind: string
+  count: number
+  latest: Run
+  recoveredAt?: string
+}
+
+const DONE_SHOWN = 12
+
+/** The activity strip: in-flight runs, then the newest done runs, then one group per failing kind, current failures before recovered ones. */
+export function stripOf(all: readonly Run[]): { runs: Run[]; failed: FailedGroup[] } {
+  const inFlight = all.filter((r) => r.status === 'queued' || r.status === 'running').reverse()
+  const done = all.filter((r) => r.status === 'done')
+  const lastDone = new Map<string, string>()
+  for (const r of done) if (r.endedAt && r.endedAt > (lastDone.get(r.kind) ?? '')) lastDone.set(r.kind, r.endedAt)
+  const groups = new Map<string, FailedGroup>()
+  for (const r of all) {
+    if (r.status !== 'failed') continue
+    const g = groups.get(r.kind)
+    if (!g) groups.set(r.kind, { kind: r.kind, count: 1, latest: r })
+    else {
+      g.count++
+      if ((r.endedAt ?? '') >= (g.latest.endedAt ?? '')) g.latest = r
+    }
+  }
+  for (const g of groups.values()) {
+    const at = lastDone.get(g.kind)
+    if (at && at > (g.latest.endedAt ?? '')) g.recoveredAt = at
+  }
+  const failed = [...groups.values()].sort(
+    (a, b) => Number(!!a.recoveredAt) - Number(!!b.recoveredAt) || (b.latest.endedAt ?? '').localeCompare(a.latest.endedAt ?? ''),
+  )
+  return { runs: [...inFlight, ...done.slice(-DONE_SHOWN).reverse()], failed }
+}
+
+export const strip = computed(() => stripOf([...state.runs.values()]))
+
 /** Each live collection: the path that loads it and the server event that updates it, both keyed by id. */
 const feeds: { path: string; event: ZephyrEvent['type']; map: Map<string, { id: string }> }[] = [
   { path: '/api/views', event: 'view', map: state.views },
