@@ -16,7 +16,7 @@ import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { backends } from '../src/backends'
+import { backends, chatCompletion } from '../src/backends'
 import { parseConfig } from '../src/config'
 import type { ChatMessage, Entry, ModelBackend, Usage } from '../src/domain'
 import { Zephyr } from '../src/zephyr'
@@ -193,13 +193,7 @@ const summary = {
 console.log(JSON.stringify(summary))
 
 async function promptTokens(messages: ChatMessage[]): Promise<number> {
-  const res = await fetch(`${config.vllmUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.chatModel, max_tokens: 1, messages }),
-  })
-  if (!res.ok) throw new Error(`vllm ${res.status}`)
-  return ((await res.json()) as any).usage.prompt_tokens
+  return (await chatCompletion(config, { max_tokens: 1, messages })).usage.prompt_tokens
 }
 
 /** Tokens per prompt part, as the drop in prompt_tokens when that part is removed. */

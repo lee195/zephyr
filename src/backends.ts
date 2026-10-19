@@ -6,22 +6,27 @@ export function parseModelJson(content: string): unknown {
   return JSON.parse(stripped)
 }
 
+/** POSTs body, with the configured chat model, to the endpoint's chat completions and returns the reply as JSON. */
+export async function chatCompletion(config: Config, body: object, signal?: AbortSignal): Promise<any> {
+  const key = config.apiKey
+  if (!key) throw new Error('DEEPSEEK_API_KEY missing; start with `wick exec --only vllm -- bun run start`')
+  const res = await fetch(`${config.vllmUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model: config.chatModel, ...body }),
+    signal,
+  })
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 300)
+    throw new Error(`vllm ${res.status}: ${detail}`)
+  }
+  return res.json()
+}
+
 function vllm(config: Config): ModelBackend {
   return {
     async complete(messages: ChatMessage[]) {
-      const key = config.apiKey
-      if (!key) throw new Error('DEEPSEEK_API_KEY missing; start with `wick exec --only vllm -- bun run start`')
-      const res = await fetch(`${config.vllmUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: config.chatModel, response_format: { type: 'json_object' }, messages }),
-        signal: AbortSignal.timeout(180_000),
-      })
-      if (!res.ok) {
-        const detail = (await res.text()).slice(0, 300)
-        throw new Error(`vllm ${res.status}: ${detail}`)
-      }
-      const json = (await res.json()) as any
+      const json = await chatCompletion(config, { response_format: { type: 'json_object' }, messages }, AbortSignal.timeout(180_000))
       const content = json.choices?.[0]?.message?.content
       if (typeof content !== 'string') throw new Error('vllm reply has no message content')
       const usage = typeof json.usage?.prompt_tokens === 'number'
