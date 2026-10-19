@@ -68,7 +68,7 @@ export class Zephyr {
     this.store = new Store(opts.dataDir)
     this.backend = opts.backend
     this.kinds = opts.kinds ?? defaultKinds
-    this.relevance = opts.relevance ?? relevanceBackends.tfidf!()
+    this.relevance = opts.relevance ?? relevanceBackends.tfidf()
     this.pollMs = opts.pollMs ?? 1000
     this.retryDelaysMs = opts.retryDelaysMs ?? RETRY_DELAYS_MS
   }

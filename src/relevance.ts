@@ -1,3 +1,6 @@
+import type { Config } from './config'
+import { embeddingBackend } from './embedding'
+
 export interface RelevanceDoc {
   id: string
   text: string
@@ -115,7 +118,22 @@ function tfidf(): RelevanceBackend {
   }
 }
 
-export const relevanceBackends: Record<string, () => RelevanceBackend> = { tfidf }
+export interface RelevanceDeps {
+  /** Where a backend that keeps per-doc state on disk keeps it. */
+  cacheDir: string
+  fetch?: typeof fetch
+}
+
+/** Throws when config lacks what the backend needs, so a caller decides whether to fall back or fail. */
+export const relevanceBackends = {
+  tfidf,
+  embedding(config, deps) {
+    if (!config.apiKey) throw new Error('DEEPSEEK_API_KEY is not set; embedding relevance needs it (run under `wick exec --only vllm --`)')
+    return embeddingBackend({ baseUrl: config.vllmUrl, model: config.embedModel, apiKey: config.apiKey, ...deps })
+  },
+} satisfies Record<string, (config: Config, deps: RelevanceDeps) => RelevanceBackend>
+
+export type RelevanceName = keyof typeof relevanceBackends
 
 export interface FallbackOptions {
   timeoutMs: number

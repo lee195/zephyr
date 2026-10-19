@@ -10,13 +10,11 @@
  * other-subject ones, with the share of kept hits that are same-subject (precision). For embedding, also the
  * requests and tokens the run cost; --cache defaults to a fresh directory, so the count is for a cold cache.
  */
-import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { parseConfig } from '../src/config'
-import { embeddingBackend } from '../src/embedding'
-import { relevanceBackends, tokenize, type RelevanceBackend } from '../src/relevance'
+import { relevanceBackends, tokenize, type RelevanceName } from '../src/relevance'
 
 interface Note {
   id: string
@@ -24,7 +22,7 @@ interface Note {
   text: string
 }
 
-const THRESHOLDS: Record<string, number[]> = { tfidf: [0.1, 0.12, 0.14, 0.15, 0.2], embedding: [0.75, 0.78, 0.8, 0.82, 0.84, 0.86] }
+const THRESHOLDS: Record<RelevanceName, number[]> = { tfidf: [0.1, 0.12, 0.14, 0.15, 0.2], embedding: [0.75, 0.78, 0.8, 0.82, 0.84, 0.86] }
 const TOP_K = 5
 
 const { values, positionals } = parseArgs({
@@ -35,32 +33,19 @@ const { values, positionals } = parseArgs({
 const corpusPath = positionals[0] ?? new URL('./fixtures/organizer-corpus.json', import.meta.url).pathname
 const cost = { requests: 0, inputs: 0, tokens: 0 }
 
-async function makeBackend(name: string): Promise<RelevanceBackend> {
-  if (name === 'embedding') {
-    const config = parseConfig(process.env)
-    const apiKey = config.apiKey
-    if (!apiKey) throw new Error('DEEPSEEK_API_KEY missing; run under `wick exec --only vllm --`')
-    const counting = (async (url: string, init: RequestInit) => {
-      const res = await fetch(url, init)
-      cost.requests++
-      cost.inputs += (JSON.parse(String(init.body)) as { input: string[] }).input.length
-      cost.tokens += ((await res.clone().json()) as { usage?: { prompt_tokens?: number } }).usage?.prompt_tokens ?? 0
-      return res
-    }) as typeof fetch
-    return embeddingBackend({
-      baseUrl: config.vllmUrl,
-      model: config.embedModel,
-      apiKey,
-      cacheDir: values.cache ?? (await mkdtemp(join(tmpdir(), 'zephyr-embeddings-'))),
-      fetch: counting,
-    })
-  }
-  const make = relevanceBackends[name]
-  if (!make) throw new Error(`unknown backend ${name}; known: embedding, ${Object.keys(relevanceBackends).join(', ')}`)
-  return make()
-}
-const backend = await makeBackend(values.backend!)
-const thresholds = THRESHOLDS[values.backend!] ?? THRESHOLDS.tfidf!
+const counting = (async (url: string, init: RequestInit) => {
+  const res = await fetch(url, init)
+  cost.requests++
+  cost.inputs += (JSON.parse(String(init.body)) as { input: string[] }).input.length
+  cost.tokens += ((await res.clone().json()) as { usage?: { prompt_tokens?: number } }).usage?.prompt_tokens ?? 0
+  return res
+}) as typeof fetch
+const config = parseConfig({ ...process.env, ZEPHYR_RELEVANCE: values.backend })
+const backend = relevanceBackends[config.relevance](config, {
+  cacheDir: values.cache ?? join(tmpdir(), `zephyr-embeddings-${crypto.randomUUID()}`),
+  fetch: counting,
+})
+const thresholds = THRESHOLDS[config.relevance]
 
 const corpus = (await Bun.file(corpusPath).json()) as { subjects: { slug: string; notes: string[] }[] }
 const notes: Note[] = corpus.subjects.flatMap((s) => s.notes.map((text, i) => ({ id: `${s.slug}#${i}`, subject: s.slug, text })))
@@ -118,7 +103,7 @@ console.log(
         const other = otherScores.filter((x) => x >= t).length
         return { threshold: t, keepsSame: round(same / sameScores.length), keepsOther: round(other / otherScores.length), precision: round(same / (same + other)) }
       }),
-      ...(values.backend === 'embedding' && { cost }),
+      ...(cost.requests > 0 && { cost }),
     },
     null,
     2,

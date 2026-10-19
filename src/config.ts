@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { backends, type ModelBackendName } from './backends'
+import { relevanceBackends, type RelevanceName } from './relevance'
 
 export type Env = Readonly<Record<string, string | undefined>>
 
@@ -11,7 +12,7 @@ export interface Config {
   modelBackend: ModelBackendName
   chatModel: string
   embedModel: string
-  relevance: string
+  relevance: RelevanceName
   dataDir: string
   port: number
 }
@@ -24,7 +25,7 @@ export function parseConfig(env: Env): Config {
     modelBackend: registered('ZEPHYR_BACKEND', env.ZEPHYR_BACKEND ?? 'vllm', backends),
     chatModel: env.ZEPHYR_MODEL ?? 'deepseek-v4-flash-fast',
     embedModel: env.ZEPHYR_EMBED_MODEL ?? 'embeddinggemma2',
-    relevance: env.ZEPHYR_RELEVANCE ?? 'embedding',
+    relevance: registered('ZEPHYR_RELEVANCE', env.ZEPHYR_RELEVANCE ?? 'embedding', relevanceBackends),
     dataDir: resolve(env.ZEPHYR_DATA ?? './data'),
     port: Number(env.ZEPHYR_PORT ?? 7317),
   }

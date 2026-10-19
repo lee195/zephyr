@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { relevanceBackends, withFallback, type RelevanceBackend, type RelevanceDoc } from '../src/relevance'
 
-const tfidf = relevanceBackends.tfidf!()
+const tfidf = relevanceBackends.tfidf()
 
 const docs = [
   { id: 'espresso', text: 'Dialed the grinder two steps finer; the shot ran 28 seconds and tasted less sour.' },

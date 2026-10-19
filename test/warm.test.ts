@@ -27,7 +27,7 @@ afterEach(() => {
 /** The production composition: embeddings over a fake endpoint, falling back to tfidf. */
 async function server(dataDir: string, fetch: typeof globalThis.fetch, cooldownMs = 30_000) {
   const embedding = embeddingBackend({ baseUrl: 'http://embed.test/v1', model: 'gemma', apiKey: 'k', cacheDir: `${dataDir}/embeddings`, fetch })
-  const relevance = withFallback(embedding, relevanceBackends.tfidf!(), { timeoutMs: 1000, cooldownMs })
+  const relevance = withFallback(embedding, relevanceBackends.tfidf(), { timeoutMs: 1000, cooldownMs })
   const z = new Zephyr({ dataDir, backend: scripted({ ops: [] }).backend, kinds: { organizer: kinds.organizer!, tasks: kinds.tasks! }, relevance })
   await z.start()
   const s = serve(z, { port: 0, distDir: '/nonexistent' })
