@@ -81,7 +81,7 @@ test('tools/list offers the review tools and one tool per op, each schema requir
     expect([...byName.keys()].sort()).toEqual(
       [
         'get_review', 'finish_review', 'list_topics', 'get_topic', 'search_notes', 'get_purge', 'list_questions', 'answer_question',
-        'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task', 'purge_note',
+        'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task', 'link_topics', 'unlink_topics', 'purge_note',
       ].sort(),
     )
     for (const t of byName.values()) expect(t.description.length).toBeGreaterThan(0)

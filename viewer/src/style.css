@@ -73,8 +73,9 @@ main { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
 .source { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--accent); }
 .source small { display: block; }
 .shared-mark { color: var(--warn); margin-left: 2px; }
-.also a, .topics a { color: var(--accent); text-decoration: none; }
-.also a:hover, .topics a:hover { text-decoration: underline; }
+.also a, .topics a, .related a { color: var(--accent); text-decoration: none; }
+.also a:hover, .topics a:hover, .related a:hover { text-decoration: underline; }
+.related { font-size: 13px; margin: 8px 0 0; }
 .md :first-child { margin-top: 0; }
 .md :last-child { margin-bottom: 0; }
 .md pre, .ascii { overflow-x: auto; font-size: 13px; }

@@ -1,5 +1,5 @@
 import { adapters } from './adapters'
-import { effectiveEntries, OPS, planAdjustment, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
+import { effectiveEntries, OPS, planAdjustment, relatedFixes, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
 import { hintsFor, type HintReply } from './hints'
@@ -636,13 +636,16 @@ export class Zephyr {
     }
     for (const w of o.writes) await this.writeView(this.kinds[w.kind]!, w.write, { own: w.own })
     for (const viewId of o.deletes) await this.deleteView(viewId)
+    for (const r of o.related ?? []) await this.setRelated(r.id, r.related)
     const rewrites = o.writes.filter((w) => w.own.bodyStale).map((w) => `${w.kind}/${w.write.slug}`)
     for (const viewId of rewrites) {
       const kind = viewId.slice(0, viewId.indexOf('/'))
       if (!this.busy(kind, viewId)) this.enqueue(kind, { viewId })
     }
-    if (o.note || o.writes.length > 0 || o.deletes.length > 0) for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
-    return { id, ok: true, written: o.writes.map((w) => `${w.kind}/${w.write.slug}`), deleted: o.deletes, rewrites, warnings: o.warnings }
+    const related = o.related ?? []
+    if (o.note || o.writes.length > 0 || o.deletes.length > 0 || related.length > 0) for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
+    const written = [...new Set([...o.writes.map((w) => `${w.kind}/${w.write.slug}`), ...related.map((r) => r.id)])]
+    return { id, ok: true, written, deleted: o.deletes, rewrites, warnings: o.warnings }
   }
 
   private onePurgeAtATime<T>(fn: () => Promise<T>): Promise<T> {
@@ -782,8 +785,8 @@ export class Zephyr {
   }
 
   /**
-   * Brings the kind's views in line with what adjustments left: no view cites a tombstoned note, and every view
-   * the kind prunes is deleted. Idempotent, so it runs on start and after every adjustment, on the kind's queue.
+   * Brings the kind's views in line with what adjustments left: no view cites a tombstoned note, every view the
+   * kind prunes is deleted, and related lists name only the kind's views, on both sides. Idempotent, so it runs on start and after every adjustment, on the kind's queue.
    */
   private reconcile(kind: string) {
     const k = this.kinds[kind]!
@@ -793,7 +796,22 @@ export class Zephyr {
         if (write) await this.writeView(k, write)
       }
       for (const id of k.prune?.(this.world()) ?? []) await this.deleteView(id)
+      for (const r of relatedFixes(this.listViews().filter((v) => v.kind === kind))) await this.setRelated(r.id, r.related)
     }).catch((err) => console.error(`[zephyr] ${kind}: reconcile failed: ${(err as Error).message}`))
+  }
+
+  /**
+   * Replaces a view's related list and nothing else. A link is not a change to the page, so updatedAt stays: no
+   * diagram is redrawn and the append count holds.
+   */
+  private async setRelated(id: string, related: string[]) {
+    const prior = this.views.get(id)
+    if (!prior) return
+    const { related: _, ...rest } = prior
+    const view: View = { ...rest, ...(related.length > 0 && { related }) }
+    await this.store.writeView(view)
+    this.views.set(id, view)
+    this.emit({ type: 'view', data: view })
   }
 
   /** The view as it was goes to .history first, so a deleted page can be read back by hand. */
@@ -815,7 +833,7 @@ export class Zephyr {
   /**
    * The id and directory come from the kind, never from the write, so a kind can only ever write its own views.
    * The title history is kept here, against the stored view, so it holds whichever kind or op changed the title.
-   * Pins and bodyStale carry over from the stored view unless an adjustment passes `own`; a revisit, which
+   * Related lists always carry over. Pins and bodyStale carry over from the stored view unless an adjustment passes `own`; a revisit, which
    * rewrites the page, archives the prior one and clears bodyStale. A write that passes `own` is the person's, and
    * the title it replaces or the view it creates is marked so.
    */
@@ -843,6 +861,7 @@ export class Zephyr {
       ...(appendsSinceWrite > 0 && { appendsSinceWrite }),
       ...(pins && { pins }),
       ...(bodyStale && { bodyStale }),
+      ...(prior?.related && { related: prior.related }),
     }
     await this.store.writeView(view)
     this.views.set(view.id, view)

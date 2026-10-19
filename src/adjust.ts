@@ -84,6 +84,16 @@ export const OPS: { [Op in Adjustment['op']]: OpSpec<Extract<Adjustment, { op: O
   },
   completeTask: { owner: 'tasks', describe: 'Mark a task done.', fields: { taskId: { kind: 'text', describe: 'task id' } } },
   deleteTask: { owner: 'tasks', describe: 'Delete a task.', fields: { taskId: { kind: 'text', describe: 'task id' } } },
+  linkTopics: {
+    owner: 'organizer',
+    describe: 'Mark two topics as related but separate pages; each then lists the other. Apply a suggested link only after the person says yes.',
+    fields: { a: { kind: 'text', describe: 'slug of one topic' }, b: { kind: 'text', describe: 'slug of the other topic' } },
+  },
+  unlinkTopics: {
+    owner: 'organizer',
+    describe: 'Take the related link between two topics off both.',
+    fields: { a: { kind: 'text', describe: 'slug of one topic' }, b: { kind: 'text', describe: 'slug of the other topic' } },
+  },
   purgeNote: {
     describe:
       "Remove a note and every copy of its words from Zephyr's data, for a pasted secret or something private; it cannot be undone. Call it only when the person explicitly asks to purge that note. The harness transcript keeps its own copy.",
@@ -174,8 +184,14 @@ export interface AdjustWrite {
 
 export type NoteChange = { edit: EntryId; text: string } | { tombstone: EntryId }
 
+/** A view's new related list; a change to it alone is not a change to the page, so it is not a write. */
+export interface RelatedChange {
+  id: string
+  related: string[]
+}
+
 export type Outcome =
-  | { ok: true; note?: NoteChange; writes: AdjustWrite[]; deletes: string[]; warnings: string[] }
+  | { ok: true; note?: NoteChange; writes: AdjustWrite[]; deletes: string[]; warnings: string[]; related?: RelatedChange[] }
   | { ok: false; error: string }
 
 const fail = (error: string): Outcome => ({ ok: false, error })
@@ -183,7 +199,7 @@ const unchanged: Outcome = { ok: true, writes: [], deletes: [], warnings: [] }
 
 /** The view as a kind would write it, without the fields the server owns. */
 export function writeOf(v: View): ViewWrite {
-  const { id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins, bodyStale, ...write } = v
+  const { id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins, bodyStale, related, ...write } = v
   return write
 }
 
@@ -341,6 +357,46 @@ function tombstoneNote(a: Extract<Adjustment, { op: 'tombstoneNote' }>, s: Adjus
   return { ok: true, note: { tombstone: note.id }, writes, deletes, warnings }
 }
 
+const sameList = (a: readonly string[], b: readonly string[] = []) => a.length === b.length && a.every((x, i) => x === b[i])
+
+function link(a: Extract<Adjustment, { op: 'linkTopics' | 'unlinkTopics' }>, s: AdjustState): Outcome {
+  const t = new Topics(s)
+  const x = t.get(a.a)
+  if (!x) return t.missing(a.a)
+  const y = t.get(a.b)
+  if (!y) return t.missing(a.b)
+  if (x.id === y.id) return fail('a topic cannot be linked to itself')
+  const next = (v: View, other: string) => (a.op === 'linkTopics' ? union(v.related, [other]).sort() : minus(v.related, [other]))
+  const related = [
+    { id: x.id, related: next(x, y.slug), prior: x.related },
+    { id: y.id, related: next(y, x.slug), prior: y.related },
+  ].flatMap(({ prior, ...change }) => (sameList(change.related, prior) ? [] : [change]))
+  return { ok: true, writes: [], deletes: [], warnings: [], related }
+}
+
+/**
+ * The related lists of one kind's views brought in line with its views: a slug merged away is replaced by its
+ * target, a slug of no view leaves, a link on one side only is put on the other, and every list is sorted. Only the
+ * views whose list changes are returned, so a second pass returns none.
+ */
+export function relatedFixes(views: readonly View[]): RelatedChange[] {
+  const live = new Set(views.map((v) => v.slug))
+  const aliasOf = new Map(views.flatMap((v) => (v.pins?.aliases ?? []).map((alias) => [alias, v.slug] as const)))
+  const next = new Map(views.map((v) => [v.slug, new Set<string>()]))
+  for (const v of views) {
+    for (const slug of v.related ?? []) {
+      const other = live.has(slug) ? slug : aliasOf.get(slug)
+      if (!other || other === v.slug) continue
+      next.get(v.slug)!.add(other)
+      next.get(other)!.add(v.slug)
+    }
+  }
+  return views.flatMap((v) => {
+    const related = [...next.get(v.slug)!].sort()
+    return sameList(related, v.related) ? [] : [{ id: v.id, related }]
+  })
+}
+
 function changeTask(s: AdjustState, taskId: string, change: (task: Task) => Task | null): Outcome {
   const tasks = currentTasks(s.views)
   const task = tasks.find((x) => x.id === taskId)
@@ -377,6 +433,9 @@ export function planAdjustment(a: Adjustment, s: AdjustState): Outcome {
       return changeTask(s, a.taskId, (task) => ({ ...task, done: true }))
     case 'deleteTask':
       return changeTask(s, a.taskId, () => null)
+    case 'linkTopics':
+    case 'unlinkTopics':
+      return link(a, s)
     case 'purgeNote':
       return fail('purgeNote rewrites files, so the server applies it, not a plan')
   }

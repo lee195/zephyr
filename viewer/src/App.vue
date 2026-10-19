@@ -20,12 +20,17 @@ function toggleSource(viewId: string, entryId: string) {
 const otherTopics = (v: View, entryId: string) =>
   v.kind === 'organizer' ? (topicsByEntry.value.get(entryId) ?? []).filter((t) => t.id !== v.id) : []
 
+const scrollToCard = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
 /** Opens the entry inside that topic's card and brings the card into view. */
 async function showIn(topicId: string, entryId: string) {
   openSource.value = `${topicId}:${entryId}`
   await nextTick()
-  document.getElementById(topicId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  scrollToCard(topicId)
 }
+
+/** The topics the person linked to this one, as cards of the same kind that are loaded. */
+const relatedOf = (v: View) => (v.related ?? []).flatMap((slug) => state.views.get(`${v.kind}/${slug}`) ?? [])
 
 const time = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString() : '')
 
@@ -115,6 +120,13 @@ onMounted(connect)
           </template>
           <ViewBody :view="v" />
           <ViewBody v-for="d in derivedBySource.get(v.id) ?? []" :key="d.id" :view="d" class="derived" />
+          <p v-if="relatedOf(v).length > 0" class="related">
+            <span class="muted">Related:</span>
+            <template v-for="(t, j) in relatedOf(v)" :key="t.id">
+              <template v-if="j > 0">, </template>
+              <a :href="`#${t.id}`" @click.prevent="scrollToCard(t.id)">{{ t.title }}</a>
+            </template>
+          </p>
           <footer>
             <span class="muted">{{ v.sources.length }} source{{ v.sources.length === 1 ? '' : 's' }}</span>
             <button

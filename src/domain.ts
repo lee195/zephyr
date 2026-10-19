@@ -60,6 +60,11 @@ export interface View {
    * longer support. Set by an adjustment, cleared by the rewrite run it queues; until then the topic is not drawn.
    */
   bodyStale?: true
+  /**
+   * Slugs of other topics the person linked to this one as related but separate, sorted. A link is always on both
+   * topics. Set only by adjustments; a slug merged away follows its alias, and a deleted topic leaves every list.
+   */
+  related?: string[]
 }
 
 export interface Pins {
@@ -174,10 +179,10 @@ export interface World {
 }
 
 /**
- * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins
- * and bodyStale, so a kind can only write its own views and never their history or what the person fixed.
+ * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins,
+ * bodyStale and related, so a kind can only write its own views and never their history or what the person fixed.
  */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'createdByPerson' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale'>
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'createdByPerson' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale' | 'related'>
 
 /**
  * covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried.
@@ -235,6 +240,7 @@ export interface AgentKind {
  *   already cites it. Neither may leave `from` without notes, so a note is never left on no topic.
  * - splitTopic: `noteIds`, some but not all of the topic's notes, become the new topic `into`.
  * - editNote and tombstoneNote are overlays on entries.jsonl.
+ * - linkTopics marks two topics related but separate, on both; unlinkTopics takes the link off both.
  * - purgeNote is the one op that rewrites entries.jsonl: it removes the note and its words from the data dir.
  *   `confirm` must be exactly `purge <noteId>`.
  */
@@ -249,6 +255,8 @@ export type Adjustment =
   | { op: 'editTask'; taskId: TaskId; text?: string; due?: string | null }
   | { op: 'completeTask'; taskId: TaskId }
   | { op: 'deleteTask'; taskId: TaskId }
+  | { op: 'linkTopics'; a: string; b: string }
+  | { op: 'unlinkTopics'; a: string; b: string }
   | { op: 'purgeNote'; noteId: EntryId; confirm: string }
 
 export type AdjustmentResult =
