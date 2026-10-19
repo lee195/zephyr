@@ -15,11 +15,40 @@ export interface RelevanceBackend {
 
 const MIN_TOKEN_LENGTH = 3
 
+/**
+ * Function words, which otherwise carry most of the weight between two short notes on unrelated subjects.
+ * Words under MIN_TOKEN_LENGTH are dropped anyway. The German part leaves out words that are also English
+ * content words (die, man, war, hat, bin, den, rest, gift, dir).
+ */
+const STOPWORDS = new Set([
+  // English
+  'the', 'and', 'for', 'with', 'but', 'about', 'from', 'was', 'that', 'out', 'not', 'after', 'than', 'still', 'only',
+  'before', 'just', 'now', 'then', 'too', 'them', 'are', 'should', 'when', 'had', 'more', 'this', 'all', 'because',
+  'which', 'they', 'again', 'over', 'have', 'each', 'were', 'until', 'into', 'around', 'without', 'maybe', 'its',
+  'his', 'her', 'hers', 'him', 'she', 'you', 'your', 'yours', 'our', 'ours', 'their', 'theirs', 'who', 'whom',
+  'whose', 'what', 'where', 'why', 'how', 'these', 'those', 'there', 'here', 'has', 'having', 'been', 'being', 'does',
+  'did', 'doing', 'done', 'can', 'could', 'would', 'shall', 'might', 'must', 'will', 'any', 'some', 'such',
+  'own', 'same', 'other', 'both', 'few', 'most', 'very', 'also', 'even', 'yet', 'nor', 'off', 'onto', 'upon', 'via',
+  'per', 'under', 'above', 'below', 'between', 'through', 'during', 'while', 'since', 'though', 'although', 'unless',
+  'whether', 'against', 'among', 'within', 'across', 'along', 'behind', 'beyond', 'toward', 'towards',
+  'once', 'ever', 'never', 'always', 'often', 'already', 'quite', 'rather', 'much', 'many', 'lot', 'got', 'get',
+  'gets', 'let', 'lets', 'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'themselves',
+  'isn', 'aren', 'wasn', 'weren', 'don', 'doesn', 'didn', 'couldn', 'wouldn', 'shouldn', 'haven',
+  'hasn', 'hadn',
+  // German
+  'und', 'der', 'das', 'ist', 'nicht', 'mit', 'für', 'auf', 'sich', 'ein', 'eine', 'einen', 'einem', 'einer', 'eines',
+  'dem', 'des', 'von', 'auch', 'noch', 'nur', 'wie', 'wenn', 'dann', 'aber', 'oder', 'sind', 'wird', 'werden',
+  'wurde', 'habe', 'haben', 'ich', 'wir', 'sie', 'ihr', 'mir', 'mich', 'uns', 'bei', 'nach', 'aus', 'über',
+  'unter', 'vor', 'schon', 'sehr', 'kein', 'keine', 'dass', 'weil', 'doch', 'mal', 'hier', 'dort', 'jetzt', 'sein',
+  'seine', 'ihre', 'ihren', 'diese', 'dieser', 'dieses', 'zum', 'zur', 'vom', 'beim', 'ins', 'durch', 'gegen',
+  'ohne', 'bis', 'seit', 'kann', 'muss', 'soll', 'wäre', 'hatte', 'hätte', 'etwas', 'immer', 'wieder',
+])
+
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t.length >= MIN_TOKEN_LENGTH)
+    .filter((t) => t.length >= MIN_TOKEN_LENGTH && !STOPWORDS.has(t))
 }
 
 function termCounts(tokens: string[]): Map<string, number> {

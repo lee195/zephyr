@@ -7,7 +7,7 @@ import { entry, seedDataDir } from './helpers'
 
 const entries = [
   entry('starter', 'Sourdough starter fed with rye doubled in six hours. Bulk ferment ran long, crumb was tight.', '2026-10-01T08:00:00Z'),
-  entry('scoring', 'Scored the sourdough loaf deeper with the new lame and the ear finally opened.', '2026-10-02T08:00:00Z'),
+  entry('scoring', 'Scored the sourdough loaf deeper with the new lame; at lower hydration the ear finally opened.', '2026-10-02T08:00:00Z'),
   entry('hydration', 'Sourdough at 78% hydration was soup; held back 30g water and the loaf came together.', '2026-10-03T08:00:00Z'),
   entry('deploy', 'Coolify deploy failed because the build pack ignored the env var for the port.', '2026-10-04T08:00:00Z'),
   entry('running', 'Long run of 28 km, calf tight after 22 km. Need more gels on the back half.', '2026-10-05T08:00:00Z'),
@@ -72,6 +72,7 @@ test('limit caps the number of hints', async () => {
 test('a one-word draft gets no hints, even when an entry matches it', async () => {
   const get = await hintsServer()
   expect(await ask(get, 'coolify')).toEqual([])
+  expect(await ask(get, 'the coolify')).toEqual([])
   expect(await ask(get, 'coolify deploy')).not.toEqual([])
 })
 

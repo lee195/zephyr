@@ -27,3 +27,8 @@ test('tfidf ignores punctuation, case, and tokens shorter than three characters'
   expect(ranked.every((r) => r.score === 0)).toBe(true)
   expect(tfidf.rank('COOLIFY!', docs)[0]!.id).toBe('deploys')
 })
+
+test('tfidf scores a doc that shares only function words with the query at zero', () => {
+  const ranked = tfidf.rank('Because the weather was awful, more of us stayed in after lunch with the kids.', docs)
+  expect(ranked.every((r) => r.score === 0)).toBe(true)
+})
