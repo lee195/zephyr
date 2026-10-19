@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import type { ModelBackend } from '../src/domain'
 import { hintsFor } from '../src/hints'
-import { relevanceBackends, type RelevanceBackend } from '../src/relevance'
+import { relevanceBackends, withFallback, type RelevanceBackend } from '../src/relevance'
 import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
 import { entry, seedDataDir } from './helpers'
@@ -113,21 +113,28 @@ test('hints never call the model', async () => {
   expect(calls).toBe(0)
 })
 
-/** Gives every entry the same score and says it came from `backend`. */
-const scoring = (backend: string, score: number): RelevanceBackend => ({
+/** Gives every entry the same score and says it came from `backend`, which counts minRelatedScore and up as related. */
+const scoring = (backend: string, score: number, minRelatedScore: number): RelevanceBackend => ({
   async rank(_q, docs) {
-    return { backend, scored: docs.map((d) => ({ id: d.id, score })) }
+    return { backend, scored: docs.map((d) => ({ id: d.id, score })), minRelatedScore }
   },
 })
 
 test('hints apply the threshold of the backend that answered', async () => {
-  const hint = async (backend: string, score: number) => (await hintsFor('sourdough loaf', 5, entries, [], scoring(backend, score))).hints
-  expect(await hint('tfidf', 0.5)).toHaveLength(5)
-  expect(await hint('embedding-embeddinggemma2', 0.5)).toEqual([])
-  expect(await hint('embedding-embeddinggemma2', 0.85)).toHaveLength(5)
-  expect(await hint('tfidf', 0.1)).toEqual([])
+  const hint = async (relevance: RelevanceBackend) => (await hintsFor('sourdough loaf', 5, entries, [], relevance)).hints
+  expect(await hint(scoring('a', 0.5, 0.14))).toHaveLength(5)
+  expect(await hint(scoring('b', 0.5, 0.8))).toEqual([])
+  expect(await hint(scoring('b', 0.85, 0.8))).toHaveLength(5)
+  expect(await hint(scoring('a', 0.1, 0.14))).toEqual([])
+})
+
+test('hints from a fallback answer apply the fallback threshold, not the primary one', async () => {
+  const down: RelevanceBackend = { rank: () => Promise.reject(new Error('endpoint down')) }
+  const reply = await hintsFor('sourdough loaf', 5, entries, [], withFallback(down, scoring('fallback', 0.5, 0.14), { timeoutMs: 1000, cooldownMs: 30_000 }))
+  expect(reply.backend).toBe('fallback')
+  expect(reply.hints).toHaveLength(5)
 })
 
 test('a backend with no measured threshold gives no hints', async () => {
-  expect((await hintsFor('sourdough loaf', 5, entries, [], scoring('embedding-unmeasured', 0.99))).hints).toEqual([])
+  expect((await hintsFor('sourdough loaf', 5, entries, [], scoring('unmeasured', 0.99, Infinity))).hints).toEqual([])
 })

@@ -33,12 +33,12 @@ test('tfidf scores a doc that shares only function words with the query at zero'
   expect(ranked.every((r) => r.score === 0)).toBe(true)
 })
 
-const fixed = (backend: string): RelevanceBackend & { calls: number } => {
+const fixed = (backend: string, minRelatedScore = 0.5): RelevanceBackend & { calls: number } => {
   const b = {
     calls: 0,
     async rank(_query: string, ds: RelevanceDoc[]) {
       b.calls++
-      return { backend, scored: ds.map((d) => ({ id: d.id, score: 1 })) }
+      return { backend, scored: ds.map((d) => ({ id: d.id, score: 1 })), minRelatedScore }
     },
   }
   return b
@@ -87,4 +87,11 @@ test('after a failure the primary is skipped until the cooldown ends', async () 
   now = 30_000
   await r.rank('q', docs)
   expect(primary.calls).toBe(2)
+})
+
+test('a ranking carries the threshold of the backend that answered it', async () => {
+  expect((await tfidf.rank('sourdough', docs)).minRelatedScore).toBe(0.14)
+  expect((await withFallback(fixed('primary', 0.8), tfidf, { timeoutMs: 1000, cooldownMs: 30_000 }).rank('sourdough', docs)).minRelatedScore).toBe(0.8)
+  const fellBack = await withFallback(failing(), tfidf, { timeoutMs: 1000, cooldownMs: 30_000 }).rank('sourdough', docs)
+  expect(fellBack).toMatchObject({ backend: 'tfidf', minRelatedScore: 0.14 })
 })

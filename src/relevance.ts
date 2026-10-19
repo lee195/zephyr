@@ -15,6 +15,8 @@ export interface Ranking {
   scored: Scored[]
   /** Some docs were left out because the backend was not ready to score them. */
   partial?: true
+  /** A doc scored below this is not related to the query; Infinity when the backend has no measured threshold. */
+  minRelatedScore: number
 }
 
 export interface RelevanceBackend {
@@ -75,6 +77,13 @@ function termCounts(tokens: string[]): Map<string, number> {
   return counts
 }
 
+/**
+ * Measured with scripts/measure-relevance.ts on the organizer fixture corpus, among top-5 hits: 0.14 keeps 28% of
+ * same-subject hits and 12% of other-subject ones (precision 36%). Realistic related drafts scored 0.147 and up,
+ * unrelated ones under 0.127.
+ */
+const TFIDF_MIN_RELATED_SCORE = 0.14
+
 /** Cosine similarity of sublinear-tf, smoothed-idf vectors; idf comes from the docs alone. */
 function tfidf(): RelevanceBackend {
   return {
@@ -101,7 +110,7 @@ function tfidf(): RelevanceBackend {
         const denom = q.norm * doc.norm
         return { id: d.id, score: denom === 0 ? 0 : dot / denom }
       })
-      return { backend: 'tfidf', scored: scored.sort((a, b) => b.score - a.score) }
+      return { backend: 'tfidf', scored: scored.sort((a, b) => b.score - a.score), minRelatedScore: TFIDF_MIN_RELATED_SCORE }
     },
   }
 }

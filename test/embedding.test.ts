@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises'
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { embeddingBackend } from '../src/embedding'
+import { hintsFor } from '../src/hints'
 import { eventually, fakeEmbeddings, tempDir } from './helpers'
 
 const docs = [
@@ -29,7 +30,7 @@ test('a ranking never waits on doc embedding: it scores the cached docs, is part
   await b.prepare!([docs[0]!])
   end.hold((input) => input.includes('bbb'))
   const ranking = await b.rank('aab', docs)
-  expect(ranking).toEqual({ backend: 'embedding-gemma', scored: [{ id: 'A', score: expect.any(Number) }], partial: true })
+  expect(ranking).toEqual({ backend: 'embedding-gemma', scored: [{ id: 'A', score: expect.any(Number) }], partial: true, minRelatedScore: Infinity })
   expect(b.pending!()).toBe(2)
   end.release()
   await eventually(() => b.pending!() === 0)
@@ -99,4 +100,31 @@ test('each batch of a large prepare is usable as soon as it lands', async () => 
   end.release()
   await preparing
   expect((await b.rank('aa', many)).scored).toHaveLength(300)
+})
+
+test('a ranking carries the measured threshold of its model', async () => {
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    const b = backend(await tempDir(), fakeEmbeddings().fetch, 'embeddinggemma2')
+    expect((await b.rank('aab', docs)).minRelatedScore).toBe(0.8)
+    expect(warn).not.toHaveBeenCalled()
+  } finally {
+    warn.mockRestore()
+  }
+})
+
+test('a model with no measured threshold warns once, when built, and gives no hints', async () => {
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    const b = backend(await tempDir(), fakeEmbeddings().fetch, 'unmeasured')
+    await b.prepare!(docs)
+    const entries = docs.map((d) => ({ ...d, harness: 'claude-code', sessionId: 's', at: '2026-10-19T08:00:00Z' }))
+    const reply = await hintsFor('aab aab', 5, entries, [], b)
+    await hintsFor('aab aab', 5, entries, [], b)
+    expect(reply).toMatchObject({ backend: 'embedding-unmeasured', hints: [] })
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toContain('embedding model unmeasured has no measured threshold; hints are off')
+  } finally {
+    warn.mockRestore()
+  }
 })

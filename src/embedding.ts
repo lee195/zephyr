@@ -17,6 +17,14 @@ const BATCH = 256
 const MAX_CHARS = 16_000
 const REQUEST_TIMEOUT_MS = 60_000
 
+/**
+ * The score below which a doc is not related, per model, since each model scores on its own scale. Measured with
+ * scripts/measure-relevance.ts on the organizer fixture corpus, among top-5 hits: embeddinggemma2 0.80 keeps 25% of
+ * same-subject hits and 7% of other-subject ones (precision 76%). Related drafts scored 0.815 and up, unrelated
+ * ones 0.788 and under. Its scores sit in a narrow band (top-5 p25 0.76).
+ */
+const MIN_RELATED_SCORE = new Map([['embeddinggemma2', 0.8]])
+
 type Vector = Float32Array
 
 const sha256 = (text: string) => new Bun.CryptoHasher('sha256').update(text).digest('hex')
@@ -48,6 +56,10 @@ function cosine(a: Vector, b: Vector): number {
  */
 export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
   const id = `embedding-${opts.model.replace(/[^\w.-]+/g, '_')}`
+  const minRelatedScore = MIN_RELATED_SCORE.get(opts.model) ?? Infinity
+  if (minRelatedScore === Infinity) {
+    console.warn(`[zephyr] relevance: embedding model ${opts.model} has no measured threshold; hints are off until one is measured with scripts/measure-relevance.ts`)
+  }
   const file = join(opts.cacheDir, `${id}.jsonl`)
   const doFetch = opts.fetch ?? fetch
   const keyOf = (text: string) => `${opts.model}:${sha256(text)}`
@@ -119,7 +131,7 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
         const v = vectors.get(keys[i]!)
         if (v) scored.push({ id: d.id, score: cosine(q!, v) })
       })
-      return { backend: id, scored: scored.sort((a, b) => b.score - a.score), ...(scored.length < docs.length && { partial: true as const }) }
+      return { backend: id, scored: scored.sort((a, b) => b.score - a.score), minRelatedScore, ...(scored.length < docs.length && { partial: true as const }) }
     },
   }
 }

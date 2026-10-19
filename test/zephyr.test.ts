@@ -388,7 +388,7 @@ function fixedRelevance(scores: Record<string, number>) {
   const relevance: RelevanceBackend = {
     async rank(query, docs) {
       queries.push(query)
-      return { backend: 'fixed', scored: docs.map((d) => ({ id: d.id, score: scores[d.id] ?? 0 })).sort((a, b) => b.score - a.score) }
+      return { backend: 'fixed', scored: docs.map((d) => ({ id: d.id, score: scores[d.id] ?? 0 })).sort((a, b) => b.score - a.score), minRelatedScore: 0 }
     },
   }
   return { relevance, queries }
