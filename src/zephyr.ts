@@ -233,7 +233,7 @@ export class Zephyr {
       const newEntries = this.entries.filter((e) => runIds.has(e.id))
       const recent = this.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
       const ownViews = this.listViews().filter((v) => v.kind === kind.kind)
-      const reply = await this.backend.complete(kind.buildMessages(newEntries, ownViews, recent), { json: true })
+      const { json: reply } = await this.backend.complete(kind.buildMessages(newEntries, ownViews, recent), { json: true })
       const result = kind.validate(reply, this.entryIds)
       if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
       for (const u of result.upserts) await this.applyUpsert(kind, u)

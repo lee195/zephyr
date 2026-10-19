@@ -21,7 +21,7 @@ function fakeBackend() {
       const ids: string[] = payload.newEntries.map((e: any) => e.id)
       calls.push(ids)
       if (hold) await new Promise<void>((r) => gates.push(r))
-      return { upserts: [{ slug: 'all', title: 'All', sources: ids, body: ids.join(',') }] }
+      return { json: { upserts: [{ slug: 'all', title: 'All', sources: ids, body: ids.join(',') }] } }
     },
   }
   return {
@@ -74,7 +74,7 @@ const runLines = async (dir: string) =>
 
 test('a bad model reply fails the run and writes nothing', async () => {
   const dir = await tempDir()
-  const z = new Zephyr({ dataDir: dir, backend: { complete: async () => ({ nope: true }) }, retryDelaysMs: [] })
+  const z = new Zephyr({ dataDir: dir, backend: { complete: async () => ({ json: { nope: true } }) }, retryDelaysMs: [] })
   await z.start()
   await z.ingest([entry('e1')])
   await z.idle()
@@ -126,7 +126,7 @@ test('a run that always fails stops after four attempts', async () => {
 })
 
 test('a scheduled retry counts as in flight until it runs', async () => {
-  const z = new Zephyr({ dataDir: await tempDir(), backend: { complete: async () => ({ nope: true }) }, retryDelaysMs: [60_000] })
+  const z = new Zephyr({ dataDir: await tempDir(), backend: { complete: async () => ({ json: { nope: true } }) }, retryDelaysMs: [60_000] })
   await z.start()
   await z.ingest([entry('e1')])
   await eventually(() => z.listRuns()[0]?.status === 'failed')
@@ -145,7 +145,7 @@ test('a retry coalesces with the waiting run and keeps the higher attempt', asyn
       calls.push(ids)
       await new Promise<void>((r) => gates.push(r))
       if (calls.length === 1) throw new Error('boom')
-      return { upserts: [{ slug: 'all', title: 'All', sources: ids, body: '' }] }
+      return { json: { upserts: [{ slug: 'all', title: 'All', sources: ids, body: '' }] } }
     },
   }
   const z = new Zephyr({ dataDir: await tempDir(), backend, retryDelaysMs: [200] })

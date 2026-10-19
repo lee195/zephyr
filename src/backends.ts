@@ -25,7 +25,14 @@ function vllm(env: Record<string, string | undefined>): ModelBackend {
       const json = (await res.json()) as any
       const content = json.choices?.[0]?.message?.content
       if (typeof content !== 'string') throw new Error('vllm reply has no message content')
-      return parseModelJson(content)
+      const usage = typeof json.usage?.prompt_tokens === 'number'
+        ? {
+            promptTokens: json.usage.prompt_tokens,
+            completionTokens: json.usage.completion_tokens ?? 0,
+            cachedTokens: json.usage.prompt_tokens_details?.cached_tokens,
+          }
+        : undefined
+      return { json: parseModelJson(content), usage }
     },
   }
 }

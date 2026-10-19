@@ -54,8 +54,21 @@ export interface ChatMessage {
   content: string
 }
 
+export interface Usage {
+  promptTokens: number
+  completionTokens: number
+  /** Prompt tokens the endpoint served from its prefix cache. */
+  cachedTokens?: number
+}
+
+/** usage is for whoever measures the backend; kinds only ever see json. */
+export interface Completion {
+  json: unknown
+  usage?: Usage
+}
+
 export interface ModelBackend {
-  complete(messages: ChatMessage[], opts: { json: true }): Promise<unknown>
+  complete(messages: ChatMessage[], opts: { json: true }): Promise<Completion>
 }
 
 export interface ViewUpsert {
