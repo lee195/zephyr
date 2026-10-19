@@ -10,10 +10,11 @@ export interface Hint {
 }
 
 /**
- * On the organizer fixture corpus, tfidf hits that share only common words with the draft score around 0.10,
- * and 0.15 drops 91% of off-topic top-5 hits; realistic related drafts scored 0.157 and up, unrelated ones under 0.125.
+ * Measured with scripts/measure-relevance.ts on the organizer fixture corpus: among top-5 hits, 0.14 keeps 28% of
+ * same-subject hits and 12% of other-subject ones (36% of kept hits are same-subject); 0.15 keeps 21% for the same
+ * 37% precision. Realistic related drafts scored 0.147 and up, unrelated ones under 0.127.
  */
-export const MIN_HINT_SCORE = 0.15
+export const MIN_HINT_SCORE = 0.14
 /** A longer draft is ranked on its first this-many characters. */
 export const MAX_DRAFT_CHARS = 2000
 const MIN_DRAFT_TOKENS = 2
