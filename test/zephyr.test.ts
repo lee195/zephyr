@@ -277,6 +277,28 @@ test('a registered transcript is backfilled, tailed, and never duplicated across
   expect(restarted.status().sessions).toBe(1)
 })
 
+test('a note whose entry append failed is re-read from its transcript and kept', async () => {
+  const dir = await tempDir()
+  const transcript = join(await tempDir(), 'session.jsonl')
+  await writeFile(transcript, noteRow('n1', 'first'))
+  const z = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend, pollMs: 50 })
+  await z.start()
+  const append = z.store.appendEntries.bind(z.store)
+  let failures = 1
+  z.store.appendEntries = async (entries) => {
+    if (failures-- > 0) throw new Error('disk full')
+    return append(entries)
+  }
+
+  await z.registerSession('claude-code', 's1', transcript)
+  await eventually(() => z.listEntries().length === 1)
+  await z.idle()
+  z.stop()
+
+  expect((await readFile(join(dir, 'entries.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l).id)).toEqual(['n1'])
+  expect(z.listViews().map((v) => v.sources)).toEqual([['n1']])
+})
+
 async function seedViews(dir: string, views: { slug: string; sources: string[]; body: string }[]) {
   await mkdir(join(dir, 'views/organizer'), { recursive: true })
   for (const v of views) {

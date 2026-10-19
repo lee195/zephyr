@@ -47,6 +47,8 @@ export class Zephyr {
 
   private entries: Entry[] = []
   private entryIds = new Set<EntryId>()
+  /** Ids whose append is in flight. Tailers run concurrently, and two can read the same rows: a re-registered session's old poke is not aborted. */
+  private appending = new Set<EntryId>()
   private views = new Map<string, View>()
   private sessions = new Map<string, Session>()
   private tailers = new Map<string, Tailer>()
@@ -201,16 +203,24 @@ export class Zephyr {
     await tailer.start()
   }
 
-  /** Appends unseen entries and queues them for every kind. Returns the entries that were new. */
+  /**
+   * Appends unseen entries and queues them for every kind. Returns the entries that were new. An id counts as seen
+   * only once it is on disk, so a failed append leaves the row for the tailer's re-read.
+   */
   async ingest(candidates: Entry[]): Promise<Entry[]> {
     const fresh: Entry[] = []
     for (const e of candidates) {
-      if (this.entryIds.has(e.id)) continue
-      this.entryIds.add(e.id)
+      if (this.entryIds.has(e.id) || this.appending.has(e.id)) continue
+      this.appending.add(e.id)
       fresh.push(e)
     }
     if (fresh.length === 0) return fresh
-    await this.store.appendEntries(fresh)
+    try {
+      await this.store.appendEntries(fresh)
+    } finally {
+      for (const e of fresh) this.appending.delete(e.id)
+    }
+    for (const e of fresh) this.entryIds.add(e.id)
     this.entries.push(...fresh)
     for (const e of fresh) this.emit({ type: 'entry', data: e })
     this.prepareRelevance(fresh)
