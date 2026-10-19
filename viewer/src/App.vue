@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import type { Run, Task, View } from '../../src/domain'
 import { connect, derivedBySource, state, taskList, topicsByEntry, viewsByKind } from './live'
 import ViewBody from './ViewBody.vue'
 
 const openSource = ref<string | null>(null)
+const openHistory = reactive(new Set<string>())
+const toggleHistory = (id: string) => (openHistory.has(id) ? openHistory.delete(id) : openHistory.add(id))
+const newestFirst = (v: View) => [...(v.pastTitles ?? [])].reverse()
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const runs = computed(() => [...state.runs.values()].slice(-12).reverse())
 const entries = computed(() => [...state.entries.values()].slice(-20).reverse())
 
@@ -79,7 +83,26 @@ onMounted(connect)
       <section v-for="[kind, views] in viewsByKind" :key="kind" class="kind">
         <h2>{{ kind }}</h2>
         <article v-for="v in views" :id="v.id" :key="v.id" class="card">
-          <h3>{{ v.title }}</h3>
+          <h3 v-if="!v.pastTitles?.length">{{ v.title }}</h3>
+          <template v-else>
+            <h3>
+              <button
+                class="title-toggle"
+                :aria-expanded="openHistory.has(v.id)"
+                :aria-controls="`${v.id}:titles`"
+                @click="toggleHistory(v.id)"
+              >
+                {{ v.title }}
+                <span class="history-mark muted"><span aria-hidden="true">↺</span> {{ v.pastTitles.length }}<span class="sr-only"> earlier titles</span></span>
+              </button>
+            </h3>
+            <ol v-if="openHistory.has(v.id)" :id="`${v.id}:titles`" class="past-titles" aria-label="earlier titles">
+              <li v-for="p in newestFirst(v)" :key="p.until">
+                <span>{{ p.title }}</span>
+                <time class="muted" :datetime="p.until">{{ when(p.until) }}</time>
+              </li>
+            </ol>
+          </template>
           <ViewBody :view="v" />
           <ViewBody v-for="d in derivedBySource.get(v.id) ?? []" :key="d.id" :view="d" class="derived" />
           <footer>
