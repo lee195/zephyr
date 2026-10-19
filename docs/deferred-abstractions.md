@@ -13,6 +13,7 @@ Reviewed on 2026-10-19 at commit `d5b510f`.
 | `plan()` prelude: the run's entry ids and new entries | `organizer.ts` `plan`, `tasks.ts` `plan` | `runEntries(run, world)` in `common.ts`. The organizer still needs the id set for recent entries. |
 | Rank the new entries' text and keep the top N ids | `organizer.ts` open topics, `tasks.ts` open tasks | `topRanked(world, newEntries, docs, n)` in `common.ts`. It must still wait for every doc to be embedded (`rankAll`). |
 | Trimmed optional string check | `organizer.ts` title, `tasks.ts` `text` | Move `text` to `common.ts` |
+| Write to a tmp file, then rename into place | `src/store.ts` `writeAtomic`, `src/embedding.ts` `compact` | Export `writeAtomic` from a small `src/files.ts` |
 | Tolerant JSONL load that skips torn lines | `src/store.ts` `readText` + `parseJsonl`, `src/embedding.ts` `load` | Export from a small `src/jsonl.ts` |
 | A done run with timestamps | `src/zephyr.ts` `migrateCoverage`, `scripts/measure-organizer-prompt.ts` | An exported `doneRun` in `src/` |
 | Fake relevance that gives every doc one score | `test/hints.test.ts` `scoring`, `test/relevance.test.ts` `fixed` | A helper with a call counter in `test/helpers.ts` |

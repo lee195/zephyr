@@ -17,6 +17,7 @@ wick exec --only vllm -- bun run start
 | `ZEPHYR_DATA` | `./data` |
 | `ZEPHYR_VLLM_URL` | `https://llm.example.com/v1` |
 | `ZEPHYR_MODEL` | `deepseek-v4-flash-fast` |
+| `ZEPHYR_SWEEP_MINUTES` | `30`: minutes between cleanup sweeps; any positive number |
 
 Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, proxied to the server), `bun run build`, `bun test`.
 
@@ -27,9 +28,21 @@ data/
   entries.jsonl                 one Entry per line, append-only
   sessions.json                 registered transcripts and where each read resumes
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
-  views/<kind>/<slug>.json      view metadata: title, sources, updatedAt
+  views/<kind>/<slug>.json      view metadata: title, sources, updatedAt, pastTitles, appendsSinceWrite
+  views/<kind>/.history/<slug>/<updatedAt>.md
+                                a page as it was before a rewrite replaced it
+  embeddings/<backend>.jsonl    cached document vectors; the sweep drops those no ranking can ask about
   runs.jsonl                    every finished run, append-only
 ```
+
+The viewer does not show `.history`; the files are plain markdown next to the page.
+
+## Cleanup sweep
+
+On start and every `ZEPHYR_SWEEP_MINUTES`, the server sweeps:
+
+- A topic whose last 5 writes each only extended its body (`appendsSinceWrite`, counted by the server from the bodies) reads like a log, so it is queued for a rewrite on the organizer's own queue. The model gets the page and every note it cites, in full, and returns the whole page. The rewrite must keep the slug and cite every note the page cites, or the run fails and retries. The old page goes to `.history`, and the diagram is redrawn. A topic whose body and notes exceed 32,000 characters is not rewritten. Notes waiting in the queue are filed before a rewrite. A rewrite whose attempts ran out is not tried again until the page changes or the server restarts.
+- The embeddings cache is rewritten to hold only docs a ranking can still be asked about. It logs `[zephyr] sweep: queued N rewrites; embeddings cache … → …`.
 
 ## Harnesses
 
@@ -46,7 +59,7 @@ Each kind writes only `views/<kind>/`, through its own serial queue.
 
 | Kind | Runs on | Writes |
 | --- | --- | --- |
-| `organizer` | each new entry | topic pages `organizer/<slug>.md` |
+| `organizer` | each new entry; a topic the sweep finds has become an append log | topic pages `organizer/<slug>.md` |
 | `tasks` | each new entry | `tasks/tasks.json` holds the tasks as data (`{ id, text, due?, done, sources }`), `tasks/tasks.md` renders them |
 | `visualizer` | an organizer topic with 4 or more sources whose diagram is missing or older than the topic | `visualizer/<slug>.svg` or `.txt`, with `derivedFrom` naming the topic version it drew |
 
@@ -57,7 +70,7 @@ The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram nev
 | Route | Purpose |
 | --- | --- |
 | `POST /sessions` `{ harness, sessionId, transcriptPath }` | Register a transcript. Idempotent. A new session is read from the start, so earlier notes are backfilled. |
-| `GET /status` | `{ up, entries, runsInFlight, lastViewAt, sessions, relevance: { warmup, pending } }`. `warmup` is `running`, `done` or `failed` for the background embedding of stored docs on start; `pending` counts docs being embedded now. |
+| `GET /status` | `{ up, entries, runsInFlight, lastViewAt, sessions, relevance: { warmup, pending, compaction } }`. `warmup` is `running`, `done` or `failed` for the background embedding of stored docs on start; `pending` counts docs being embedded now. `compaction` is `{ count, bytesBefore, bytesAfter }` for the cache compactions since start and the latest one's sizes, or `null` before the first. |
 | `GET /hints?q=<draft>&limit=1..5` | `{ hints, backend, partial }`: stored entries related to the draft. Never waits on embedding entries; `partial` is true when some were not embedded yet and so were left out. |
 | `GET /api/views`, `/api/entries`, `/api/runs` | Current state |
 | `GET /events` | SSE stream of `entry`, `run`, and `view` events |
