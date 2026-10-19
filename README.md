@@ -2,6 +2,8 @@
 
 Take notes by typing into your agent harness. The Zephyr mod writes each note into the session transcript as a user row starting with `[zephyr] `. This server tails the registered transcripts, copies each note into `data/entries.jsonl`, runs agent kinds on the vLLM endpoint, and writes the derived views as plain files. A localhost viewer shows them live. The viewer only displays; input always comes from the harness.
 
+Why it is built this way is in [docs/design.md](docs/design.md). What is built, what was checked and what is open is in [docs/state.md](docs/state.md).
+
 ## Run
 
 ```sh
