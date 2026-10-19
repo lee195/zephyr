@@ -3,66 +3,126 @@ import { sanitizeSlug } from './kinds/common'
 import { appendSection, MAX_REWRITE_CHARS, rewriteChars, topicsIn, usableTitle } from './kinds/organizer'
 import { currentTasks, MAX_DUE_LENGTH, tasksWrite } from './kinds/tasks'
 
-/** The kind whose queue applies each op: the one that owns the views it writes. */
-export const OWNER: Record<Adjustment['op'], string> = {
-  renameTopic: 'organizer',
-  mergeTopics: 'organizer',
-  splitTopic: 'organizer',
-  moveNote: 'organizer',
-  detachNote: 'organizer',
-  editNote: 'organizer',
-  tombstoneNote: 'organizer',
-  editTask: 'tasks',
-  completeTask: 'tasks',
-  deleteTask: 'tasks',
+/** How a field is checked and stated: a non-empty string, optional or required; a due date; note ids; a new topic. */
+type FieldKind = 'text' | 'optionalText' | 'due' | 'ids' | 'ref'
+
+/** The kind a field's type in Adjustment must have, so the spec below cannot drift from the type. */
+type KindOf<T> = [T] extends [string[]] ? 'ids' : [T] extends [{ slug: string; title: string }] ? 'ref' : null extends T ? 'due' : undefined extends T ? 'optionalText' : 'text'
+
+type OpSpec<A> = {
+  /** The kind whose queue applies the op: the one that owns the views it writes. */
+  owner: string
+  describe: string
+  fields: { [K in Exclude<keyof A, 'op'>]-?: { kind: KindOf<A[K]>; describe: string } }
+  /** At least one of these optional fields must be given. */
+  needsOne?: readonly (keyof A & string)[]
+}
+
+/** An op's spec with its field names erased, as the generic code below reads it. */
+type AnySpec = { describe: string; fields: Record<string, { kind: FieldKind; describe: string }>; needsOne?: readonly string[] }
+
+/** Each op's fields, read by parseAdjustment and by the MCP tools' input schemas. */
+export const OPS: { [Op in Adjustment['op']]: OpSpec<Extract<Adjustment, { op: Op }>> } = {
+  renameTopic: {
+    owner: 'organizer',
+    describe: 'Set a topic title and pin it against later runs.',
+    fields: { slug: { kind: 'text', describe: 'topic slug' }, title: { kind: 'text', describe: 'new title' } },
+  },
+  mergeTopics: {
+    owner: 'organizer',
+    describe: 'Merge topic `from` into topic `into`; `from` is deleted and its slug becomes an alias of `into`.',
+    fields: { from: { kind: 'text', describe: 'slug of the topic merged away' }, into: { kind: 'text', describe: 'slug of the topic that stays' } },
+  },
+  splitTopic: {
+    owner: 'organizer',
+    describe: 'Move some, not all, of a topic\'s notes to a new topic with a pinned title.',
+    fields: {
+      slug: { kind: 'text', describe: 'slug of the topic split' },
+      noteIds: { kind: 'ids', describe: 'ids of the notes that move' },
+      into: { kind: 'ref', describe: 'the new topic' },
+    },
+  },
+  moveNote: {
+    owner: 'organizer',
+    describe: 'Take a note off topic `from` and put it on topic `to`, which does not cite it yet.',
+    fields: { noteId: { kind: 'text', describe: 'note id' }, from: { kind: 'text', describe: 'slug of the topic it leaves' }, to: { kind: 'text', describe: 'slug of the topic it joins' } },
+  },
+  detachNote: {
+    owner: 'organizer',
+    describe: 'Take a note off topic `from`; topic `to` already cites it and keeps it.',
+    fields: { noteId: { kind: 'text', describe: 'note id' }, from: { kind: 'text', describe: 'slug of the topic it leaves' }, to: { kind: 'text', describe: 'slug of the topic that keeps it' } },
+  },
+  editNote: {
+    owner: 'organizer',
+    describe: 'Replace a note\'s text; the topics citing it are rewritten.',
+    fields: { noteId: { kind: 'text', describe: 'note id' }, text: { kind: 'text', describe: 'new text' } },
+  },
+  tombstoneNote: {
+    owner: 'organizer',
+    describe: 'Remove a note from every topic, hint and ranking; a topic left with no notes is deleted.',
+    fields: { noteId: { kind: 'text', describe: 'note id' } },
+  },
+  editTask: {
+    owner: 'tasks',
+    describe: 'Change a task\'s text or due date.',
+    fields: {
+      taskId: { kind: 'text', describe: 'task id' },
+      text: { kind: 'optionalText', describe: 'new text' },
+      due: { kind: 'due', describe: 'new due date as written, or null to clear it' },
+    },
+    needsOne: ['text', 'due'],
+  },
+  completeTask: { owner: 'tasks', describe: 'Mark a task done.', fields: { taskId: { kind: 'text', describe: 'task id' } } },
+  deleteTask: { owner: 'tasks', describe: 'Delete a task.', fields: { taskId: { kind: 'text', describe: 'task id' } } },
 }
 
 export type Parsed = { ok: true; adjustment: Adjustment } | { ok: false; error: string }
 
-const str = (o: any, key: string) => (typeof o[key] === 'string' && o[key].trim() ? (o[key] as string) : undefined)
+const isText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== ''
 
-/** Checks an adjustment's shape. Whether its topics, notes and tasks exist is checked when it applies. */
+/** Checks an adjustment's shape against OPS. Whether its topics, notes and tasks exist is checked when it applies. */
 export function parseAdjustment(json: unknown): Parsed {
   const o = json as any
-  if (!o || typeof o !== 'object' || typeof o.op !== 'string' || !Object.hasOwn(OWNER, o.op))
-    return { ok: false, error: `op must be one of ${Object.keys(OWNER).join(', ')}` }
-  const need = (...keys: string[]): Parsed | null => {
-    const missing = keys.filter((k) => !str(o, k))
-    return missing.length ? { ok: false, error: `${o.op} needs non-empty strings: ${missing.join(', ')}` } : null
-  }
+  const refuse = (error: string): Parsed => ({ ok: false, error })
+  if (!o || typeof o !== 'object' || typeof o.op !== 'string' || !Object.hasOwn(OPS, o.op)) return refuse(`op must be one of ${Object.keys(OPS).join(', ')}`)
   const op = o.op as Adjustment['op']
-  switch (op) {
-    case 'renameTopic':
-      return need('slug', 'title') ?? { ok: true, adjustment: { op, slug: o.slug, title: o.title } }
-    case 'mergeTopics':
-      return need('from', 'into') ?? { ok: true, adjustment: { op, from: o.from, into: o.into } }
-    case 'moveNote':
-    case 'detachNote':
-      return need('noteId', 'from', 'to') ?? { ok: true, adjustment: { op, noteId: o.noteId, from: o.from, to: o.to } }
-    case 'splitTopic': {
-      const missing = need('slug')
-      if (missing) return missing
-      if (!Array.isArray(o.noteIds) || o.noteIds.length === 0 || !o.noteIds.every((id: unknown) => typeof id === 'string'))
-        return { ok: false, error: 'splitTopic needs noteIds, a non-empty array of note ids' }
-      if (!o.into || !str(o.into, 'slug') || !str(o.into, 'title')) return { ok: false, error: 'splitTopic needs into: { slug, title }' }
-      return { ok: true, adjustment: { op, slug: o.slug, noteIds: [...new Set<string>(o.noteIds)], into: { slug: o.into.slug, title: o.into.title } } }
-    }
-    case 'editNote':
-      return need('noteId', 'text') ?? { ok: true, adjustment: { op, noteId: o.noteId, text: o.text } }
-    case 'tombstoneNote':
-      return need('noteId') ?? { ok: true, adjustment: { op, noteId: o.noteId } }
-    case 'editTask': {
-      const missing = need('taskId')
-      if (missing) return missing
-      if (o.text !== undefined && !str(o, 'text')) return { ok: false, error: 'editTask text must be a non-empty string' }
-      if (o.due !== undefined && o.due !== null && (!str(o, 'due') || o.due.trim().length > MAX_DUE_LENGTH))
-        return { ok: false, error: `editTask due must be null or a non-empty string of at most ${MAX_DUE_LENGTH} characters` }
-      if (o.text === undefined && o.due === undefined) return { ok: false, error: 'editTask needs text or due' }
-      return { ok: true, adjustment: { op, taskId: o.taskId, ...(o.text !== undefined && { text: o.text }), ...(o.due !== undefined && { due: o.due }) } }
-    }
-    case 'completeTask':
-    case 'deleteTask':
-      return need('taskId') ?? { ok: true, adjustment: { op, taskId: o.taskId } }
+  const spec = OPS[op] as AnySpec
+  const fields = Object.entries(spec.fields)
+  const missing = fields.filter(([key, f]) => f.kind === 'text' && !isText(o[key])).map(([key]) => key)
+  if (missing.length) return refuse(`${op} needs non-empty strings: ${missing.join(', ')}`)
+  const out: Record<string, unknown> = { op }
+  for (const [key, { kind }] of fields) {
+    const v = o[key]
+    if (v === undefined && (kind === 'optionalText' || kind === 'due')) continue
+    if (kind === 'optionalText' && !isText(v)) return refuse(`${op} ${key} must be a non-empty string`)
+    if (kind === 'due' && v !== null && (!isText(v) || v.trim().length > MAX_DUE_LENGTH))
+      return refuse(`${op} ${key} must be null or a non-empty string of at most ${MAX_DUE_LENGTH} characters`)
+    if (kind === 'ids' && (!Array.isArray(v) || v.length === 0 || !v.every((id) => typeof id === 'string')))
+      return refuse(`${op} needs ${key}, a non-empty array of note ids`)
+    if (kind === 'ref' && (!v || typeof v !== 'object' || !isText(v.slug) || !isText(v.title))) return refuse(`${op} needs ${key}: { slug, title }`)
+    out[key] = kind === 'ids' ? [...new Set<string>(v)] : kind === 'ref' ? { slug: v.slug, title: v.title } : v
+  }
+  if (spec.needsOne?.every((key) => out[key] === undefined)) return refuse(`${op} needs ${spec.needsOne.join(' or ')}`)
+  return { ok: true, adjustment: out as Adjustment }
+}
+
+const text = { type: 'string', minLength: 1 }
+const SCHEMA: Record<FieldKind, object> = {
+  text,
+  optionalText: text,
+  due: { type: ['string', 'null'], maxLength: MAX_DUE_LENGTH },
+  ids: { type: 'array', items: { type: 'string' }, minItems: 1 },
+  ref: { type: 'object', properties: { slug: text, title: text }, required: ['slug', 'title'], additionalProperties: false },
+}
+
+/** The JSON Schema of an op's fields, as parseAdjustment checks them. */
+export function inputSchema(op: Adjustment['op']) {
+  const fields = Object.entries((OPS[op] as AnySpec).fields)
+  return {
+    type: 'object',
+    properties: Object.fromEntries(fields.map(([key, f]) => [key, { ...SCHEMA[f.kind], description: f.describe }])),
+    required: fields.filter(([, f]) => f.kind === 'text' || f.kind === 'ids' || f.kind === 'ref').map(([key]) => key),
+    additionalProperties: false,
   }
 }
 

@@ -1,5 +1,5 @@
 import { adapters } from './adapters'
-import { effectiveEntries, OWNER, planAdjustment, withoutTombstoned, type NoteChange, type Outcome, type Overlay } from './adjust'
+import { effectiveEntries, OPS, planAdjustment, withoutTombstoned, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { hintsFor, type HintReply } from './hints'
 import {
   isNote,
@@ -527,7 +527,7 @@ export class Zephyr {
   }
 
   private applyLogged(id: string, adjustment: Adjustment): Promise<AdjustmentResult> {
-    const owner = OWNER[adjustment.op]
+    const owner = OPS[adjustment.op].owner
     const finish = async (result: AdjustmentResult) => {
       await this.store.appendAdjustment({ type: 'result', id, result })
       return result
