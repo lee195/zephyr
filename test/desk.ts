@@ -7,7 +7,8 @@ type Call = 'file' | 'tasks' | 'rewrite' | 'draw'
 
 /**
  * Plays every kind. Organizer: "<slug>: text" files text under <slug>, appending when the topic exists;
- * "<slug>: text => Title" also retitles; "cite <id>" in the text cites that note too. Tasks: a note containing "todo <x>" adds task x. A rewrite makes the page
+ * "<slug>: text => Title" also retitles; "cite <id>" in the text cites that note too; "ask:<other>" asks whether the note
+ * belongs on <other> instead. Tasks: a note containing "todo <x>" adds task x, and "ask:task" asks whether it is one. A rewrite makes the page
  * one bullet per note it is shown. The visualizer draws the title as ASCII. calls logs "<call> <detail>" in order;
  * hold(call) holds calls of that type until release().
  */
@@ -29,7 +30,8 @@ export function desk() {
           const m = /todo (.*)$/.exec(e.text)
           return m ? [{ op: 'add', text: m[1], sources: [e.id] }] : []
         })
-        return { json: { ops } }
+        const questions = p.newEntries.filter((e: any) => e.text.includes('ask:task')).map((e: any) => ({ kind: 'isTask', noteId: e.id }))
+        return { json: { ops, questions } }
       }
       const known = new Set<string>([...p.openTopics.map((t: any) => t.slug), ...p.topicIndex.map((l: string) => l.split(' | ')[0])])
       const ops = p.newEntries.flatMap((e: any) => {
@@ -41,7 +43,11 @@ export function desk() {
         const extra = [...e.text.matchAll(/cite (\S+)/g)].map((c) => c[1])
         return [{ ...op, slug, sources: [e.id, ...extra], body }]
       })
-      return { json: { ops } }
+      const questions = p.newEntries.flatMap((e: any) => {
+        const alternatives = [...e.text.matchAll(/ask:([a-z-]+)/g)].map((c) => c[1]).filter((a) => a !== 'task')
+        return alternatives.length > 0 ? [{ kind: 'whichTopic', noteId: e.id, chosen: e.text.split(':')[0], alternatives }] : []
+      })
+      return { json: { ops, questions } }
     },
   }
   return { backend, calls, sent, hold: (call: Call) => held.hold((c) => c === call), release: held.release }

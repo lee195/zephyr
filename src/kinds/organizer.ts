@@ -1,6 +1,6 @@
-import type { AgentKind, ChatMessage, Entry, EntryId, Plan, Run, View, ViewWrite, World } from '../domain'
+import type { AgentKind, ChatMessage, Entry, EntryId, Plan, Question, Run, View, ViewWrite, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
-import { inEntryOrder, jsonPrompt, knownSources, promptEntry, sanitizeSlug } from './common'
+import { inEntryOrder, jsonPrompt, knownSources, parseQuestions, promptEntry, sanitizeSlug } from './common'
 
 const RECENT_CONTEXT = 30
 /** Topics the model sees in full per run, picked by relevance to the run's entries; the rest are index lines. */
@@ -118,16 +118,18 @@ export function validateOps(json: unknown, ctx: ReplyContext): Validation {
 }
 
 const ORGANIZER_SYSTEM = `You organize a person's notes into topic pages.
-Reply with JSON only: {"ops":[op, ...]} where op is one of
+Reply with JSON only: {"ops":[op, ...],"questions"?:[question, ...]} where op is one of
   {"op":"append","slug":string,"title"?:string,"sources":string[],"body":string}
   {"op":"write","slug":string,"title":string,"sources":string[],"body":string}
+and question is {"kind":"whichTopic","noteId":string,"chosen":slug,"alternatives":slug[]}
 The input has openTopics (full pages) and topicIndex (every other topic, one line each: "slug | title | N sources").
 - Put each new entry into exactly one topic. Use an existing topic, open or indexed, when the entry belongs there; create a topic only for a clearly different subject.
 - append adds body as a new section at the end of an existing topic. Use it for indexed topics, and for open topics when the entry adds to the page without changing what it says.
 - On append, set title only when the topic's current title no longer describes all of its notes, the new one included; otherwise leave it out. The slug stays the same.
 - write replaces the whole page. Use it to create a topic, or to rewrite an open topic when the entry changes or corrects what the page says. Never write an indexed topic.
 - sources lists the ids of the new entries the op covers.
-- slug is lowercase kebab-case. body is markdown built only from the notes; do not add facts they do not contain, and do not repeat the title as a heading.`
+- slug is lowercase kebab-case. body is markdown built only from the notes; do not add facts they do not contain, and do not repeat the title as a heading.
+- File every entry by your best guess. Only when an entry fits two or more topics equally well, also add a question: chosen is the topic you filed it on, alternatives the others it fits. At most 2 questions; usually none.`
 
 export function organizerMessages(newEntries: Entry[], views: ViewContext, recentEntries: Entry[]): ChatMessage[] {
   return jsonPrompt(ORGANIZER_SYSTEM, {
@@ -273,6 +275,29 @@ function rewritePlan(viewId: string, world: World): Plan | null {
   }
 }
 
+/**
+ * Checks a whichTopic question against the topics as the reply leaves them: its note is one of the run's, filed on
+ * `chosen`, and every alternative is a topic. Slugs are sanitized and a merged-away slug reads as its target.
+ */
+function whichTopic(runIds: ReadonlySet<EntryId>, sources: ReadonlyMap<string, readonly EntryId[]>, aliases: ReadonlyMap<string, string>) {
+  const slug = (raw: unknown) => {
+    const s = typeof raw === 'string' ? sanitizeSlug(raw) : ''
+    return aliases.get(s) ?? s
+  }
+  return (q: Record<string, any>): Question | string => {
+    if (q.kind !== 'whichTopic') return 'kind is not whichTopic'
+    if (typeof q.noteId !== 'string' || !runIds.has(q.noteId)) return `note ${String(q.noteId)} is not a new entry of this run`
+    const chosen = slug(q.chosen)
+    if (!sources.get(chosen)?.includes(q.noteId)) return `note ${q.noteId} is not on topic ${String(q.chosen)}`
+    if (!Array.isArray(q.alternatives)) return 'alternatives is not an array'
+    const unknown = q.alternatives.filter((raw) => !sources.has(slug(raw)))
+    if (unknown.length > 0) return `no such topic: ${unknown.map(String).join(', ')}`
+    const alternatives = [...new Set(q.alternatives.map(slug))].filter((s) => s !== chosen)
+    if (alternatives.length === 0) return 'no alternative besides chosen'
+    return { kind: 'whichTopic', noteId: q.noteId, chosen, alternatives }
+  }
+}
+
 async function organizePlan(run: Run, world: World): Promise<Plan> {
   const runIds = new Set(run.entryIds)
   const newEntries = world.entries.filter((e) => runIds.has(e.id))
@@ -291,7 +316,11 @@ async function organizePlan(run: Run, world: World): Promise<Plan> {
       if (!result.ok) return result
       // An entry is organized only once an applied op cites it; one the reply skipped, or cited only in a dropped op, is not.
       const cited = new Set(result.ops.flatMap((o) => o.sources))
-      return { ok: true, writes: applyOps(world, own, result.ops), dropped: result.dropped, covered: run.entryIds.filter((id) => cited.has(id)) }
+      const writes = applyOps(world, own, result.ops)
+      const sources = new Map([...own, ...writes].map((v) => [v.slug, v.sources]))
+      const asked = parseQuestions((json as any).questions, whichTopic(runIds, sources, aliasTargets(ctx.topics)))
+      const dropped = [...result.dropped, ...asked.dropped]
+      return { ok: true, writes, dropped, covered: run.entryIds.filter((id) => cited.has(id)), questions: asked.questions }
     },
   }
 }

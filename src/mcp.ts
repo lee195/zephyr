@@ -73,6 +73,29 @@ function tools(z: Zephyr): Tool[] {
       },
     },
     {
+      name: 'list_questions',
+      description:
+        'Open questions the agents raised while filing notes, each about one note they filed by a best guess, with the answers it takes. Answering keep leaves the note as filed.',
+      inputSchema: noArgs,
+      call: async () => result(z.listQuestions()),
+    },
+    {
+      name: 'answer_question',
+      description:
+        "Answer an open question with one of its answers, as the person chose it; an answer other than keep applies the matching change. A question whose note moved or was removed since closes as moot.",
+      inputSchema: {
+        type: 'object',
+        properties: { questionId: { type: 'string', minLength: 1, description: 'question id' }, answer: { type: 'string', minLength: 1, description: "one of the question's answers" } },
+        required: ['questionId', 'answer'],
+        additionalProperties: false,
+      },
+      async call(args) {
+        if (typeof args.questionId !== 'string' || typeof args.answer !== 'string') return toolError('questionId and answer must be strings')
+        const answered = await z.answerQuestion(args.questionId, args.answer)
+        return answered.ok ? result(answered) : toolError(answered.error)
+      },
+    },
+    {
       name: 'get_purge',
       description: 'Whether a purge has finished: done once the topics it queued for a rewrite have been rewritten; pending lists those still waiting.',
       inputSchema: { type: 'object', properties: { noteId: { type: 'string', description: 'the purged note id' } }, required: ['noteId'], additionalProperties: false },

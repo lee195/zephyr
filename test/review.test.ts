@@ -88,7 +88,7 @@ const UNFILED: Digest['unfiled'] = [
 ]
 
 test('the digest covers exactly the notes received in the window and what was written about them', () => {
-  expect(buildDigest(ENTRIES, VIEWS, RUNS, SINCE, UNTIL)).toEqual({
+  expect(buildDigest(ENTRIES, VIEWS, RUNS, SINCE, UNTIL, [])).toEqual({
     since: SINCE,
     until: UNTIL,
     notes: { count: 4, ids: ['n1', 'n2', 'n3', 'n4'] },
@@ -106,11 +106,12 @@ test('the digest covers exactly the notes received in the window and what was wr
     tasks: [{ id: 't1', text: 'Buy seeds', done: false, due: '2026-10-25', noteIds: ['n1'] }],
     unfiled: UNFILED,
     rewrites: [{ slug: 'garden', at: at('11:30') }],
+    questions: [],
   })
 })
 
 test('before the first review, notes and topics from before the timestamps were recorded are in the window', () => {
-  const d = buildDigest(ENTRIES, VIEWS, [], null, UNTIL)
+  const d = buildDigest(ENTRIES, VIEWS, [], null, UNTIL, [])
   expect(d.notes.ids).toEqual(['old1', 'legacy', 'n1', 'n2', 'n3', 'n4'])
   expect(d.newTopics.map((t) => t.slug)).toEqual(['garden', 'legacy', 'trip'])
   expect(d.renames.map((r) => r.from)).toEqual(['Yard', 'Travel', 'Holiday', 'Plants'])
@@ -175,6 +176,7 @@ test('done advances the cursor, the next digest is empty, and a restart keeps th
       tasks: [],
       unfiled: [],
       rewrites: [],
+      questions: [],
     })
 
     const restarted = new Zephyr({ dataDir: s.z.store.dir, backend: silent })

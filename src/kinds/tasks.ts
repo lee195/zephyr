@@ -1,6 +1,6 @@
-import type { AgentKind, ChatMessage, Entry, EntryId, Run, Task, TaskId, View, ViewWrite, World } from '../domain'
+import type { AgentKind, ChatMessage, Entry, EntryId, Question, Run, Task, TaskId, View, ViewWrite, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
-import { inEntryOrder, jsonPrompt, knownSources, promptEntry } from './common'
+import { inEntryOrder, jsonPrompt, knownSources, parseQuestions, promptEntry } from './common'
 
 /** Open tasks the model sees per run, the ones most relevant to the run's entries; done tasks are never shown. */
 const OPEN_SHOWN = 30
@@ -68,17 +68,19 @@ export function validateTaskOps(json: unknown, ctx: TaskReplyContext): TaskValid
 }
 
 const TASKS_SYSTEM = `You keep a person's task list from their notes.
-Reply with JSON only: {"ops":[op, ...]} where op is one of
+Reply with JSON only: {"ops":[op, ...],"questions"?:[question, ...]} where op is one of
   {"op":"add","text":string,"due":string,"sources":string[]}
   {"op":"complete","taskId":string,"sources":string[]}
   {"op":"update","taskId":string,"text":string,"due":string,"sources":string[]}
+and question is {"kind":"isTask","noteId":string}
 The input has openTasks (id, text, due) and newEntries (id, at, text).
 - Most notes contain no task. Then reply {"ops":[]}.
 - add a task only for something the person still has to do (a TODO, a reminder, "need to"). text is a short imperative in the note's words.
 - complete an open task when a new entry says it is done, by its id.
 - update an open task when a new entry changes it, such as a new date. Never add a task that duplicates an open one.
 - due: when the note names a time, resolve it to an ISO date (YYYY-MM-DD) taking the entry's at as today. If you cannot resolve it, copy the note's words. Leave due out when the note names no time; in update, leave out text or due you do not change.
-- sources lists the ids of the new entries the op comes from.`
+- sources lists the ids of the new entries the op comes from.
+- When you add a task but doubt the note really asks for one, also add a question with that note's id. At most 2 questions; usually none.`
 
 export function tasksMessages(openTasks: Task[], newEntries: Entry[]): ChatMessage[] {
   return jsonPrompt(TASKS_SYSTEM, {
@@ -134,6 +136,17 @@ export function tasksWrite(list: Task[], entries: readonly Entry[]): ViewWrite {
   return { slug: 'tasks', title: 'Tasks', format: 'md', body: renderTasks(list), tasks: list, sources: inEntryOrder(entries, cited) }
 }
 
+/** Checks an isTask question: its note is one of the run's, and exactly one task this reply added came from it. */
+function isTask(runIds: ReadonlySet<EntryId>, added: Task[]) {
+  return (q: Record<string, any>): Question | string => {
+    if (q.kind !== 'isTask') return 'kind is not isTask'
+    if (typeof q.noteId !== 'string' || !runIds.has(q.noteId)) return `note ${String(q.noteId)} is not a new entry of this run`
+    const from = added.filter((t) => t.sources.includes(q.noteId))
+    if (from.length !== 1) return from.length === 0 ? `no task was added from note ${q.noteId}` : `several tasks were added from note ${q.noteId}`
+    return { kind: 'isTask', noteId: q.noteId, taskId: from[0]!.id }
+  }
+}
+
 export const tasks: AgentKind = {
   kind: 'tasks',
   trigger: { on: 'entry' },
@@ -151,8 +164,12 @@ export const tasks: AgentKind = {
         if (!result.ok) return result
         // Most notes hold no task, so a valid reply covers every entry of the run, even with no ops.
         const covered = run.entryIds
-        if (result.ops.length === 0) return { ok: true, writes: [], dropped: result.dropped, covered }
-        return { ok: true, writes: [tasksWrite(applyTaskOps(current, result.ops), world.entries)], dropped: result.dropped, covered }
+        const next = applyTaskOps(current, result.ops)
+        const had = new Set(current.map((t) => t.id))
+        const asked = parseQuestions((json as any).questions, isTask(runIds, next.filter((t) => !had.has(t.id))))
+        const dropped = [...result.dropped, ...asked.dropped]
+        if (result.ops.length === 0) return { ok: true, writes: [], dropped, covered, questions: asked.questions }
+        return { ok: true, writes: [tasksWrite(next, world.entries)], dropped, covered, questions: asked.questions }
       },
     }
   },

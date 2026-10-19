@@ -179,8 +179,29 @@ export interface World {
  */
 export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'createdByPerson' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale'>
 
-/** covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried. */
-export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[] } | { ok: false; error: string }
+/**
+ * covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried.
+ * questions: doubts the reply raised about notes it filed, already checked against what the run wrote.
+ */
+export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[]; questions?: Question[] } | { ok: false; error: string }
+
+/**
+ * A doubt a run raised about a note it filed by its best guess, for the person to settle at review. Every kind of
+ * doubt is answered by picking one of its answers, each `keep` or an adjustment, so no answer is free text.
+ * - whichTopic: the note is on `chosen` and fits each of `alternatives` about as well; an alternative moves it there.
+ * - isTask: task `taskId` was added from the note, which may not ask for one; `deleteTask` deletes it.
+ */
+export type Question =
+  | { kind: 'whichTopic'; noteId: EntryId; chosen: string; alternatives: string[] }
+  | { kind: 'isTask'; noteId: EntryId; taskId: TaskId }
+
+/** How a question closed: kept as filed, changed by the adjustment the answer made, or moot because its note moved on. */
+export type Closed = { how: 'kept' } | { how: 'applied'; adjustmentId: string } | { how: 'moot'; reason: string }
+
+/** A line of questions.jsonl. Ids, slugs and answers only: a question shows a note's words by reading them when listed. */
+export type QuestionLine =
+  | { type: 'asked'; id: string; at: string; runId: string; question: Question }
+  | { type: 'closed'; id: string; at: string; answer: string; closed: Closed }
 
 /** One run's prompt, and how the reply to exactly that prompt becomes views. */
 export interface Plan {
@@ -254,7 +275,7 @@ export interface PurgeReport {
   tasksDeleted: TaskId[]
   historyFilesDeleted: number
   /** Records rewritten or dropped per file. */
-  lines: { entries: number; adjustments: number; runs: number }
+  lines: { entries: number; adjustments: number; runs: number; questions: number }
   /** Where the note's text still is, outside Zephyr's data. */
   stillIn: string
   status: string

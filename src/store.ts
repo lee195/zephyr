@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AdjustmentLine, Entry, Run, Session, View, ViewFormat } from './domain'
+import type { AdjustmentLine, Entry, QuestionLine, Run, Session, View, ViewFormat } from './domain'
 
 const EXT: Record<ViewFormat, string> = { md: 'md', svg: 'svg', ascii: 'txt' }
 
@@ -198,6 +198,22 @@ export class Store {
 
   rewriteAdjustments(edit: (l: AdjustmentLine) => AdjustmentLine | null) {
     return this.rewriteLines(this.adjustmentsPath, edit)
+  }
+
+  private get questionsPath() {
+    return join(this.dir, 'questions.jsonl')
+  }
+
+  async loadQuestions(): Promise<QuestionLine[]> {
+    return parseJsonl<QuestionLine>(await readText(this.questionsPath))
+  }
+
+  async appendQuestions(lines: QuestionLine[]) {
+    await this.appendLines(this.questionsPath, lines)
+  }
+
+  rewriteQuestions(edit: (l: QuestionLine) => QuestionLine | null) {
+    return this.rewriteLines(this.questionsPath, edit)
   }
 
   private historyDir(view: Pick<View, 'kind' | 'slug'>) {

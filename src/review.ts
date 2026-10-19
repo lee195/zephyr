@@ -1,4 +1,5 @@
 import type { Entry, EntryId, Run, Task, TaskId, View } from './domain'
+import type { QuestionView } from './questions'
 
 const TOPIC_KIND = 'organizer'
 const TASKS_ID = 'tasks/tasks'
@@ -35,6 +36,8 @@ export interface Digest {
    * theirs, but the new body is model text they have not seen.
    */
   rewrites: { slug: string; at: string; yours?: true }[]
+  /** Every open question a run raised, from any window: a question stays until the person answers it. */
+  questions: QuestionView[]
 }
 
 /**
@@ -67,7 +70,7 @@ function unfiledIn(runs: readonly Run[], ids: ReadonlySet<EntryId>): Map<string,
 }
 
 /** `runs` are every finished run, oldest first, as runs.jsonl holds them. */
-export function buildDigest(entries: readonly Entry[], views: readonly View[], runs: readonly Run[], since: string | null, until: string): Digest {
+export function buildDigest(entries: readonly Entry[], views: readonly View[], runs: readonly Run[], since: string | null, until: string, questions: QuestionView[]): Digest {
   const notes = entries.filter((e) => inWindow(e.receivedAt, since, until)).map((e) => e.id)
   const inNotes = new Set(notes)
   const order = new Map(notes.map((id, i) => [id, i]))
@@ -121,6 +124,7 @@ export function buildDigest(entries: readonly Entry[], views: readonly View[], r
     tasks,
     unfiled,
     rewrites,
+    questions,
   }
 }
 
@@ -148,6 +152,7 @@ export function reviewBrief(digest: Digest): string {
     'Apply only the changes the person asks for, with the zephyr MCP tools. You may suggest fixes, but apply a suggestion only after the person says yes.',
     `When the person says the review is done, call finish_review with until "${digest.until}".`,
     'Rewrites marked yours carried out a change the person made; their new text is still worth a look.',
+    "Questions are doubts the agents filed a best guess for. Put each to the person with its answers and record their pick with answer_question; don't pick for them.",
     'Start with a short summary of the digest and ask what to change.',
     '',
     JSON.stringify(digest),

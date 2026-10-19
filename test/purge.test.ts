@@ -12,8 +12,11 @@ import { entry, eventually, filesUnder, scripted, tempDir } from './helpers'
 
 const SECRET = 'ZEPHYR-TEST-SECRET-7Q4X'
 const EDITED = 'EDITED-PASS-9Z3K'
-/** e4: filed on party, retitles it, and makes a task, so its words reach a body, a title, a diagram and the task list. */
-const NOTES = ['party: venue', 'party: cake', 'party: music', `party: wifi ${SECRET} todo rotate it => Party ${SECRET}`, 'garden: beans']
+/**
+ * e4: filed on party, retitles it, makes a task, and raises a question, so its words reach a body, a title, a diagram
+ * and the task list. e2 raises a question too, which a purge of e4 leaves open.
+ */
+const NOTES = ['party: venue', 'party: cake ask:garden', 'party: music', `party: wifi ${SECRET} todo rotate it ask:garden => Party ${SECRET}`, 'garden: beans']
 
 /** Every file under dir whose text contains any of words, ignoring case, as `rg -i` would list them. */
 async function filesHolding(dir: string, words: string[]): Promise<string[]> {
@@ -34,6 +37,7 @@ async function filesHolding(dir: string, words: string[]): Promise<string[]> {
 async function spread() {
   const s = await started()
   await s.note(...NOTES)
+  expect(s.z.listQuestions().map((q) => q.note.id)).toEqual(['e2', 'e4'])
   expect(await s.adjust({ op: 'moveNote', noteId: 'e1', from: 'party', to: 'garden' })).toMatchObject({ ok: true })
   expect(await s.adjust({ op: 'editNote', noteId: 'e4', text: `party: wifi ${EDITED} todo rotate it` })).toMatchObject({ ok: true })
   expect(await s.adjust({ op: 'renameTopic', slug: 'party', title: 'Summer Party' })).toMatchObject({ ok: true })
@@ -59,6 +63,9 @@ test('a purge leaves no trace of the note under the data dir once its rewrites f
   })
   expect((result as any).purge.lines.adjustments).toBeGreaterThan(0)
   expect((result as any).purge.historyFilesDeleted).toBeGreaterThan(0)
+  expect((result as any).purge.lines.questions).toBe(1)
+  expect(s.z.listQuestions().map((q) => q.note.id)).toEqual(['e2'])
+  expect(await readFile(join(s.dir, 'questions.jsonl'), 'utf8')).not.toContain('"e4"')
   expect(await s.z.purgeStatus('e4')).toEqual({ noteId: 'e4', done: false, scrubbing: false, pending: ['organizer/party'] })
   expect(await filesHolding(s.dir, [SECRET, EDITED, '7Q4X'])).toEqual([])
 

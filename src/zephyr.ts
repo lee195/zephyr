@@ -1,5 +1,6 @@
 import { adapters } from './adapters'
-import { effectiveEntries, OPS, planAdjustment, withoutTombstoned, type NoteChange, type Outcome, type Overlay } from './adjust'
+import { effectiveEntries, OPS, planAdjustment, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
+import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
 import { hintsFor, type HintReply } from './hints'
 import {
@@ -9,10 +10,12 @@ import {
   type AdjustmentLine,
   type AdjustmentResult,
   type AgentKind,
+  type Closed,
   type Entry,
   type EntryId,
   type ModelBackend,
   type PurgeReport,
+  type Question,
   type Run,
   type Session,
   type View,
@@ -25,6 +28,8 @@ import { relevanceBackends, type Compaction, type RelevanceBackend, type Relevan
 import { buildDigest, closeWindow, type Digest, type WindowClose } from './review'
 import { Store } from './store'
 import { Tailer } from './tailer'
+
+export type QuestionAnswer = { ok: true; questionId: string; closed: Closed; adjustment?: AdjustmentResult } | { ok: false; error: string }
 
 const RUN_HISTORY = 50
 /** Wait before attempts 2, 3 and 4 of a failed run, or of the entries a done run left uncovered; after the last, they wait for a restart. */
@@ -98,6 +103,11 @@ export class Zephyr {
   private purgeChain: Promise<unknown> = Promise.resolve()
   private purgesInFlight = new Set<Promise<unknown>>()
   private adjustSeq = 0
+  /** Questions no answer has closed yet, from questions.jsonl. */
+  private questions = new Map<string, Asked>()
+  private questionSeq = 0
+  /** Answers run one at a time, so two answers to one question cannot both apply. */
+  private answerChain: Promise<unknown> = Promise.resolve()
   /** Ids whose append is in flight. Tailers run concurrently, and two can read the same rows: a re-registered session's old poke is not aborted. */
   private appending = new Set<EntryId>()
   private views = new Map<string, View>()
@@ -142,6 +152,10 @@ export class Zephyr {
       else this.raw.push(e)
     }
     for (const id of this.purged) this.entryIds.add(id)
+    for (const line of await this.store.loadQuestions()) {
+      if (line.type === 'asked') this.questions.set(line.id, line)
+      else this.questions.delete(line.id)
+    }
     const interrupted = this.foldAdjustments(await this.store.loadAdjustments())
     this.entries = effectiveEntries(this.raw, this.overlay)
     for (const v of await this.store.loadViews()) this.views.set(v.id, v)
@@ -271,7 +285,7 @@ export class Zephyr {
   /** The digest from the last review up to now. It reads runs.jsonl, since memory keeps only the last few runs. */
   async review(): Promise<Digest> {
     const until = this.stamp()
-    return buildDigest(this.entries, this.listViews(), (await this.store.loadRuns()) ?? [], this.lastReviewedAt, until)
+    return buildDigest(this.entries, this.listViews(), (await this.store.loadRuns()) ?? [], this.lastReviewedAt, until, this.listQuestions())
   }
 
   /** Moves the cursor to the until of the digest the review covered, so notes received since then stay unreviewed. */
@@ -462,6 +476,7 @@ export class Zephyr {
         const revisit = run.viewIds?.[0]?.startsWith(`${kind.kind}/`) === true
         for (const w of result.writes) await this.writeView(kind, w, { revisit })
         if (result.dropped.length > 0) run.dropped = result.dropped
+        if (result.questions?.length) await this.ask(run, result.questions)
         const covered = new Set(result.covered)
         const uncovered = run.entryIds.filter((id) => !covered.has(id) && !gone(id))
         if (uncovered.length > 0) run.uncovered = uncovered
@@ -511,6 +526,54 @@ export class Zephyr {
     this.retries.add(retry)
   }
 
+  /** Records a run's questions. Its writes stand either way, so a failed append loses only the questions. */
+  private async ask(run: Run, questions: Question[]) {
+    const lines: Asked[] = questions.map((question) => ({ type: 'asked', id: `q-${Date.now()}-${this.questionSeq++}`, at: this.stamp(), runId: run.id, question }))
+    try {
+      await this.store.appendQuestions(lines)
+      for (const line of lines) this.questions.set(line.id, line)
+    } catch (err) {
+      console.error(`[zephyr] could not record the questions of ${run.id}: ${(err as Error).message}`)
+    }
+  }
+
+  private adjustState(): AdjustState {
+    return { entries: this.entries, views: this.listViews(), tombstoned: this.overlay.tombstoned }
+  }
+
+  /** The open questions, oldest first, with the current text of what they are about. */
+  listQuestions(): QuestionView[] {
+    const s = this.adjustState()
+    return [...this.questions.values()].map((a) => questionView(a, s))
+  }
+
+  /**
+   * Closes an open question with one of its answers. An answer that changes something is applied as an adjustment,
+   * through adjust like any other, and the question stays open if that adjustment is refused.
+   */
+  answerQuestion(id: string, answer: string): Promise<QuestionAnswer> {
+    const run = this.answerChain.then(() => this.answer(id, answer))
+    this.answerChain = run.catch(() => {})
+    return run
+  }
+
+  private async answer(id: string, answer: string): Promise<QuestionAnswer> {
+    const asked = this.questions.get(id)
+    if (!asked) return { ok: false, error: `no open question ${id}` }
+    const r = resolveAnswer(asked.question, answer, this.adjustState())
+    if ('error' in r) return { ok: false, error: r.error }
+    if ('close' in r) return this.close(asked, answer, r.close)
+    const adjustment = await this.adjust(r.adjustment)
+    if (!adjustment.ok) return { ok: false, error: adjustment.error }
+    return this.close(asked, answer, { how: 'applied', adjustmentId: adjustment.id }, adjustment)
+  }
+
+  private async close(asked: Asked, answer: string, closed: Closed, adjustment?: AdjustmentResult): Promise<QuestionAnswer> {
+    await this.store.appendQuestions([{ type: 'closed', id: asked.id, at: this.stamp(), answer, closed }])
+    this.questions.delete(asked.id)
+    return { ok: true, questionId: asked.id, closed, ...(adjustment && { adjustment }) }
+  }
+
   /**
    * Logs the request, applies it on its owning kind's queue, and logs the result. A throw leaves the request with
    * no result, so the next start applies it again; every op converges from whatever state a crash left.
@@ -555,7 +618,7 @@ export class Zephyr {
     const owner = OPS[adjustment.op].owner!
     if (!this.kinds[owner]) return finish({ id, ok: false, error: `no ${owner} kind runs on this server` })
     return this.step(owner, async () => {
-      const outcome = planAdjustment(adjustment, { entries: this.entries, views: this.listViews(), tombstoned: this.overlay.tombstoned })
+      const outcome = planAdjustment(adjustment, this.adjustState())
       return finish(outcome.ok ? await this.applyOutcome(id, outcome) : { id, ok: false, error: outcome.error })
     })
   }
@@ -634,6 +697,7 @@ export class Zephyr {
     // In place: queues hold these same objects and keep updating them.
     for (const r of this.runs) if (scrubber.hits(JSON.stringify(r))) Object.assign(r, scrubDeep(r, scrubber))
     const runs = await this.store.rewriteRuns((r) => scrubDeep(r, scrubber))
+    const questions = await this.purgeQuestions(noteId, scrubber)
     await this.relevance.compact?.(this.relevantDocs()).catch((err) => console.warn(`[zephyr] purge: embeddings cache compaction failed: ${(err as Error).message}`))
     const adjustments = await this.store.rewriteAdjustments((l) => scrubDeep(l, scrubber))
     const entries = await this.store.rewriteEntries((e) => (e.id === noteId ? null : e))
@@ -644,7 +708,7 @@ export class Zephyr {
       noteId,
       tasksDeleted: done.tasksDeleted,
       historyFilesDeleted,
-      lines: { entries, adjustments, runs },
+      lines: { entries, adjustments, runs, questions },
       stillIn: this.harnessCopy(note),
       status: `GET /api/purge/${noteId} reports when the queued rewrites are done`,
     }
@@ -675,6 +739,16 @@ export class Zephyr {
       if (p.rewrite) done.rewrites.push(view.id)
       else if (view.kind === 'organizer') done.warnings.push(`topic ${view.slug} is over the rewrite cap: the note's words were scrubbed from its body, but it was not rewritten, so a paraphrase of the note may remain`)
     }
+  }
+
+  /** Deletes every line of a question about the note, open or closed, and scrubs the rest; returns the lines changed. */
+  private async purgeQuestions(noteId: EntryId, scrubber: Scrubber): Promise<number> {
+    const about = new Set((await this.store.loadQuestions()).flatMap((l) => (l.type === 'asked' && l.question.noteId === noteId ? [l.id] : [])))
+    for (const [id, line] of this.questions) {
+      if (about.has(id)) this.questions.delete(id)
+      else this.questions.set(id, scrubDeep(line, scrubber))
+    }
+    return this.store.rewriteQuestions((l) => (about.has(l.id) ? null : scrubDeep(l, scrubber)))
   }
 
   /** Where the note's text still is: its harness's transcript, which Zephyr only ever reads. */
