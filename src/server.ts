@@ -10,6 +10,10 @@ function sse(zephyr: Zephyr, signal: AbortSignal) {
   const enc = new TextEncoder()
   let unsubscribe: () => unknown = () => {}
   let heartbeat: ReturnType<typeof setInterval> | undefined
+  const cleanup = () => {
+    unsubscribe()
+    clearInterval(heartbeat)
+  }
   const stream = new ReadableStream({
     start(controller) {
       const send = (chunk: string) => {
@@ -18,10 +22,6 @@ function sse(zephyr: Zephyr, signal: AbortSignal) {
         } catch {
           cleanup()
         }
-      }
-      const cleanup = () => {
-        unsubscribe()
-        clearInterval(heartbeat)
       }
       send(': connected\n\n')
       unsubscribe = zephyr.subscribe((e) => send(`event: ${e.type}\ndata: ${JSON.stringify(e.data)}\n\n`))
@@ -33,10 +33,7 @@ function sse(zephyr: Zephyr, signal: AbortSignal) {
         } catch {}
       })
     },
-    cancel() {
-      unsubscribe()
-      clearInterval(heartbeat)
-    },
+    cancel: cleanup,
   })
   return new Response(stream, {
     headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' },

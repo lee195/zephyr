@@ -1,4 +1,4 @@
-import { chatCompletion } from '../src/backends'
+import { chatCompletion, parseModelJson } from '../src/backends'
 import { parseConfig } from '../src/config'
 
 const config = parseConfig(process.env)
@@ -21,7 +21,7 @@ const json = await chatCompletion(config, {
   ],
 })
 const content: string = json.choices?.[0]?.message?.content ?? ''
-const parsed = JSON.parse(content.replace(/^```(json)?\s*|\s*```$/g, ''))
+const parsed = parseModelJson(content) as any
 const ok =
   Array.isArray(parsed.upserts) &&
   parsed.upserts.every((u: any) => typeof u.slug === 'string' && Array.isArray(u.sources) && typeof u.body === 'string')
