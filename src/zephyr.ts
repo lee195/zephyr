@@ -6,10 +6,18 @@ import { Tailer, type Chunk } from './tailer'
 
 const RUN_HISTORY = 50
 const RECENT_CONTEXT = 30
+/** Wait before attempts 2, 3 and 4 of a failed run; after the last, the run stays failed. */
+const RETRY_DELAYS_MS = [5_000, 30_000, 120_000]
 
 interface KindQueue {
   waiting: Run | null
   draining: Promise<void> | null
+}
+
+interface ScheduledRetry {
+  /** Settles when the retry is enqueued or cancelled, so idle() can wait on it. */
+  done: Promise<void>
+  cancel(): void
 }
 
 export interface ZephyrOptions {
@@ -17,6 +25,7 @@ export interface ZephyrOptions {
   backend: ModelBackend
   kinds?: Record<string, AgentKind>
   pollMs?: number
+  retryDelaysMs?: readonly number[]
 }
 
 const sessionKey = (harness: string, sessionId: string) => `${harness}:${sessionId}`
@@ -26,6 +35,7 @@ export class Zephyr {
   private backend: ModelBackend
   private kinds: Record<string, AgentKind>
   private pollMs: number
+  private retryDelaysMs: readonly number[]
 
   private entries: Entry[] = []
   private entryIds = new Set<EntryId>()
@@ -36,12 +46,14 @@ export class Zephyr {
   private queues = new Map<string, KindQueue>()
   private listeners = new Set<(e: ZephyrEvent) => void>()
   private runSeq = 0
+  private retries = new Set<ScheduledRetry>()
 
   constructor(opts: ZephyrOptions) {
     this.store = new Store(opts.dataDir)
     this.backend = opts.backend
     this.kinds = opts.kinds ?? defaultKinds
     this.pollMs = opts.pollMs ?? 1000
+    this.retryDelaysMs = opts.retryDelaysMs ?? RETRY_DELAYS_MS
   }
 
   async start() {
@@ -52,6 +64,13 @@ export class Zephyr {
       this.entries.push(e)
     }
     for (const v of await this.store.loadViews()) this.views.set(v.id, v)
+    const finished = await this.store.loadRuns()
+    this.runs = (finished ?? []).slice(-RUN_HISTORY)
+    for (const kind of Object.keys(this.kinds)) {
+      const covered = finished ? doneEntryIds(finished, kind) : await this.migrateCoverage(kind)
+      const uncovered = this.entries.filter((e) => !covered.has(e.id)).map((e) => e.id)
+      if (uncovered.length > 0) this.enqueue(kind, uncovered)
+    }
     for (const s of await this.store.loadSessions()) this.sessions.set(sessionKey(s.harness, s.sessionId), s)
     await Promise.all([...this.sessions.values()].map((s) => this.tail(s)))
   }
@@ -59,6 +78,17 @@ export class Zephyr {
   stop() {
     for (const t of this.tailers.values()) t.stop()
     this.tailers.clear()
+    for (const r of this.retries) r.cancel()
+    this.retries.clear()
+  }
+
+  /** Data dirs from before runs.jsonl: entries a kind's views already cite count as organized, recorded once as a done run. */
+  private async migrateCoverage(kind: string): Promise<Set<EntryId>> {
+    const cited = new Set(this.listViews().filter((v) => v.kind === kind).flatMap((v) => v.sources))
+    if (cited.size === 0) return cited
+    const now = new Date().toISOString()
+    await this.store.appendRun({ id: `migrated-${kind}`, kind, entryIds: [...cited], status: 'done', attempt: 1, startedAt: now, endedAt: now })
+    return cited
   }
 
   subscribe(fn: (e: ZephyrEvent) => void) {
@@ -86,7 +116,7 @@ export class Zephyr {
     return {
       up: true as const,
       entries: this.entries.length,
-      runsInFlight: this.runs.filter((r) => r.status === 'queued' || r.status === 'running').length,
+      runsInFlight: this.runs.filter((r) => r.status === 'queued' || r.status === 'running').length + this.retries.size,
       lastViewAt,
       sessions: this.sessions.size,
     }
@@ -145,10 +175,10 @@ export class Zephyr {
     return fresh
   }
 
-  /** Resolves once every kind's queue has drained. */
+  /** Resolves once every kind's queue has drained and no retry is still scheduled. */
   async idle() {
     while (true) {
-      const pending = [...this.queues.values()].map((q) => q.draining).filter(Boolean)
+      const pending = [...[...this.queues.values()].map((q) => q.draining), ...[...this.retries].map((r) => r.done)].filter(Boolean)
       if (pending.length === 0) return
       await Promise.all(pending)
     }
@@ -163,12 +193,16 @@ export class Zephyr {
     return q
   }
 
-  private enqueue(kind: string, ids: EntryId[]) {
+  /** Coalesces into the kind's waiting run if there is one; the merged run carries the highest attempt of its parts. */
+  private enqueue(kind: string, ids: EntryId[], attempt = 1, retryOf?: string) {
     const q = this.queue(kind)
     if (q.waiting) {
-      q.waiting.entryIds.push(...ids)
+      const have = new Set(q.waiting.entryIds)
+      q.waiting.entryIds.push(...ids.filter((id) => !have.has(id)))
+      q.waiting.attempt = Math.max(q.waiting.attempt, attempt)
+      q.waiting.retryOf ??= retryOf
     } else {
-      q.waiting = { id: `run-${Date.now()}-${this.runSeq++}`, kind, entryIds: [...ids], status: 'queued' }
+      q.waiting = { id: `run-${Date.now()}-${this.runSeq++}`, kind, entryIds: [...ids], status: 'queued', attempt, retryOf }
       this.recordRun(q.waiting)
     }
     this.emit({ type: 'run', data: q.waiting })
@@ -207,10 +241,32 @@ export class Zephyr {
     } catch (err) {
       run.status = 'failed'
       run.error = (err as Error).message
-      console.error(`[zephyr] ${kind.kind} ${run.id} failed: ${run.error}`)
+      console.error(`[zephyr] ${kind.kind} ${run.id} attempt ${run.attempt} failed: ${run.error}`)
     }
     run.endedAt = new Date().toISOString()
+    if (run.status === 'failed') this.scheduleRetry(run)
     this.emit({ type: 'run', data: run })
+    await this.store.appendRun(run).catch((err) => console.error(`[zephyr] could not record ${run.id}: ${(err as Error).message}`))
+  }
+
+  private scheduleRetry(run: Run) {
+    const delay = this.retryDelaysMs[run.attempt - 1]
+    if (delay === undefined) return
+    let settle!: () => void
+    const done = new Promise<void>((r) => (settle = r))
+    const timer = setTimeout(() => {
+      this.retries.delete(retry)
+      this.enqueue(run.kind, run.entryIds, run.attempt + 1, run.id)
+      settle()
+    }, delay)
+    const retry: ScheduledRetry = {
+      done,
+      cancel: () => {
+        clearTimeout(timer)
+        settle()
+      },
+    }
+    this.retries.add(retry)
   }
 
   private async applyUpsert(kind: AgentKind, u: { slug: string; title: string; sources: EntryId[]; body: string }) {
@@ -232,4 +288,8 @@ export class Zephyr {
     this.views.set(id, view)
     this.emit({ type: 'view', data: view })
   }
+}
+
+function doneEntryIds(runs: Run[], kind: string): Set<EntryId> {
+  return new Set(runs.filter((r) => r.kind === kind && r.status === 'done').flatMap((r) => r.entryIds))
 }

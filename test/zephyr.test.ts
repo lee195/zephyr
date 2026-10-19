@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
@@ -67,17 +67,160 @@ test('entries arriving during a run coalesce into exactly one next run', async (
   expect(z.listViews().map((v) => [v.slug, v.sources])).toEqual([['all', ['e1', 'e2', 'e3']]])
 })
 
+const fastRetries = [1, 1, 1]
+
+const runLines = async (dir: string) =>
+  (await readFile(join(dir, 'runs.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+
 test('a bad model reply fails the run and writes nothing', async () => {
   const dir = await tempDir()
-  const z = new Zephyr({ dataDir: dir, backend: { complete: async () => ({ nope: true }) } })
+  const z = new Zephyr({ dataDir: dir, backend: { complete: async () => ({ nope: true }) }, retryDelaysMs: [] })
   await z.start()
   await z.ingest([entry('e1')])
   await z.idle()
   expect(z.listRuns()[0]?.status).toBe('failed')
   expect(z.listViews()).toEqual([])
-  const again = new Zephyr({ dataDir: dir, backend: fakeBackend().backend })
-  await again.start()
-  expect(again.listViews()).toEqual([])
+  expect(await readdir(join(dir, 'views'))).toEqual([])
+})
+
+test('a run that fails once is retried, and both outcomes are persisted', async () => {
+  const dir = await tempDir()
+  const fake = fakeBackend()
+  let failures = 1
+  const backend: ModelBackend = {
+    async complete(messages, opts) {
+      if (failures-- > 0) throw new Error('vllm 503: overloaded')
+      return fake.backend.complete(messages, opts)
+    },
+  }
+  const z = new Zephyr({ dataDir: dir, backend, retryDelaysMs: fastRetries })
+  await z.start()
+  await z.ingest([entry('e1')])
+  await z.idle()
+
+  expect(z.listViews().map((v) => [v.slug, v.sources])).toEqual([['all', ['e1']]])
+  const [failed, done] = await runLines(dir)
+  expect(failed).toMatchObject({ kind: 'organizer', entryIds: ['e1'], status: 'failed', attempt: 1, error: 'vllm 503: overloaded' })
+  expect(done).toMatchObject({ kind: 'organizer', entryIds: ['e1'], status: 'done', attempt: 2, retryOf: failed.id })
+  expect(z.status().runsInFlight).toBe(0)
+
+  const reloaded = new Zephyr({ dataDir: dir, backend: fake.backend })
+  await reloaded.start()
+  expect(reloaded.listRuns().map((r) => [r.status, r.attempt])).toEqual([['failed', 1], ['done', 2]])
+})
+
+test('a run that always fails stops after four attempts', async () => {
+  const dir = await tempDir()
+  let calls = 0
+  const z = new Zephyr({
+    dataDir: dir,
+    backend: { complete: async () => (calls++, Promise.reject(new Error('unreachable'))) },
+    retryDelaysMs: fastRetries,
+  })
+  await z.start()
+  await z.ingest([entry('e1')])
+  await z.idle()
+  expect(calls).toBe(4)
+  expect((await runLines(dir)).map((r) => [r.status, r.attempt])).toEqual([['failed', 1], ['failed', 2], ['failed', 3], ['failed', 4]])
+  expect(z.status().runsInFlight).toBe(0)
+})
+
+test('a scheduled retry counts as in flight until it runs', async () => {
+  const z = new Zephyr({ dataDir: await tempDir(), backend: { complete: async () => ({ nope: true }) }, retryDelaysMs: [60_000] })
+  await z.start()
+  await z.ingest([entry('e1')])
+  await eventually(() => z.listRuns()[0]?.status === 'failed')
+  expect(z.status().runsInFlight).toBe(1)
+  z.stop()
+  await z.idle()
+  expect(z.status().runsInFlight).toBe(0)
+})
+
+test('a retry coalesces with the waiting run and keeps the higher attempt', async () => {
+  const gates: Array<() => void> = []
+  const calls: string[][] = []
+  const backend: ModelBackend = {
+    async complete(messages) {
+      const ids: string[] = JSON.parse(messages.at(-1)!.content).newEntries.map((e: any) => e.id)
+      calls.push(ids)
+      await new Promise<void>((r) => gates.push(r))
+      if (calls.length === 1) throw new Error('boom')
+      return { upserts: [{ slug: 'all', title: 'All', sources: ids, body: '' }] }
+    },
+  }
+  const z = new Zephyr({ dataDir: await tempDir(), backend, retryDelaysMs: [200] })
+  await z.start()
+  await z.ingest([entry('e1')])
+  await eventually(() => calls.length === 1)
+  await z.ingest([entry('e2')])
+  gates.shift()!()
+  await eventually(() => calls.length === 2)
+  await z.ingest([entry('e3')])
+  await eventually(() => z.listRuns().some((r) => r.status === 'queued' && r.entryIds.includes('e1')))
+  while (gates.length || z.status().runsInFlight) {
+    gates.shift()?.()
+    await Bun.sleep(5)
+  }
+  await z.idle()
+
+  expect(calls).toEqual([['e1'], ['e2'], ['e1', 'e3']])
+  expect(z.listRuns().map((r) => [r.entryIds, r.status, r.attempt])).toEqual([
+    [['e1'], 'failed', 1],
+    [['e2'], 'done', 1],
+    [['e3', 'e1'], 'done', 2],
+  ])
+})
+
+async function seedDataDir(entries: Entry[], runs?: object[]) {
+  const dir = await tempDir()
+  await writeFile(join(dir, 'entries.jsonl'), entries.map((e) => JSON.stringify(e) + '\n').join(''))
+  if (runs) await writeFile(join(dir, 'runs.jsonl'), runs.map((r) => JSON.stringify(r) + '\n').join(''))
+  return dir
+}
+
+test('on start, entries not covered by a done run are queued and covered ones are not', async () => {
+  const dir = await seedDataDir(
+    [entry('e1'), entry('e2'), entry('e3')],
+    [
+      { id: 'r1', kind: 'organizer', entryIds: ['e1'], status: 'done', attempt: 1 },
+      { id: 'r2', kind: 'organizer', entryIds: ['e2'], status: 'failed', attempt: 4, error: 'x' },
+      { id: 'r3', kind: 'other', entryIds: ['e3'], status: 'done', attempt: 1 },
+    ],
+  )
+  const fake = fakeBackend()
+  const z = new Zephyr({ dataDir: dir, backend: fake.backend })
+  await z.start()
+  await z.idle()
+  expect(fake.calls).toEqual([['e2', 'e3']])
+  expect(z.listRuns().at(-1)).toMatchObject({ entryIds: ['e2', 'e3'], status: 'done', attempt: 1 })
+})
+
+test('a data dir without runs.jsonl treats entries its views cite as organized, once and for good', async () => {
+  const dir = await seedDataDir([entry('e1'), entry('e2')])
+  await mkdir(join(dir, 'views/organizer'), { recursive: true })
+  await writeFile(join(dir, 'views/organizer/a.md'), 'e1')
+  const meta = { id: 'organizer/a', kind: 'organizer', slug: 'a', title: 'A', sources: ['e1'], format: 'md', updatedAt: 't' }
+  await writeFile(join(dir, 'views/organizer/a.json'), JSON.stringify(meta))
+
+  const fake = fakeBackend()
+  const z = new Zephyr({ dataDir: dir, backend: fake.backend })
+  await z.start()
+  await z.idle()
+  expect(fake.calls).toEqual([['e2']])
+
+  const again = fakeBackend()
+  const restarted = new Zephyr({ dataDir: dir, backend: again.backend })
+  await restarted.start()
+  await restarted.idle()
+  expect(again.calls).toEqual([])
+})
+
+test('a data dir without runs.jsonl or views organizes every entry', async () => {
+  const fake = fakeBackend()
+  const z = new Zephyr({ dataDir: await seedDataDir([entry('e1'), entry('e2')]), backend: fake.backend })
+  await z.start()
+  await z.idle()
+  expect(fake.calls).toEqual([['e1', 'e2']])
 })
 
 test('views persist as files and reload after restart', async () => {

@@ -29,6 +29,9 @@ export interface Run {
   kind: string
   entryIds: EntryId[]
   status: RunStatus
+  /** 1-based; a retry of a failed run is the next attempt. */
+  attempt: number
+  retryOf?: string
   startedAt?: string
   endedAt?: string
   error?: string

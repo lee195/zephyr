@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Entry, Session, View, ViewFormat } from './domain'
+import type { Entry, Run, Session, View, ViewFormat } from './domain'
 
 const EXT: Record<ViewFormat, string> = { md: 'md', svg: 'svg', ascii: 'txt' }
 
@@ -18,6 +18,19 @@ async function readText(path: string): Promise<string | null> {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw err
   }
+}
+
+function parseJsonl<T>(text: string | null): T[] {
+  const out: T[] = []
+  for (const line of (text ?? '').split('\n')) {
+    if (!line.trim()) continue
+    try {
+      out.push(JSON.parse(line))
+    } catch {
+      // A crash mid-append can leave a torn last line. A lost entry is re-read from its transcript, a lost run re-runs.
+    }
+  }
+  return out
 }
 
 /** Plain-file persistence under one data dir. The server is its only writer. */
@@ -38,24 +51,27 @@ export class Store {
     await mkdir(join(this.dir, 'views'), { recursive: true })
   }
 
+  private get runsPath() {
+    return join(this.dir, 'runs.jsonl')
+  }
+
   async loadEntries(): Promise<Entry[]> {
-    const text = await readText(this.entriesPath)
-    if (!text) return []
-    const out: Entry[] = []
-    for (const line of text.split('\n')) {
-      if (!line.trim()) continue
-      try {
-        out.push(JSON.parse(line))
-      } catch {
-        // A crash mid-append can leave a torn last line; the entry is re-read from its transcript.
-      }
-    }
-    return out
+    return parseJsonl<Entry>(await readText(this.entriesPath))
   }
 
   async appendEntries(entries: Entry[]) {
     if (entries.length === 0) return
     await appendFile(this.entriesPath, entries.map((e) => JSON.stringify(e) + '\n').join(''))
+  }
+
+  /** Every finished run, oldest first; null when the data dir predates runs.jsonl. */
+  async loadRuns(): Promise<Run[] | null> {
+    const text = await readText(this.runsPath)
+    return text === null ? null : parseJsonl<Run>(text)
+  }
+
+  async appendRun(run: Run) {
+    await appendFile(this.runsPath, JSON.stringify(run) + '\n')
   }
 
   async loadSessions(): Promise<Session[]> {
