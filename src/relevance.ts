@@ -28,6 +28,18 @@ export interface RelevanceBackend {
   prepare?(docs: RelevanceDoc[]): Promise<void>
   /** Docs being readied right now. */
   pending?(): number
+  /** Drops what the backend keeps on disk for any doc not in live. Absent when it keeps nothing on disk. */
+  compact?(live: RelevanceDoc[]): Promise<Compaction>
+}
+
+export interface FileSize {
+  lines: number
+  bytes: number
+}
+
+export interface Compaction {
+  before: FileSize
+  after: FileSize
 }
 
 /** Every doc ranked, waiting for the backend to ready them first; for background callers that can afford the wait. */
@@ -157,6 +169,8 @@ export function withFallback(primary: RelevanceBackend, fallback: RelevanceBacke
   }
   return {
     pending: () => primary.pending?.() ?? 0,
+    // Local file work that needs no endpoint, so it is never degraded.
+    ...(primary.compact && { compact: primary.compact }),
     async prepare(docs) {
       if (now() < degradedUntil) return
       try {

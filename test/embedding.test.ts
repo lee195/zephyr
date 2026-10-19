@@ -1,4 +1,5 @@
-import { readdir } from 'node:fs/promises'
+import { appendFile, readdir, readFile, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, spyOn, test } from 'bun:test'
 import { hintsFor } from '../src/hints'
 import { entry, eventually, fakeEmbeddings, tempDir, testEmbedding } from './helpers'
@@ -123,4 +124,65 @@ test('a model with no measured threshold warns once, when built, and gives no hi
   } finally {
     warn.mockRestore()
   }
+})
+
+const cacheFile = (dir: string) => join(dir, 'embedding-gemma.jsonl')
+const linesOf = async (dir: string) => (await readFile(cacheFile(dir), 'utf8')).split('\n').filter(Boolean)
+
+test('compaction keeps one line per live doc with its latest vector, and a fresh backend on the file needs no doc embedded', async () => {
+  const dir = await tempDir()
+  await testEmbedding(dir, fakeEmbeddings().fetch).prepare!(docs)
+  // A later line for the same text wins on load: here it points aaa along c.
+  const key = `gemma:${new Bun.CryptoHasher('sha256').update('aaa').digest('hex')}`
+  const later = Buffer.from(new Float32Array([0, 0, 9]).buffer).toString('base64')
+  await appendFile(cacheFile(dir), `${JSON.stringify({ key, v: later })}\n{"key":"torn`)
+  expect(await linesOf(dir)).toHaveLength(5)
+
+  const b = testEmbedding(dir, fakeEmbeddings().fetch)
+  const compaction = await b.compact!([docs[0]!, docs[2]!])
+  expect(compaction.before.lines).toBe(5)
+  expect(compaction.after.lines).toBe(2)
+  expect(compaction.after.bytes).toBe((await stat(cacheFile(dir))).size)
+  expect(await linesOf(dir)).toHaveLength(2)
+
+  const end = fakeEmbeddings()
+  const fresh = testEmbedding(dir, end.fetch)
+  await fresh.prepare!([docs[0]!, docs[2]!])
+  const ranking = await fresh.rank('ccc', [docs[0]!, docs[2]!])
+  expect(end.batches).toEqual([['ccc']])
+  expect(ranking.scored.map((s) => [s.id, Math.round(s.score)])).toEqual([['A', 1], ['C', 1]])
+  await fresh.prepare!([docs[1]!])
+  expect(end.batches.at(-1)).toEqual(['bbb'])
+})
+
+test('a second compaction with the same live docs leaves the file untouched', async () => {
+  const dir = await tempDir()
+  const b = testEmbedding(dir, fakeEmbeddings().fetch)
+  await b.prepare!(docs)
+  await b.compact!([docs[0]!])
+  const first = await stat(cacheFile(dir))
+  await Bun.sleep(20)
+  const again = await b.compact!([docs[0]!])
+  const second = await stat(cacheFile(dir))
+  expect(again.before).toEqual(again.after)
+  expect([second.size, second.mtimeMs]).toEqual([first.size, first.mtimeMs])
+})
+
+test('a doc whose embedding lands during a compaction is still on disk after it', async () => {
+  const dir = await tempDir()
+  const end = fakeEmbeddings()
+  const b = testEmbedding(dir, end.fetch)
+  await b.prepare!(docs)
+  const late = { id: 'D', text: 'abcabc' }
+  end.hold((input) => input.includes(late.text))
+  const preparing = b.prepare!([late])
+  await eventually(() => end.batches.some((input) => input.includes(late.text)))
+  const compacting = b.compact!([docs[0]!, late])
+  end.release()
+  await Promise.all([preparing, compacting])
+  expect(await linesOf(dir)).toHaveLength(2)
+
+  const after = fakeEmbeddings()
+  await testEmbedding(dir, after.fetch).prepare!([docs[0]!, late])
+  expect(after.batches).toEqual([])
 })

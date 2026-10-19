@@ -44,7 +44,7 @@ test('warm-up embeds every uncached doc once, entries and organizer topics, and 
   const end = fakeEmbeddings()
   const { status } = await server(await seeded(), end.fetch)
   await eventually(async () => (await status()).relevance.warmup === 'done')
-  expect((await status()).relevance).toEqual({ warmup: 'done', pending: 0 })
+  expect((await status()).relevance).toEqual({ warmup: 'done', pending: 0, compaction: { count: 1, bytesBefore: 0, bytesAfter: 0 } })
   expect(end.sentTexts().sort()).toEqual([...docTexts].sort())
 })
 
@@ -89,6 +89,29 @@ test('a restart with every doc cached sends no doc to the endpoint', async () =>
   const { status } = await server(dir, end.fetch)
   await eventually(async () => (await status()).relevance.warmup === 'done')
   expect(end.batches).toEqual([])
+})
+
+test('the sweep drops cached docs no ranking can ask about, reports it in /status, and a restart on the smaller file embeds nothing', async () => {
+  const dir = await seeded()
+  await testEmbedding(`${dir}/embeddings`, fakeEmbeddings().fetch).prepare!([{ id: 'organizer/bread', text: 'Bread\nan older page' }])
+  const first = await server(dir, fakeEmbeddings().fetch)
+  await eventually(async () => (await first.status()).relevance.warmup === 'done')
+  const onStart = (await first.status()).relevance.compaction
+  expect(onStart).toMatchObject({ count: 1, bytesAfter: 0 })
+  expect(onStart.bytesBefore).toBeGreaterThan(0)
+
+  await first.z.sweep()
+  const swept = (await first.status()).relevance.compaction
+  expect(swept).toMatchObject({ count: 2 })
+  expect(swept.bytesAfter).toBe(swept.bytesBefore)
+  for (const c of cleanup) c()
+  cleanup = []
+
+  const end = fakeEmbeddings()
+  const again = await server(dir, end.fetch)
+  await eventually(async () => (await again.status()).relevance.warmup === 'done')
+  expect(await again.hint()).toMatchObject({ backend: 'embedding-gemma', partial: false })
+  expect(end.batches).toEqual([[DRAFT]])
 })
 
 test('with the endpoint down during warm-up, the server keeps serving tfidf hints', async () => {

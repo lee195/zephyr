@@ -2,7 +2,7 @@ import { adapters } from './adapters'
 import { hintsFor, type HintReply } from './hints'
 import { isNote, noteEntry, type AgentKind, type Entry, type EntryId, type ModelBackend, type Run, type Session, type View, type ViewWrite, type World, type ZephyrEvent } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
-import { relevanceBackends, type RelevanceBackend, type RelevanceDoc } from './relevance'
+import { relevanceBackends, type Compaction, type RelevanceBackend, type RelevanceDoc } from './relevance'
 import { Store } from './store'
 import { Tailer } from './tailer'
 
@@ -75,6 +75,8 @@ export class Zephyr {
    */
   private exhausted = new Map<string, string | undefined>()
   private lastStamp = 0
+  /** Compactions of the relevance backend's disk cache since start, and the latest one. */
+  private compactions: { count: number; last: Compaction | null } = { count: 0, last: null }
   /** Readying every doc the relevance backend will be asked about, started by start() and never awaited by it. */
   private warmup: 'idle' | 'running' | 'done' | 'failed' = 'idle'
 
@@ -119,10 +121,14 @@ export class Zephyr {
     this.retries.clear()
   }
 
+  /** Every doc a ranking can be asked about now: the entries, and each kind's docs from the views. */
+  private relevantDocs(): RelevanceDoc[] {
+    return [...this.entries, ...Object.values(this.kinds).flatMap((k) => k.relevanceDocs?.(this.listViews()) ?? [])]
+  }
+
   private warm() {
-    const docs: RelevanceDoc[] = [...this.entries, ...Object.values(this.kinds).flatMap((k) => k.relevanceDocs?.(this.listViews()) ?? [])]
     this.warmup = 'running'
-    void (this.relevance.prepare?.(docs) ?? Promise.resolve()).then(
+    void (this.relevance.prepare?.(this.relevantDocs()) ?? Promise.resolve()).then(
       () => {
         this.warmup = 'done'
       },
@@ -135,8 +141,8 @@ export class Zephyr {
 
   /**
    * Queues the view work each kind's sweep asks for, unless that view is busy in the kind's queue or its last
-   * attempt was exhausted at the view's current version. The queueing is synchronous; the returned promise settles
-   * once the sweep's own logging is done.
+   * attempt was exhausted at the view's current version. The queueing is synchronous. Then the relevance backend
+   * drops what it keeps on disk for docs no ranking can be asked about any more.
    */
   async sweep() {
     const world = this.world()
@@ -151,7 +157,13 @@ export class Zephyr {
         queued++
       }
     }
-    if (queued > 0) console.log(`[zephyr] sweep: queued ${queued} rewrites`)
+    const compaction = await this.relevance.compact?.(this.relevantDocs()).catch((err) => {
+      console.warn(`[zephyr] sweep: embeddings cache compaction failed: ${(err as Error).message}`)
+      return undefined
+    })
+    if (compaction) this.compactions = { count: this.compactions.count + 1, last: compaction }
+    const cache = compaction && `; embeddings cache ${compaction.before.lines} lines/${compaction.before.bytes} bytes → ${compaction.after.lines} lines/${compaction.after.bytes} bytes`
+    if (queued > 0 || cache) console.log(`[zephyr] sweep: queued ${queued} rewrites${cache ?? ''}`)
   }
 
   /** Work keyed by this view is waiting, running, or scheduled to retry in the kind's queue. */
@@ -211,7 +223,11 @@ export class Zephyr {
       runsInFlight: this.runs.filter((r) => r.status === 'queued' || r.status === 'running').length + this.retries.size,
       lastViewAt,
       sessions: this.sessions.size,
-      relevance: { warmup: this.warmup, pending: this.relevance.pending?.() ?? 0 },
+      relevance: {
+        warmup: this.warmup,
+        pending: this.relevance.pending?.() ?? 0,
+        compaction: this.compactions.last && { count: this.compactions.count, bytesBefore: this.compactions.last.before.bytes, bytesAfter: this.compactions.last.after.bytes },
+      },
     }
   }
 

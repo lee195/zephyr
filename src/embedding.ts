@@ -1,6 +1,6 @@
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { RelevanceBackend, RelevanceDoc, Scored } from './relevance'
+import type { FileSize, RelevanceBackend, RelevanceDoc, Scored } from './relevance'
 
 export interface EmbeddingOptions {
   baseUrl: string
@@ -33,6 +33,8 @@ const decode = (b64: string): Vector => {
   const bytes = Buffer.from(b64, 'base64')
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
 }
+
+const sizeOf = (text: string): FileSize => ({ lines: text.split('\n').filter(Boolean).length, bytes: Buffer.byteLength(text) })
 
 function cosine(a: Vector, b: Vector): number {
   let dot = 0
@@ -67,18 +69,35 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
   /** Docs being embedded right now, keyed like vectors, so concurrent callers never embed the same text twice. */
   const pending = new Map<string, Promise<void>>()
   let loaded: Promise<void> | null = null
+  let fileBusy: Promise<unknown> = Promise.resolve()
+
+  /** The file's one exclusive section: an append and a compaction never touch the file at the same moment. */
+  const withFile = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = fileBusy.then(fn)
+    fileBusy = run.catch(() => {})
+    return run
+  }
+
+  const readCache = () => readFile(file, 'utf8').catch((err) => (err.code === 'ENOENT' ? '' : Promise.reject(err)))
 
   /** A line torn by a crash mid-append fails to parse and is skipped; its doc is embedded again on demand. */
-  const load = async () => {
-    await mkdir(opts.cacheDir, { recursive: true })
-    const raw = await readFile(file, 'utf8').catch((err) => (err.code === 'ENOENT' ? '' : Promise.reject(err)))
-    for (const line of raw.split('\n')) {
+  const parseLines = (raw: string) =>
+    raw.split('\n').flatMap((line) => {
       try {
         const { key, v } = JSON.parse(line) as { key: string; v: string }
-        if (key.startsWith(`${opts.model}:`)) vectors.set(key, decode(v))
-      } catch {}
-    }
+        return key.startsWith(`${opts.model}:`) ? [{ key, v }] : []
+      } catch {
+        return []
+      }
+    })
+  const keysIn = (raw: string) => parseLines(raw).map((l) => l.key)
+
+  const load = async () => {
+    await mkdir(opts.cacheDir, { recursive: true })
+    for (const { key, v } of parseLines(await readCache())) vectors.set(key, decode(v))
   }
+
+  const line = (key: string, v: Vector) => JSON.stringify({ key, v: encode(v) }) + '\n'
 
   const request = async (input: string[]): Promise<Vector[]> => {
     const res = await doFetch(`${opts.baseUrl}/embeddings`, {
@@ -108,7 +127,7 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
       const done = previous.then(async () => {
         const vs = await request(batch.map(([, t]) => t))
         batch.forEach(([k], j) => vectors.set(k, vs[j]!))
-        await appendFile(file, batch.map(([key], j) => JSON.stringify({ key, v: encode(vs[j]!) }) + '\n').join(''))
+        await withFile(() => appendFile(file, batch.map(([key], j) => line(key, vs[j]!)).join('')))
       })
       batch.forEach(([k]) => pending.set(k, done))
       done.finally(() => batch.forEach(([k]) => pending.delete(k))).catch(() => {})
@@ -117,8 +136,30 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
     await Promise.all([...texts.keys()].map((k) => pending.get(k)))
   }
 
+  /**
+   * Rewrites the file to hold one line per live doc it already holds, with the latest vector, through a tmp file
+   * and a rename, and leaves the in-memory vectors alone. A batch whose append is still queued appends after the
+   * rename, into the new file, so it is left to that append. Writes nothing when the content would not change, so
+   * a repeat is a no-op.
+   */
+  const compact = async (live: RelevanceDoc[]) => {
+    await (loaded ??= load())
+    const keep = new Set(live.map((d) => keyOf(d.text.slice(0, MAX_CHARS))))
+    return withFile(async () => {
+      const current = await readCache()
+      const onDisk = new Set(keysIn(current))
+      const next = [...vectors].filter(([key]) => keep.has(key) && onDisk.has(key)).map(([key, v]) => line(key, v)).join('')
+      if (next === current) return { before: sizeOf(current), after: sizeOf(current) }
+      const tmp = `${file}.tmp-${process.pid}`
+      await writeFile(tmp, next)
+      await rename(tmp, file)
+      return { before: sizeOf(current), after: sizeOf(next) }
+    })
+  }
+
   return {
     prepare,
+    compact,
     pending: () => pending.size,
     async rank(query, docs) {
       await (loaded ??= load())
