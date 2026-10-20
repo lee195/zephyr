@@ -1,6 +1,6 @@
 # Zephyr state
 
-What is built, how it was checked, and what is open, as of 2026-10-19 at commit `9f67b48`. Why it is built this way is in [design.md](design.md). How to run it is in the [README](../README.md).
+What is built, how it was checked, and what is open, as of 2026-10-20. The open-issues work of that day is not committed yet. Why it is built this way is in [design.md](design.md). How to run it is in the [README](../README.md).
 
 ## Built
 
@@ -26,9 +26,10 @@ What is built, how it was checked, and what is open, as of 2026-10-19 at commit 
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
 | Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
 | Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | `78c2a76` |
+| Open-issues work | Viewer: `.history` versions in each topic card, a Summaries page, `vue-tsc` in `bun run typecheck`, a fixed `aria-controls`. Purge: plain words scrubbed only where the note was. Model: retitling rewrites and merges, a weak and similarity gate on link suggestions, no added framing in summaries, a repair retry for refused diagrams. Measured with `scripts/measure-deeper.ts` (below) | uncommitted |
 | Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | `896e631` |
 
-Tests: 239 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 42 tests pass under `claude plugin test`.
+Tests: 249 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 42 tests pass under `claude plugin test`.
 
 ## Running on this machine
 
@@ -46,6 +47,7 @@ Checked against the real vLLM endpoint or in a real harness:
 - The map on scratch data: 8 notes made 4 topics and one map call (the other three map runs found it current); 2 more notes added a fifth topic, and the map kept its four areas and added one.
 - Every adjustment op, purge, questions and the deeper tools, on scratch data.
 - `/zephyr review` in a real Claude Code session and `/zephyr-review` in a real opencode session: a rename, a move and finishing the review.
+- The open-issues work, on a scratch server against the real endpoint (2026-10-20). A merge retitled "Lisbon Flights" to "Lisbon Flights and Cascais Wedding" and left an archived version. The viewer showed that version under the card and the saved summary on the Summaries page, and the title button's `aria-controls` named an element that exists. Purging the note with a wifi key and a name left neither anywhere under the data dir. The first try found the name in the archived diagram of the merged-away topic, which led to the purge scope covering diagram archives too.
 
 Not checked yet:
 
@@ -55,28 +57,40 @@ Not checked yet:
 - An `isTask` question raised by the real model; only scripted tests cover it.
 - Purge removing the text from a task and a diagram live; unit tests cover both.
 - The band's "last note →" line and `/zephyr where` in a real Claude Code session, and the opencode "✎ →" toast; mod tests cover the band and the command, nothing covers the toast.
+- The visualizer's repair retry against the real model: no reply failed the SVG check in 50 measured calls, so no repair ran. A test covers that a retry names the fault.
+
+## Measured on 2026-10-20
+
+On the real endpoint, 5 repetitions per probe, with `scripts/measure-deeper.ts`. Results are in `scripts/measurements/deeper/`.
+
+| What | Before | After |
+|---|---|---|
+| Rewrite retitles a page whose notes outgrew its title | 0/15 | 15/15 |
+| Rewrite retitles a page whose title still fits | 0/15 | 0/15 |
+| Rewrite after a merge names both pages | 1/15 | 15/15 |
+| Unrelated pairs among the link suggestions kept | 10 of 25 | 4 of 22 |
+| Related pairs kept | 6 | 10 |
+| Summaries adding a "To do", "Open question" or "Decision" label | 13/15 | 0/15 (2 hits were "wants to do" in prose) |
+| Diagrams failing the SVG check on the first try | not measured | 0/50 |
+
+Changing the organizer's filing prompt to retitle on append was tried and reverted. It raised retitling on appends from 10/15 to 15/15, but filing correctness fell from 25/25 to 20/25. So appends keep the old title rule, and the next log rewrite fixes the title.
 
 ## Open issues
 
 Model behavior:
 
-- Renaming a topic during a rewrite or append happened in 1 of 3 test runs, and a merged page keeps the old target's title.
-- The organizer asks about an ambiguous note in 2 of 5 runs. Wording that asks more often also misfiled new subjects more often.
-- `suggest_links` returns weak pairs even when told an empty list is fine.
-- `summarize_review` adds small framing ("open task", "To do:") that is not in the notes.
-- The visualizer sometimes returns invalid SVG; the retry usually succeeds.
+- The organizer asks about an ambiguous note in 2 of 5 runs. Wording that asks more often also misfiled new subjects more often. A server-raised question from close relevance scores was measured and dropped: clear notes had smaller gaps between their top two topics (0.011 and 0.017) than ambiguous ones (0.000 to 0.028), and no ambiguous probe's runner-up reached the 0.8 relatedness threshold. This rate is the accepted trade-off.
+- A retitle on append still depends on the model, at 10/15 for clearly outgrown titles; the log rewrite after 5 appends catches the rest.
 
 Behavior gaps:
 
 - opencode notes go in the `/note` dialog, not the main prompt, and the plugin only knows the database path of release builds.
-- Purge's word matching is coarse: a word of 4+ characters found only in the purged note becomes `[purged]` everywhere. Slugs that contain the note's words stay.
+- A slug that contains the purged note's words stays, since it is the page's id and file name; the purge result counts them. Aliases too.
 - `adjustments.jsonl`, `questions.jsonl` and `runs.jsonl` only grow. Left open on purpose: at 50 notes a day `runs.jsonl` reaches about 14 MB in four years (projected), and 300k runs parse in 87 ms (measured). Compaction could keep every behavior and lose only history, and archiving would lose nothing; [design.md](design.md#storage-plain-files-not-a-database) has what must be kept and when to move to a database backend.
 
-Viewer:
+Decided, not open:
 
-- `.history` versions and saved summaries are not shown.
-- The `.vue` files are not type-checked (`vue-tsc` is not installed), and state is a hand-built `reactive()` store rather than rstore.
-- The title-history button's `aria-controls` points at an id that exists only while the list is open.
+- The viewer's state stays a hand-built `reactive()` store. A move to rstore would touch every component for no change the person sees.
 
 ## Ideas not built yet
 

@@ -1,0 +1,137 @@
+{
+  "item": "summary",
+  "label": "after",
+  "reps": 5,
+  "model": "deepseek-v4-flash-fast",
+  "summary": {
+    "withAddedFraming": "2/15",
+    "addedLabels": 2,
+    "taskNamed": "5/5"
+  },
+  "results": [
+    {
+      "rep": 0,
+      "session": "observations",
+      "added": [
+        "to do"
+      ],
+      "namesRenewal": false,
+      "summary": "**Film photography**\n- Shot a roll of Portra 400 through the Pentax K1000 at Saturday's market; the light meter battery died halfway through and the rest was guessed.\n- Developed HP5 at home for the first time — 1+4 dilution in ID-11, 11 minutes at 20C. The negatives look thin; the note's guess is that it was underdeveloped by a minute.\n- Three rolls are at the lab at 14 euros a roll for dev plus scan; at that price the thought is to buy a Plustek and do it at home instead.\n\n**Reading**\n- Finished Le Guin's *The Dispossessed* — the Shevek chapters on Anarres dragged, but the last 50 pages wrecked them.\n- Halfway through Peter Watts' *Blindsight*, having to reread paragraphs; dense, but the vampire biology is genuinely unsettling.\n- Wants to do the Culture series properly, starting with *Consider Phlebas*. Sara suggests skipping to *Player of Games*; still undecided.",
+      "ms": 2183
+    },
+    {
+      "rep": 1,
+      "session": "observations",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Film photography**\n- Shot a roll of Portra 400 through the Pentax K1000 at the Saturday market; the light meter battery died halfway through, so the rest of the exposures were guessed.\n- Developed HP5 at home for the first time — 1+4 dilution in ID-11, 11 minutes at 20C. The negatives look thin, and the thought is that it was underdeveloped by a minute.\n- Dropped three rolls at the lab at 14 euros a roll for dev plus scan; at that price, buying a Plustek and doing it at home seems the better route.\n\n**Reading**\n- Finished Le Guin's *The Dispossessed*: the Shevek chapters on Anarres dragged, but the last 50 pages hit hard.\n- Halfway through Peter Watts' *Blindsight* — dense enough to require rereading paragraphs, but the vampire biology is genuinely unsettling.\n- Wants to finally do the Culture series properly, starting with *Consider Phlebas*. Sara suggests skipping to *Player of Games*; undecided.",
+      "ms": 2642
+    },
+    {
+      "rep": 2,
+      "session": "observations",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Film photography**\n- Shot a roll of Portra 400 through the Pentax K1000 at the market on Saturday; the light meter battery died halfway through, so the rest was guessed — result still to be seen.\n- Developed HP5 at home for the first time: 1+4 dilution in ID-11, 11 minutes at 20C. The negatives look thin and the suspicion is one minute of underdevelopment.\n- Dropped three rolls at the lab, which charges 14 euros a roll for dev plus scan. At that price the thought is that buying a Plustek and doing it at home would make more sense.\n\n**Reading**\n- Finished Le Guin's *The Dispossessed*: the Shevek chapters on Anarres dragged, but the last 50 pages hit hard.\n- Halfway through Peter Watts' *Blindsight*, having to reread paragraphs; dense, but the vampire biology is genuinely unsettling.\n- Wants to finally do the Culture series properly, starting with *Consider Phlebas*. Sara suggests skipping to *Player of Games*; still undecided.",
+      "ms": 2262
+    },
+    {
+      "rep": 3,
+      "session": "observations",
+      "added": [
+        "to do"
+      ],
+      "namesRenewal": false,
+      "summary": "**Film photography**\n- Shot a roll of Portra 400 through the Pentax K1000 at the market on Saturday; the light meter battery died halfway, so the rest was guessed.\n- Developed HP5 at home for the first time — 1+4 in ID-11, 11 minutes at 20C. Negatives look thin; thinks it was underdeveloped by a minute.\n- Dropped three rolls at the lab at 14 euros a roll for dev plus scan — at that price, thinking of just buying a Plustek and doing it at home.\n\n**Reading**\n- Finished Le Guin's *The Dispossessed*: the Shevek chapters on Anarres dragged, but the last 50 pages hit hard.\n- Halfway through Peter Watts's *Blindsight* — dense enough to require rereading paragraphs, but the vampire biology is genuinely unsettling.\n- Wants to do the Culture series properly, starting with *Consider Phlebas*; Sara suggests skipping to *Player of Games* — undecided.",
+      "ms": 2130
+    },
+    {
+      "rep": 4,
+      "session": "observations",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Film photography**\n- Shot a roll of Portra 400 through the Pentax K1000 at the market on Saturday; the light meter battery died halfway and the rest was guessed exposure.\n- Developed HP5 at home for the first time — 1+4 in ID-11, 11 minutes at 20C. The negatives look thin and the thought is that it was underdeveloped by a minute.\n- Three rolls were dropped at the lab, which wants 14 euros a roll for dev plus scan; the feeling is that at that price buying a Plustek and doing it at home makes more sense.\n\n**Reading**\n- Finished Le Guin's *The Dispossessed*: the Shevek chapters on Anarres dragged, but the last 50 pages landed hard.\n- Halfway through Peter Watts's *Blindsight* and having to reread paragraphs — dense, and the vampire biology is genuinely unsettling.\n- Wants to finally do the Culture series properly, starting with *Consider Phlebas*; Sara says skip to *Player of Games* — undecided.",
+      "ms": 1842
+    },
+    {
+      "rep": 0,
+      "session": "training",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Climbing**\n- Hit a V4 for the first time — the orange overhang on the left wall — after four sessions of projecting it.\n- Left ring finger is sore from the crimpy problems; taping it and skipping anything with small holds for a week.\n- The two-hour session on Tuesday was too long — fingers felt wrecked on Thursday — so sticking to 75 minutes from now on.\n\n**Sleep and recovery**\n- Wearing the ring for three weeks now: average 6h 12m, with deep sleep way below what it should be. The numbers are depressing but at least consistent.\n- Cut caffeine off at 2pm starting Monday and the sleep score went from 68 to 74 by Friday; not sure if it's the caffeine or just the novelty, giving it another two weeks.\n- Bedtime routine — phone in the kitchen at 10:30, ten minutes of reading, lights down to the warm ones — managed four nights out of seven, which is better than nothing.",
+      "ms": 1811
+    },
+    {
+      "rep": 1,
+      "session": "training",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Climbing**\n- Hit a V4 for the first time — the orange overhang on the left wall — after four sessions of projecting it.\n- Left ring finger is sore after the crimpy problems; taping it and skipping anything with small holds for a week.\n- A two-hour session on Tuesday was too long — fingers felt wrecked on Thursday — so sticking to 75 minutes from now on.\n\n**Sleep tracking**\n- Has been wearing the ring for three weeks: average 6h 12m, with deep sleep well below what it should be. The numbers are depressing but at least consistent.\n- Cut caffeine off at 2pm starting Monday and the sleep score went from 68 to 74 by Friday — not sure if it's the caffeine or just the novelty, giving it another two weeks.\n- Bedtime routine of phone in the kitchen at 10:30, ten minutes of reading, and lights down to the warm ones: managed four nights out of seven, which is better than nothing.",
+      "ms": 1746
+    },
+    {
+      "rep": 2,
+      "session": "training",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Climbing**\n- Hit a V4 for the first time — the orange overhang on the left wall — after four sessions of projecting it.\n- Left ring finger is sore after the crimpy problems; taping it and skipping anything with small holds for a week.\n- The two-hour session on Tuesday was too long — fingers felt wrecked on Thursday, so sticking to 75 minutes from now on.\n\n**Sleep tracking**\n- Wearing the ring for three weeks now: average 6h 12m, with deep sleep well below what it should be. The numbers are depressing but at least consistent.\n- Cut caffeine off at 2pm starting Monday and the sleep score went from 68 to 74 by Friday. Not sure if it's the caffeine or just the novelty — giving it another two weeks.\n\n**Bedtime routine**\n- Phone in the kitchen at 10:30, ten minutes of reading, lights down to the warm ones. Managed it four nights out of seven, which is better than nothing.",
+      "ms": 1740
+    },
+    {
+      "rep": 3,
+      "session": "training",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Climbing**\n- Hit a V4 for the first time — the orange overhang on the left wall — after four sessions of projecting it.\n- Left ring finger is sore after the crimpy problems; taping it and skipping anything with small holds for a week.\n- The two-hour session on Tuesday was too long — fingers felt wrecked on Thursday — so sessions are capped at 75 minutes from now on.\n\n**Sleep and recovery**\n- Three weeks of wearing the ring: average 6h 12m, with deep sleep well below where it should be. The numbers are depressing but consistent.\n- Cut caffeine off at 2pm starting Monday; sleep score went from 68 to 74 by Friday. Not sure whether it's the caffeine or just the novelty — giving it another two weeks.\n- Bedtime routine of phone in the kitchen at 10:30, ten minutes of reading and lights down to the warm ones, managed four nights out of seven — better than nothing.",
+      "ms": 1644
+    },
+    {
+      "rep": 4,
+      "session": "training",
+      "added": [],
+      "namesRenewal": false,
+      "summary": "**Climbing**\n- Hit a V4 for the first time — the orange overhang on the left wall — after four sessions of projecting it.\n- Left ring finger is sore after the crimpy problems; taping it and skipping anything with small holds for a week.\n- The two-hour session on Tuesday was too long — fingers felt wrecked on Thursday — so sticking to 75 minutes from now on.\n\n**Sleep tracking**\n- Wearing the ring for three weeks now: average 6h 12m, with deep sleep well below where it should be. The numbers are depressing but at least consistent.\n- Cut caffeine off at 2pm starting Monday and the sleep score went from 68 to 74 by Friday. Not sure whether it's the caffeine or just the novelty — giving it another two weeks.\n- Bedtime routine (phone in the kitchen at 10:30, ten minutes of reading, lights down to the warm ones) managed four nights out of seven, which is better than nothing.",
+      "ms": 1207
+    },
+    {
+      "rep": 0,
+      "session": "with-tasks",
+      "added": [],
+      "namesRenewal": true,
+      "summary": "**Insurance**\n- Car insurance needs renewing before Nov 1; the quote went up 12%.\n- Decided to go with the Allianz offer for the house contents.\n- Open question: does the bike count as contents or does it need its own policy?\n\n**Car maintenance (Golf)**\n- Golf is at 214,000 km; oil change and filter done at the shop, 95 euros including labor.\n- Front tires are at 3mm and need replacing before winter — looking at Michelin CrossClimate, around 140 each mounted.",
+      "ms": 784
+    },
+    {
+      "rep": 1,
+      "session": "with-tasks",
+      "added": [],
+      "namesRenewal": true,
+      "summary": "**Insurance**\n- The car insurance needs renewing before Nov 1; the quote went up 12%.\n- Decided to go with the Allianz offer for the house contents.\n- Open question: does the bike count as contents or does it need its own policy?\n\n**Car (Golf)**\n- Odometer is at 214,000 km.\n- Oil change and filter were done at the shop, 95 euros including labor.\n- Front tires are at 3mm and need replacing before winter; looking at Michelin CrossClimate, around 140 each mounted.",
+      "ms": 1741
+    },
+    {
+      "rep": 2,
+      "session": "with-tasks",
+      "added": [],
+      "namesRenewal": true,
+      "summary": "**Insurance**\n- The car insurance needs renewing before Nov 1, and the quote went up 12%.\n- Decided to go with the Allianz offer for the house contents.\n- Open question: whether the bike counts as contents or needs its own policy.\n\n**Car (Golf)**\n- Odometer at 214,000 km; oil change and filter done at the shop for 95 euros including labor.\n- Front tires are at 3mm and need replacing before winter; looking at Michelin CrossClimate at around 140 each mounted.",
+      "ms": 1006
+    },
+    {
+      "rep": 3,
+      "session": "with-tasks",
+      "added": [],
+      "namesRenewal": true,
+      "summary": "**Insurance**\n- The car insurance needs renewing before Nov 1; the quote went up 12%.\n- Decided to go with the Allianz offer for the house contents.\n- Open question: does the bike count as contents or does it need its own policy?\n\n**Car (Golf)**\n- The Golf is at 214,000 km. Oil change and filter done at the shop, 95 euros including labor.\n- Front tires are at 3mm and need replacing before winter; looking at Michelin CrossClimate, around 140 each mounted.",
+      "ms": 1214
+    },
+    {
+      "rep": 4,
+      "session": "with-tasks",
+      "added": [],
+      "namesRenewal": true,
+      "summary": "**Insurance**\n- Car insurance needs renewing before Nov 1; the quote went up 12%.\n- Decided to go with the Allianz offer for the house contents.\n- Open question: whether the bike counts as contents or needs its own policy.\n\n**Car maintenance**\n- Golf is at 214,000 km; oil change and filter done at the shop, 95 euros including labor.\n- Front tires are at 3mm and need replacing before winter; looking at Michelin CrossClimate, around 140 each mounted.",
+      "ms": 799
+    }
+  ]
+}

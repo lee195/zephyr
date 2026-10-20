@@ -288,3 +288,30 @@ test('a reply that is neither svg nor ascii fails', () => {
   expect(parseDiagram({ format: 'svg' }).ok).toBe(false)
   expect(parseDiagram(null).ok).toBe(false)
 })
+
+test('a retry after a refused drawing names the fault to the model; a first attempt names none', async () => {
+  const systems: string[] = []
+  let calls = 0
+  const w = world()
+  const backend: ModelBackend = {
+    async complete(messages, opts) {
+      if (!('newEntries' in payloadOf(messages)) && !('notes' in payloadOf(messages))) systems.push(messages[0]!.content)
+      return w.backend.complete(messages, opts)
+    },
+  }
+  w.replyWith((title) => (++calls === 1 ? { format: 'svg', body: '<svg width=10>' } : { format: 'svg', body: svgOf(title) }))
+  const z = new Zephyr({ dataDir: await tempDir(), backend, kinds: organizerAndVisualizer, retryDelaysMs: [10] })
+  await z.start()
+  await z.ingest(['a', 'b', 'c', 'd'].map((t, i) => entry(`p${i}`, `party: ${t}`)))
+  await eventually(() => z.listRuns().some((r) => r.kind === 'visualizer' && r.status === 'done'))
+  const [failed, retried] = z.listRuns().filter((r) => r.kind === 'visualizer')
+  expect(failed!.error).toBe('invalid reply: svg is not well-formed at offset 0, at "<svg width=10>"')
+  expect(retried).toMatchObject({ attempt: 2, retryAfter: 'svg is not well-formed at offset 0, at "<svg width=10>"' })
+  expect(systems[0]).not.toContain('previous reply')
+  expect(systems[1]).toContain('Your previous reply for this page was refused: svg is not well-formed at offset 0, at "<svg width=10>". Reply again, without that fault.')
+  z.stop()
+})
+
+test('svg validation skips a doctype before the root', () => {
+  expect(checkSvg(`<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n${svg('')}`).ok).toBe(true)
+})

@@ -16,7 +16,7 @@ const XLINK_NS = 'http://www.w3.org/1999/xlink'
 const XML_DECL = /^<\?xml[^>]*\?>\s*/
 const ATTRS = String.raw`(?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*`
 const TOKEN = new RegExp(
-  String.raw`<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<(\/?)([A-Za-z_][\w:.-]*)(${ATTRS})\s*(\/?)>`,
+  String.raw`<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE[^>[]*(?:\[[\s\S]*?\])?\s*>|<(\/?)([A-Za-z_][\w:.-]*)(${ATTRS})\s*(\/?)>`,
   'y',
 )
 
@@ -39,7 +39,8 @@ export function checkSvg(raw: string): DiagramResult {
     if (lt === -1) break
     TOKEN.lastIndex = lt
     const m = TOKEN.exec(body)
-    if (!m) return { ok: false, error: `svg is not well-formed at offset ${lt}` }
+    // The text there tells the retry what to fix; it is the model's own markup, at most a tag's worth.
+    if (!m) return { ok: false, error: `svg is not well-formed at offset ${lt}, at ${JSON.stringify(body.slice(lt, lt + 60))}` }
     i = TOKEN.lastIndex
     const [, slash, name, attrs, selfClose] = m
     if (!name) continue
@@ -109,6 +110,12 @@ export function visualizerMessages(topic: View): ChatMessage[] {
   return jsonPrompt(VISUALIZER_SYSTEM, { title: topic.title, body })
 }
 
+/** The same request after a reply failed the check, naming the fault so the next reply avoids it. */
+export function visualizerRepairMessages(topic: View, error: string): ChatMessage[] {
+  const [system, user] = visualizerMessages(topic)
+  return [{ ...system!, content: `${system!.content}\nYour previous reply for this page was refused: ${error}. Reply again, without that fault.` }, user!]
+}
+
 /**
  * Diagrams whose topic is gone, or has fallen below MIN_SOURCES because the person took notes off it. Such a topic
  * is never redrawn, so its diagram would keep showing what the page no longer says.
@@ -130,7 +137,7 @@ export const visualizer: AgentKind = {
     if (!topic || !wantsDiagram(topic, world.views.filter((v) => v.kind === 'visualizer'))) return null
     const derivedFrom = { id: topic.id, updatedAt: topic.updatedAt }
     return {
-      messages: visualizerMessages(topic),
+      messages: run.retryAfter ? visualizerRepairMessages(topic, run.retryAfter) : visualizerMessages(topic),
       settle(json) {
         const result = parseDiagram(json)
         if (!result.ok) return result

@@ -1,0 +1,116 @@
+{
+  "item": "merge",
+  "label": "after",
+  "reps": 5,
+  "model": "deepseek-v4-flash-fast",
+  "summary": {
+    "retitled": "15/15"
+  },
+  "results": [
+    {
+      "rep": 0,
+      "probe": "kafka",
+      "title": "Kafka Consumer Lag and Producer Tuning",
+      "retitled": true,
+      "ms": 6522
+    },
+    {
+      "rep": 1,
+      "probe": "kafka",
+      "title": "Kafka Consumer and Producer Tuning",
+      "retitled": true,
+      "ms": 6524
+    },
+    {
+      "rep": 2,
+      "probe": "kafka",
+      "title": "Kafka Consumer and Producer Tuning",
+      "retitled": true,
+      "ms": 6524
+    },
+    {
+      "rep": 3,
+      "probe": "kafka",
+      "title": "Kafka Consumer Lag and Producer Tuning",
+      "retitled": true,
+      "ms": 6524
+    },
+    {
+      "rep": 4,
+      "probe": "kafka",
+      "title": "Kafka Consumer and Producer Tuning",
+      "retitled": true,
+      "ms": 1228
+    },
+    {
+      "rep": 0,
+      "probe": "lisbon",
+      "title": "Lisbon Flights and Cascais Wedding",
+      "retitled": true,
+      "ms": 1226
+    },
+    {
+      "rep": 1,
+      "probe": "lisbon",
+      "title": "Lisbon Trip and Cascais Wedding",
+      "retitled": true,
+      "ms": 1228
+    },
+    {
+      "rep": 2,
+      "probe": "lisbon",
+      "title": "Lisbon Trip and Cascais Wedding",
+      "retitled": true,
+      "ms": 1841
+    },
+    {
+      "rep": 3,
+      "probe": "lisbon",
+      "title": "Lisbon Trip and Cascais Wedding",
+      "retitled": true,
+      "ms": 1026
+    },
+    {
+      "rep": 4,
+      "probe": "lisbon",
+      "title": "Lisbon Trip and Cascais Wedding",
+      "retitled": true,
+      "ms": 1710
+    },
+    {
+      "rep": 0,
+      "probe": "garden",
+      "title": "Tomato Seedlings and Balcony Herbs",
+      "retitled": true,
+      "ms": 1110
+    },
+    {
+      "rep": 1,
+      "probe": "garden",
+      "title": "Tomato Seedlings and Balcony Herbs",
+      "retitled": true,
+      "ms": 1189
+    },
+    {
+      "rep": 2,
+      "probe": "garden",
+      "title": "Tomato Seedlings and Balcony Herbs",
+      "retitled": true,
+      "ms": 1331
+    },
+    {
+      "rep": 3,
+      "probe": "garden",
+      "title": "Tomato Seedlings and Balcony Herbs",
+      "retitled": true,
+      "ms": 2679
+    },
+    {
+      "rep": 4,
+      "probe": "garden",
+      "title": "Tomato Seedlings and Balcony Herbs",
+      "retitled": true,
+      "ms": 1260
+    }
+  ]
+}

@@ -63,6 +63,11 @@ export interface View {
    */
   bodyStale?: true
   /**
+   * Titles of the topics merged into this one since its last rewrite, oldest first, so the rewrite can name the whole
+   * page. Set by a merge, cleared with bodyStale by the rewrite.
+   */
+  mergedTitles?: string[]
+  /**
    * Slugs of other topics the person linked to this one as related but separate, sorted. A link is always on both
    * topics. Set only by adjustments; a slug merged away follows its alias, and a deleted topic leaves every list.
    */
@@ -114,6 +119,8 @@ export interface Run {
   /** 1-based; a retry of a failed run is the next attempt. */
   attempt: number
   retryOf?: string
+  /** On a retry of a run whose reply failed its check: why it failed, so the kind can ask the model to avoid that fault. */
+  retryAfter?: string
   startedAt?: string
   endedAt?: string
   error?: string
@@ -202,10 +209,10 @@ export interface World {
 }
 
 /**
- * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins,
+ * A view as a kind returns it; the server adds id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins, mergedTitles,
  * bodyStale and related, so a kind can only write its own views and never their history or what the person fixed.
  */
-export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'createdByPerson' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale' | 'related'>
+export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | 'createdByPerson' | 'pastTitles' | 'appendsSinceWrite' | 'pins' | 'bodyStale' | 'mergedTitles' | 'related'>
 
 /**
  * covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried.

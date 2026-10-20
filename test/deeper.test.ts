@@ -1,7 +1,9 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
-import { MAX_SUMMARY_CHARS } from '../src/deeper'
+import { linkPairScores, MAX_SUMMARY_CHARS, pairKey, proposedPairs, validateLinks, type LinkScores } from '../src/deeper'
+import type { View } from '../src/domain'
+import type { RelevanceBackend } from '../src/relevance'
 import { withMcp } from './desk'
 import { eventually } from './helpers'
 
@@ -160,4 +162,40 @@ test('the review brief names the deeper tools and says a suggested link waits fo
   } finally {
     s.close()
   }
+})
+
+test('a link the model calls weak, or between topics that score too unlike, is dropped with a reason; a backend with no threshold gates none', () => {
+  const topic = (slug: string): View => ({ id: `organizer/${slug}`, kind: 'organizer', slug, title: slug, format: 'md', body: '', sources: [], updatedAt: '' })
+  const shown = ['bread', 'pizza', 'taxes', 'boats'].map(topic)
+  const reply = {
+    links: [
+      { a: 'bread', b: 'pizza', strength: 'strong', reason: 'both are doughs' },
+      { a: 'bread', b: 'taxes', strength: 'weak', reason: 'a stretch' },
+      { a: 'pizza', b: 'boats', strength: 'strong', reason: 'boats deliver pizza' },
+      { a: 'taxes', b: 'boats', reason: 'boat taxes' },
+    ],
+  }
+  const scores = (backend: string): LinkScores => ({ backend, scores: new Map([[pairKey('bread', 'pizza'), 0.82], [pairKey('pizza', 'boats'), 0.69], [pairKey('taxes', 'boats'), 0.75]]) })
+  const gated = validateLinks(reply, shown, scores('embedding-embeddinggemma2'))
+  expect(gated.ok && gated.links.map((l) => `${l.a.slug}-${l.b.slug}`)).toEqual(['bread-pizza', 'taxes-boats'])
+  expect(gated.ok && gated.dropped).toEqual(['link 1: the model called it weak', 'link 2: topics too dissimilar (0.69 < 0.73)'])
+  const ungated = validateLinks(reply, shown, scores('tfidf'))
+  expect(ungated.ok && ungated.links.map((l) => l.b.slug)).toEqual(['pizza', 'boats', 'boats'])
+  expect(proposedPairs(reply, shown).map(([a, b]) => pairKey(a.slug, b.slug))).toEqual(['bread pizza', 'bread taxes', 'boats pizza', 'boats taxes'])
+})
+
+test('pair scores rank each first topic once against its partners, and give up on a partial ranking', async () => {
+  const topic = (slug: string, body: string): View => ({ id: `organizer/${slug}`, kind: 'organizer', slug, title: slug, format: 'md', body, sources: [], updatedAt: '' })
+  const [bread, pizza, taxes] = [topic('bread', 'sourdough starter flour'), topic('pizza', 'dough flour oven'), topic('taxes', 'receipts deductions')]
+  const queries: string[] = []
+  const backend = (partial: boolean): RelevanceBackend => ({
+    async rank(query, docs) {
+      queries.push(query)
+      return { backend: 'fake', scored: docs.slice(partial ? 1 : 0).map((d, i) => ({ id: d.id, score: 0.9 - i / 10 })), minRelatedScore: 0.8 }
+    },
+  })
+  const scores = await linkPairScores(backend(false), [[bread, pizza], [bread, taxes], [pizza, taxes]])
+  expect(queries).toHaveLength(2)
+  expect(Object.fromEntries(scores!.scores)).toEqual({ 'bread pizza': 0.9, 'bread taxes': 0.8, 'pizza taxes': 0.9 })
+  expect(await linkPairScores(backend(true), [[bread, pizza], [bread, taxes]])).toBeNull()
 })

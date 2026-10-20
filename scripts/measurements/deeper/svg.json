@@ -1,0 +1,464 @@
+{
+  "item": "svg",
+  "label": "before",
+  "reps": 5,
+  "model": "deepseek-v4-flash-fast",
+  "summary": {
+    "firstInvalid": "0/50",
+    "plainRetryOk": "0/0",
+    "repairedOk": "0/0",
+    "ascii": 0
+  },
+  "results": [
+    {
+      "rep": 0,
+      "topic": "coolify-deployments",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 11837
+    },
+    {
+      "rep": 1,
+      "topic": "coolify-deployments",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10486
+    },
+    {
+      "rep": 2,
+      "topic": "coolify-deployments",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 5384
+    },
+    {
+      "rep": 3,
+      "topic": "coolify-deployments",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 11018
+    },
+    {
+      "rep": 4,
+      "topic": "coolify-deployments",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10787
+    },
+    {
+      "rep": 0,
+      "topic": "marathon-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 8312
+    },
+    {
+      "rep": 1,
+      "topic": "marathon-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 7473
+    },
+    {
+      "rep": 2,
+      "topic": "marathon-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 7882
+    },
+    {
+      "rep": 3,
+      "topic": "marathon-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6029
+    },
+    {
+      "rep": 4,
+      "topic": "marathon-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10039
+    },
+    {
+      "rep": 0,
+      "topic": "apartment-move",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 8907
+    },
+    {
+      "rep": 1,
+      "topic": "apartment-move",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 9318
+    },
+    {
+      "rep": 2,
+      "topic": "apartment-move",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 7758
+    },
+    {
+      "rep": 3,
+      "topic": "apartment-move",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 7213
+    },
+    {
+      "rep": 4,
+      "topic": "apartment-move",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 8712
+    },
+    {
+      "rep": 0,
+      "topic": "sso-incident-postmortem",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 5633
+    },
+    {
+      "rep": 1,
+      "topic": "sso-incident-postmortem",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6553
+    },
+    {
+      "rep": 2,
+      "topic": "sso-incident-postmortem",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6451
+    },
+    {
+      "rep": 3,
+      "topic": "sso-incident-postmortem",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 7225
+    },
+    {
+      "rep": 4,
+      "topic": "sso-incident-postmortem",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 4710
+    },
+    {
+      "rep": 0,
+      "topic": "home-network",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 9771
+    },
+    {
+      "rep": 1,
+      "topic": "home-network",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 12289
+    },
+    {
+      "rep": 2,
+      "topic": "home-network",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 9012
+    },
+    {
+      "rep": 3,
+      "topic": "home-network",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 11879
+    },
+    {
+      "rep": 4,
+      "topic": "home-network",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 12846
+    },
+    {
+      "rep": 0,
+      "topic": "garden-tomatoes",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 4403
+    },
+    {
+      "rep": 1,
+      "topic": "garden-tomatoes",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6042
+    },
+    {
+      "rep": 2,
+      "topic": "garden-tomatoes",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 5904
+    },
+    {
+      "rep": 3,
+      "topic": "garden-tomatoes",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 4200
+    },
+    {
+      "rep": 4,
+      "topic": "garden-tomatoes",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 5513
+    },
+    {
+      "rep": 0,
+      "topic": "friends-wedding-trip",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 12388
+    },
+    {
+      "rep": 1,
+      "topic": "friends-wedding-trip",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 8908
+    },
+    {
+      "rep": 2,
+      "topic": "friends-wedding-trip",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10925
+    },
+    {
+      "rep": 3,
+      "topic": "friends-wedding-trip",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 15509
+    },
+    {
+      "rep": 4,
+      "topic": "friends-wedding-trip",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10035
+    },
+    {
+      "rep": 0,
+      "topic": "kubernetes-costs",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 13175
+    },
+    {
+      "rep": 1,
+      "topic": "kubernetes-costs",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10138
+    },
+    {
+      "rep": 2,
+      "topic": "kubernetes-costs",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10309
+    },
+    {
+      "rep": 3,
+      "topic": "kubernetes-costs",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 13281
+    },
+    {
+      "rep": 4,
+      "topic": "kubernetes-costs",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6964
+    },
+    {
+      "rep": 0,
+      "topic": "dog-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 12388
+    },
+    {
+      "rep": 1,
+      "topic": "dog-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 9776
+    },
+    {
+      "rep": 2,
+      "topic": "dog-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 10787
+    },
+    {
+      "rep": 3,
+      "topic": "dog-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 15975
+    },
+    {
+      "rep": 4,
+      "topic": "dog-training",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 11981
+    },
+    {
+      "rep": 0,
+      "topic": "conference-talk",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 7631
+    },
+    {
+      "rep": 1,
+      "topic": "conference-talk",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6758
+    },
+    {
+      "rep": 2,
+      "topic": "conference-talk",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 4914
+    },
+    {
+      "rep": 3,
+      "topic": "conference-talk",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 6452
+    },
+    {
+      "rep": 4,
+      "topic": "conference-talk",
+      "firstOk": true,
+      "format": "svg",
+      "plain": null,
+      "repaired": null,
+      "ms": 5837
+    }
+  ]
+}

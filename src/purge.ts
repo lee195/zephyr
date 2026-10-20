@@ -125,7 +125,7 @@ export type ViewPurge =
  */
 export function purgeView(v: View, noteId: EntryId, s: Scrubber, entries: readonly Entry[]): ViewPurge {
   const cites = citesNote(v, noteId)
-  const holds = [v.title, v.body, ...(v.pastTitles ?? []).map((p) => p.title), ...(v.tasks ?? []).flatMap((t) => [t.text, t.due ?? ''])].some(s.hits)
+  const holds = [v.title, v.body, ...(v.pastTitles ?? []).map((p) => p.title), ...(v.mergedTitles ?? []), ...(v.tasks ?? []).flatMap((t) => [t.text, t.due ?? ''])].some(s.hits)
   if (!cites && !holds) return { op: 'keep' }
   const without = (ids: EntryId[]) => ids.filter((id) => id !== noteId)
   if (v.kind === 'organizer') {
@@ -134,7 +134,7 @@ export function purgeView(v: View, noteId: EntryId, s: Scrubber, entries: readon
     const excluded = without(v.pins?.excluded ?? [])
     const { excluded: _, ...pins } = v.pins ?? {}
     const nextPins = { ...pins, ...(excluded.length > 0 && { excluded }) }
-    const { bodyStale, pastTitles, pins: __, ...rest } = v
+    const { bodyStale, pastTitles, mergedTitles, pins: __, ...rest } = v
     const body = s.scrub(v.body)
     const rewrite = rewriteChars({ body, sources }, entries) <= MAX_REWRITE_CHARS
     const view: View = {
@@ -144,7 +144,7 @@ export function purgeView(v: View, noteId: EntryId, s: Scrubber, entries: readon
       body,
       ...(pastTitles && { pastTitles: pastTitles.map((p) => ({ ...p, title: s.scrub(p.title) })) }),
       ...(Object.keys(nextPins).length > 0 && { pins: nextPins }),
-      ...((rewrite || bodyStale) && { bodyStale: true as const }),
+      ...((rewrite || bodyStale) && { bodyStale: true as const, ...(mergedTitles && { mergedTitles: mergedTitles.map(s.scrub) }) }),
     }
     return { op: 'write', view, rewrite, tasksDeleted: [] }
   }

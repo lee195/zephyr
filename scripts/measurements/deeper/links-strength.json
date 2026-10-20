@@ -1,0 +1,604 @@
+{
+  "item": "links",
+  "label": "strength",
+  "reps": 5,
+  "model": "deepseek-v4-flash-fast",
+  "summary": {
+    "proposed": {
+      "related": 12,
+      "plausible": 10,
+      "unrelated": 27
+    },
+    "kept": {
+      "related": 9,
+      "plausible": 2,
+      "unrelated": 14
+    },
+    "backend": "embedding-embeddinggemma2",
+    "relatedScores": [
+      {
+        "pair": "pizza-dough sourdough-baking",
+        "score": 0.8169225984514215,
+        "rank": 2
+      },
+      {
+        "pair": "coolify-deployments forgejo-ci-pipelines",
+        "score": 0.8130075865906083,
+        "rank": 3
+      },
+      {
+        "pair": "friends-wedding-trip portugal-vacation",
+        "score": 0.8544097252475048,
+        "rank": 1
+      },
+      {
+        "pair": "home-network smart-home-lights",
+        "score": 0.789811282354693,
+        "rank": 5
+      },
+      {
+        "pair": "household-budget tax-return-2026",
+        "score": 0.738167410619643,
+        "rank": 41
+      }
+    ],
+    "plausibleScores": [
+      {
+        "pair": "typescript-strictness vue-viewer-ui",
+        "score": 0.7098935173832298,
+        "rank": 169
+      },
+      {
+        "pair": "tauri-wkwebview-quirks vue-viewer-ui",
+        "score": 0.747860863786765,
+        "rank": 21
+      },
+      {
+        "pair": "password-manager-rollout sso-incident-postmortem",
+        "score": 0.7680529852887303,
+        "rank": 13
+      },
+      {
+        "pair": "iso27001-policy password-manager-rollout",
+        "score": 0.7892802359254659,
+        "rank": 6
+      },
+      {
+        "pair": "iso27001-policy sso-incident-postmortem",
+        "score": 0.7348103854704897,
+        "rank": 53
+      },
+      {
+        "pair": "coolify-deployments kubernetes-costs",
+        "score": 0.743925375740831,
+        "rank": 30
+      },
+      {
+        "pair": "llm-context-degradation vllm-endpoint-ops",
+        "score": 0.7833255541685896,
+        "rank": 7
+      },
+      {
+        "pair": "backend-hiring quarterly-okrs",
+        "score": 0.7250020355596964,
+        "rank": 82
+      },
+      {
+        "pair": "bun-open-source conference-talk",
+        "score": 0.7362170826121832,
+        "rank": 45
+      },
+      {
+        "pair": "household-budget meal-prep",
+        "score": 0.7414823009864263,
+        "rank": 34
+      },
+      {
+        "pair": "marathon-training sleep-tracking",
+        "score": 0.7417130316005236,
+        "rank": 33
+      },
+      {
+        "pair": "postgres-migrations quarterly-okrs",
+        "score": 0.7167280304763689,
+        "rank": 130
+      },
+      {
+        "pair": "home-espresso sourdough-baking",
+        "score": 0.7473757401399321,
+        "rank": 24
+      },
+      {
+        "pair": "coolify-deployments vllm-endpoint-ops",
+        "score": 0.7327728660543423,
+        "rank": 59
+      },
+      {
+        "pair": "bun-open-source forgejo-ci-pipelines",
+        "score": 0.7683487719305118,
+        "rank": 12
+      },
+      {
+        "pair": "apartment-move household-budget",
+        "score": 0.7448073933432473,
+        "rank": 28
+      }
+    ],
+    "pairs": 780,
+    "scoreQuantiles": [
+      0.680532746446341,
+      0.7274687030271552,
+      0.7386076522734129,
+      0.7819541709038693
+    ]
+  },
+  "results": [
+    {
+      "rep": 0,
+      "proposed": [
+        {
+          "key": "bun-open-source typescript-strictness",
+          "strength": "strong",
+          "class": "unrelated",
+          "score": 0.7302439895313285
+        },
+        {
+          "key": "kubernetes-costs vllm-endpoint-ops",
+          "strength": "strong",
+          "class": "unrelated",
+          "score": 0.7240939810252961
+        },
+        {
+          "key": "coolify-deployments forgejo-ci-pipelines",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8130075865906083
+        },
+        {
+          "key": "home-network smart-home-lights",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.789811282354693
+        },
+        {
+          "key": "pizza-dough sourdough-baking",
+          "strength": "weak",
+          "class": "related",
+          "score": 0.8169225984514215
+        },
+        {
+          "key": "bouldering marathon-training",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7303562469714105
+        },
+        {
+          "key": "iso27001-policy sso-incident-postmortem",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7348103854704897
+        },
+        {
+          "key": "apartment-move household-budget",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7448073933432473
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7193289861713718
+        },
+        {
+          "key": "guitar-practice japanese-learning",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7212395044334015
+        }
+      ],
+      "kept": [
+        {
+          "key": "bun-open-source typescript-strictness",
+          "class": "unrelated"
+        },
+        {
+          "key": "kubernetes-costs vllm-endpoint-ops",
+          "class": "unrelated"
+        },
+        {
+          "key": "coolify-deployments forgejo-ci-pipelines",
+          "class": "related"
+        },
+        {
+          "key": "home-network smart-home-lights",
+          "class": "related"
+        },
+        {
+          "key": "pizza-dough sourdough-baking",
+          "class": "related"
+        }
+      ],
+      "dropped": [
+        "link 5: over the cap of 5 links",
+        "link 6: over the cap of 5 links",
+        "link 7: over the cap of 5 links",
+        "link 8: over the cap of 5 links",
+        "link 9: over the cap of 5 links"
+      ],
+      "ms": 3909
+    },
+    {
+      "rep": 1,
+      "proposed": [
+        {
+          "key": "pizza-dough sourdough-baking",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8169225984514215
+        },
+        {
+          "key": "bouldering marathon-training",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7303562469714105
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7193289861713718
+        },
+        {
+          "key": "garden-tomatoes meal-prep",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.6824226275240298
+        },
+        {
+          "key": "kubernetes-costs vllm-endpoint-ops",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7240939810252961
+        },
+        {
+          "key": "typescript-strictness vue-viewer-ui",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7098935173832298
+        }
+      ],
+      "kept": [
+        {
+          "key": "pizza-dough sourdough-baking",
+          "class": "related"
+        },
+        {
+          "key": "bouldering marathon-training",
+          "class": "unrelated"
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "class": "unrelated"
+        },
+        {
+          "key": "garden-tomatoes meal-prep",
+          "class": "unrelated"
+        },
+        {
+          "key": "kubernetes-costs vllm-endpoint-ops",
+          "class": "unrelated"
+        }
+      ],
+      "dropped": [
+        "link 5: over the cap of 5 links"
+      ],
+      "ms": 2383
+    },
+    {
+      "rep": 2,
+      "proposed": [
+        {
+          "key": "bouldering marathon-training",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7303562469714105
+        },
+        {
+          "key": "pizza-dough sourdough-baking",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8169225984514215
+        },
+        {
+          "key": "meal-prep sourdough-baking",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.747639350293854
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7193289861713718
+        },
+        {
+          "key": "home-network smart-home-lights",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.789811282354693
+        },
+        {
+          "key": "coolify-deployments kubernetes-costs",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.743925375740831
+        },
+        {
+          "key": "coolify-deployments forgejo-ci-pipelines",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8130075865906083
+        },
+        {
+          "key": "postgres-migrations sso-incident-postmortem",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7599327337847791
+        },
+        {
+          "key": "llm-context-degradation vllm-endpoint-ops",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7833255541685896
+        },
+        {
+          "key": "backend-hiring quarterly-okrs",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7250020355596964
+        },
+        {
+          "key": "household-budget tax-return-2026",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.738167410619643
+        },
+        {
+          "key": "apartment-move household-budget",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7448073933432473
+        },
+        {
+          "key": "apartment-move home-network",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7199312567339888
+        },
+        {
+          "key": "guitar-practice japanese-learning",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7212395044334015
+        },
+        {
+          "key": "film-photography portugal-vacation",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.6891455341996848
+        },
+        {
+          "key": "conference-talk podcast-ideas",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7342520138310343
+        },
+        {
+          "key": "typescript-strictness vue-viewer-ui",
+          "strength": "weak",
+          "class": "plausible",
+          "score": 0.7098935173832298
+        },
+        {
+          "key": "dog-training garden-tomatoes",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.6882161597966443
+        }
+      ],
+      "kept": [
+        {
+          "key": "bouldering marathon-training",
+          "class": "unrelated"
+        },
+        {
+          "key": "pizza-dough sourdough-baking",
+          "class": "related"
+        },
+        {
+          "key": "meal-prep sourdough-baking",
+          "class": "unrelated"
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "class": "unrelated"
+        },
+        {
+          "key": "home-network smart-home-lights",
+          "class": "related"
+        }
+      ],
+      "dropped": [
+        "link 5: over the cap of 5 links",
+        "link 6: over the cap of 5 links",
+        "link 7: over the cap of 5 links",
+        "link 8: over the cap of 5 links",
+        "link 9: over the cap of 5 links",
+        "link 10: over the cap of 5 links",
+        "link 11: over the cap of 5 links",
+        "link 12: over the cap of 5 links",
+        "link 13: over the cap of 5 links",
+        "link 14: over the cap of 5 links",
+        "link 15: over the cap of 5 links",
+        "link 16: over the cap of 5 links",
+        "link 17: over the cap of 5 links"
+      ],
+      "ms": 5444
+    },
+    {
+      "rep": 3,
+      "proposed": [
+        {
+          "key": "bun-open-source typescript-strictness",
+          "strength": "strong",
+          "class": "unrelated",
+          "score": 0.7302439895313285
+        },
+        {
+          "key": "pizza-dough sourdough-baking",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8169225984514215
+        },
+        {
+          "key": "tauri-wkwebview-quirks vue-viewer-ui",
+          "strength": "strong",
+          "class": "plausible",
+          "score": 0.747860863786765
+        },
+        {
+          "key": "kubernetes-costs vllm-endpoint-ops",
+          "strength": "strong",
+          "class": "unrelated",
+          "score": 0.7240939810252961
+        },
+        {
+          "key": "coolify-deployments forgejo-ci-pipelines",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8130075865906083
+        },
+        {
+          "key": "bouldering marathon-training",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7303562469714105
+        },
+        {
+          "key": "coolify-deployments home-network",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7084427050141694
+        },
+        {
+          "key": "household-budget tax-return-2026",
+          "strength": "weak",
+          "class": "related",
+          "score": 0.738167410619643
+        },
+        {
+          "key": "garden-tomatoes meal-prep",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.6824226275240298
+        },
+        {
+          "key": "conference-talk podcast-ideas",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7342520138310343
+        }
+      ],
+      "kept": [
+        {
+          "key": "bun-open-source typescript-strictness",
+          "class": "unrelated"
+        },
+        {
+          "key": "pizza-dough sourdough-baking",
+          "class": "related"
+        },
+        {
+          "key": "tauri-wkwebview-quirks vue-viewer-ui",
+          "class": "plausible"
+        },
+        {
+          "key": "kubernetes-costs vllm-endpoint-ops",
+          "class": "unrelated"
+        },
+        {
+          "key": "coolify-deployments forgejo-ci-pipelines",
+          "class": "related"
+        }
+      ],
+      "dropped": [
+        "link 5: over the cap of 5 links",
+        "link 6: over the cap of 5 links",
+        "link 7: over the cap of 5 links",
+        "link 8: over the cap of 5 links",
+        "link 9: over the cap of 5 links"
+      ],
+      "ms": 3953
+    },
+    {
+      "rep": 4,
+      "proposed": [
+        {
+          "key": "pizza-dough sourdough-baking",
+          "strength": "strong",
+          "class": "related",
+          "score": 0.8169225984514215
+        },
+        {
+          "key": "bouldering marathon-training",
+          "strength": "strong",
+          "class": "unrelated",
+          "score": 0.7303562469714105
+        },
+        {
+          "key": "kubernetes-costs postgres-migrations",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7080998353232811
+        },
+        {
+          "key": "llm-context-degradation vllm-endpoint-ops",
+          "strength": "strong",
+          "class": "plausible",
+          "score": 0.7833255541685896
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "strength": "weak",
+          "class": "unrelated",
+          "score": 0.7193289861713718
+        }
+      ],
+      "kept": [
+        {
+          "key": "pizza-dough sourdough-baking",
+          "class": "related"
+        },
+        {
+          "key": "bouldering marathon-training",
+          "class": "unrelated"
+        },
+        {
+          "key": "kubernetes-costs postgres-migrations",
+          "class": "unrelated"
+        },
+        {
+          "key": "llm-context-degradation vllm-endpoint-ops",
+          "class": "plausible"
+        },
+        {
+          "key": "home-espresso meal-prep",
+          "class": "unrelated"
+        }
+      ],
+      "dropped": [],
+      "ms": 2242
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "item": "ambiguity",
+  "label": "",
+  "reps": 5,
+  "model": "deepseek-v4-flash-fast",
+  "summary": {
+    "backend": "embedding-embeddinggemma2",
+    "minRelatedScore": 0.8
+  },
+  "results": [
+    {
+      "probe": "tomato",
+      "kind": "ambiguous",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "balcony",
+      "topScore": 0.8264567006148161,
+      "second": "garden-tomatoes",
+      "secondScore": 0.7980004519507559,
+      "gap": 0.02845624866406027,
+      "expected": [
+        "garden",
+        "balcony"
+      ]
+    },
+    {
+      "probe": "lisbon",
+      "kind": "ambiguous",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "portugal-vacation",
+      "topScore": 0.7936752974411455,
+      "second": "friends-wedding-trip",
+      "secondScore": 0.793652354097663,
+      "gap": 0.000022943343482517697,
+      "expected": [
+        "friends-wedding-trip",
+        "portugal-vacation"
+      ]
+    },
+    {
+      "probe": "dough",
+      "kind": "ambiguous",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "pizza-dough",
+      "topScore": 0.8182240016183723,
+      "second": "sourdough-baking",
+      "secondScore": 0.7903096608964358,
+      "gap": 0.027914340721936437,
+      "expected": [
+        "sourdough-baking",
+        "pizza-dough"
+      ]
+    },
+    {
+      "probe": "sourdough",
+      "kind": "clear",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "sourdough-baking",
+      "topScore": 0.8146558300428088,
+      "second": "pizza-dough",
+      "secondScore": 0.7771085013427895,
+      "gap": 0.03754732870001931,
+      "expected": [
+        "sourdough-baking"
+      ]
+    },
+    {
+      "probe": "forgejo",
+      "kind": "clear",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "bun-open-source",
+      "topScore": 0.791807541126716,
+      "second": "forgejo-ci-pipelines",
+      "secondScore": 0.7746582152207405,
+      "gap": 0.01714932590597551,
+      "expected": [
+        "forgejo-ci-pipelines"
+      ]
+    },
+    {
+      "probe": "marathon",
+      "kind": "clear",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "marathon-training",
+      "topScore": 0.7879487998928452,
+      "second": "bouldering",
+      "secondScore": 0.7340882096280293,
+      "gap": 0.05386059026481582,
+      "expected": [
+        "marathon-training"
+      ]
+    },
+    {
+      "probe": "network",
+      "kind": "clear",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "home-network",
+      "topScore": 0.7596397028592007,
+      "second": "smart-home-lights",
+      "secondScore": 0.6998708147852195,
+      "gap": 0.059768888073981175,
+      "expected": [
+        "home-network"
+      ]
+    },
+    {
+      "probe": "lights",
+      "kind": "clear",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "smart-home-lights",
+      "topScore": 0.8033295318527496,
+      "second": "home-network",
+      "secondScore": 0.7256870692019178,
+      "gap": 0.07764246265083175,
+      "expected": [
+        "smart-home-lights"
+      ]
+    },
+    {
+      "probe": "wedding",
+      "kind": "clear",
+      "backend": "embedding-embeddinggemma2",
+      "min": 0.8,
+      "top": "friends-wedding-trip",
+      "topScore": 0.7357262833780404,
+      "second": "apartment-move",
+      "secondScore": 0.7243763715792919,
+      "gap": 0.011349911798748447,
+      "expected": [
+        "friends-wedding-trip"
+      ]
+    }
+  ]
+}

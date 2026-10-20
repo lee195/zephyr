@@ -1,0 +1,313 @@
+{
+  "item": "retitle",
+  "label": "before",
+  "reps": 5,
+  "model": "deepseek-v4-flash-fast",
+  "summary": {
+    "broadeningRetitled": "10/15",
+    "fittingRetitled": "0/15",
+    "filedElsewhere": 1
+  },
+  "results": [
+    {
+      "rep": 0,
+      "probe": "seedlings",
+      "expect": true,
+      "op": "write",
+      "title": "Vegetable Seedlings",
+      "retitled": true,
+      "ok": true,
+      "ms": 916
+    },
+    {
+      "rep": 1,
+      "probe": "seedlings",
+      "expect": true,
+      "op": "append",
+      "title": "Tomato Seedlings and Other Vegetable Starts",
+      "retitled": true,
+      "ok": true,
+      "ms": 690
+    },
+    {
+      "rep": 2,
+      "probe": "seedlings",
+      "expect": true,
+      "op": "append",
+      "title": "Propagator and Vegetable Seedlings",
+      "retitled": true,
+      "ok": true,
+      "ms": 2371
+    },
+    {
+      "rep": 3,
+      "probe": "seedlings",
+      "expect": true,
+      "op": "append",
+      "title": "Tomato Seedlings and Other Vegetables",
+      "retitled": true,
+      "ok": true,
+      "ms": 659
+    },
+    {
+      "rep": 4,
+      "probe": "seedlings",
+      "expect": true,
+      "op": "append",
+      "title": "Seed Starting and Vegetable Nursery",
+      "retitled": true,
+      "ok": true,
+      "ms": 421
+    },
+    {
+      "rep": 0,
+      "probe": "kafka",
+      "expect": true,
+      "op": "append",
+      "title": "Kafka Cluster Tuning",
+      "retitled": true,
+      "ok": true,
+      "ms": 4444
+    },
+    {
+      "rep": 1,
+      "probe": "kafka",
+      "expect": true,
+      "op": "append",
+      "title": "Kafka Cluster Tuning",
+      "retitled": true,
+      "ok": true,
+      "ms": 532
+    },
+    {
+      "rep": 2,
+      "probe": "kafka",
+      "expect": true,
+      "op": "append",
+      "title": "Kafka Cluster Tuning",
+      "retitled": true,
+      "ok": true,
+      "ms": 5489
+    },
+    {
+      "rep": 3,
+      "probe": "kafka",
+      "expect": true,
+      "op": "append",
+      "title": "Kafka Cluster Tuning",
+      "retitled": true,
+      "ok": true,
+      "ms": 512
+    },
+    {
+      "rep": 4,
+      "probe": "kafka",
+      "expect": true,
+      "op": null,
+      "title": null,
+      "retitled": false,
+      "ok": false,
+      "ms": 5120
+    },
+    {
+      "rep": 0,
+      "probe": "lisbon",
+      "expect": true,
+      "op": "append",
+      "title": "Lisbon Trip",
+      "retitled": true,
+      "ok": true,
+      "ms": 788
+    },
+    {
+      "rep": 1,
+      "probe": "lisbon",
+      "expect": true,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": false,
+      "ms": 7240
+    },
+    {
+      "rep": 2,
+      "probe": "lisbon",
+      "expect": true,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": false,
+      "ms": 819
+    },
+    {
+      "rep": 3,
+      "probe": "lisbon",
+      "expect": true,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": false,
+      "ms": 7577
+    },
+    {
+      "rep": 4,
+      "probe": "lisbon",
+      "expect": true,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": false,
+      "ms": 511
+    },
+    {
+      "rep": 0,
+      "probe": "sourdough",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 844
+    },
+    {
+      "rep": 1,
+      "probe": "sourdough",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 8397
+    },
+    {
+      "rep": 2,
+      "probe": "sourdough",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 385
+    },
+    {
+      "rep": 3,
+      "probe": "sourdough",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 9830
+    },
+    {
+      "rep": 4,
+      "probe": "sourdough",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 8772
+    },
+    {
+      "rep": 0,
+      "probe": "marathon",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 278
+    },
+    {
+      "rep": 1,
+      "probe": "marathon",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 439
+    },
+    {
+      "rep": 2,
+      "probe": "marathon",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 9633
+    },
+    {
+      "rep": 3,
+      "probe": "marathon",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 420
+    },
+    {
+      "rep": 4,
+      "probe": "marathon",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 290
+    },
+    {
+      "rep": 0,
+      "probe": "espresso",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 9530
+    },
+    {
+      "rep": 1,
+      "probe": "espresso",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 7578
+    },
+    {
+      "rep": 2,
+      "probe": "espresso",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 504
+    },
+    {
+      "rep": 3,
+      "probe": "espresso",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 7066
+    },
+    {
+      "rep": 4,
+      "probe": "espresso",
+      "expect": false,
+      "op": "append",
+      "title": null,
+      "retitled": false,
+      "ok": true,
+      "ms": 6649
+    }
+  ]
+}

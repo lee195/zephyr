@@ -31,7 +31,7 @@ data/
   sessions.json                 registered transcripts and where each read resumes
   views/<kind>/<slug>.md        view body (.svg / .txt for other formats)
   views/<kind>/<slug>.json      view metadata: title, sources, updatedAt, createdAt, pastTitles, appendsSinceWrite,
-                                pins, bodyStale, related
+                                pins, bodyStale, mergedTitles, related
   views/<kind>/.history/<slug>/<updatedAt>.md
                                 a page as it was before a rewrite replaced it or an adjustment deleted it
   embeddings/<backend>.jsonl    cached document vectors; the sweep drops those no ranking can ask about
@@ -51,7 +51,7 @@ The viewer shows a topic's `.history` versions under its card and the saved summ
 On start and every `ZEPHYR_SWEEP_MINUTES`, the server sweeps:
 
 - A topic an adjustment marked `bodyStale` is queued for a rewrite whatever its append count; see Adjustments.
-- A topic whose last 5 writes each only extended its body (`appendsSinceWrite`, counted by the server from the bodies) reads like a log, so it is queued for a rewrite on the organizer's own queue. The model gets the page and every note it cites, in full, and returns the whole page. The rewrite must keep the slug and cite every note the page cites, or the run fails and retries. The old page goes to `.history`, and the diagram is redrawn. A topic whose body and notes exceed 32,000 characters is not rewritten. Notes waiting in the queue are filed before a rewrite. A rewrite whose attempts ran out is not tried again until the page changes, across restarts too: its last run in `runs.jsonl` carries the page version as `exhausted`.
+- A topic whose last 5 writes each only extended its body (`appendsSinceWrite`, counted by the server from the bodies) reads like a log, so it is queued for a rewrite on the organizer's own queue. The model gets the page and every note it cites, in full, and returns the whole page. The rewrite must keep the slug and cite every note the page cites, or the run fails and retries. The rewrite replaces a title that names only part of what the notes are now about, and keeps one that names the whole subject. The old page goes to `.history`, and the diagram is redrawn. A topic whose body and notes exceed 32,000 characters is not rewritten. Notes waiting in the queue are filed before a rewrite. A rewrite whose attempts ran out is not tried again until the page changes, across restarts too: its last run in `runs.jsonl` carries the page version as `exhausted`.
 - The embeddings cache is rewritten to hold only docs a ranking can still be asked about. It logs `[zephyr] sweep: queued N rewrites; embeddings cache … → …`.
 
 ## Harnesses
@@ -71,7 +71,7 @@ Each kind writes only `views/<kind>/`, through its own serial queue.
 | --- | --- | --- |
 | `organizer` | each new entry; a topic the sweep finds has become an append log | topic pages `organizer/<slug>.md` |
 | `tasks` | each new entry | `tasks/tasks.json` holds the tasks as data (`{ id, text, due?, done, sources }`), `tasks/tasks.md` renders them |
-| `visualizer` | an organizer topic with 4 or more sources, not stale, whose diagram is missing or older than the topic | `visualizer/<slug>.svg` or `.txt`, with `derivedFrom` naming the topic version it drew; deleted when its topic is gone or under 4 sources |
+| `visualizer` | an organizer topic with 4 or more sources, not stale, whose diagram is missing or older than the topic | `visualizer/<slug>.svg` or `.txt`, with `derivedFrom` naming the topic version it drew; deleted when its topic is gone or under 4 sources. A retry after a reply that failed the SVG or ASCII check tells the model why it was refused |
 | `map` | an organizer topic written under a slug or title the map does not list; a sweep that finds the map's topics differ from the current ones (a merge or delete) | `map/contents.json` holds the topics grouped into at most 9 areas (`areas: [{ slug, title, topics: [{ slug, title }], createdAt? }]`), `map/contents.md` renders them with links to the topic pages. An area is a space: its slug stays while the model names it in its reply, whatever the title becomes. The model is shown the current areas and keeps them where they fit; topics it leaves out go under Other. The person's space pins (`pins.spaces`) win over the reply: a pinned title stays, and a pinned topic goes back to its space, with each overruled change in `run.dropped`. The viewer turns each area into a space |
 
 A kind derived from views starts once every write of the run that triggered it has landed, so the map sees all the topics one run created and costs one call for them.
@@ -92,7 +92,7 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 | Op | Fields | Effect |
 | --- | --- | --- |
 | `renameTopic` | `slug, title` | Sets the title and pins it. |
-| `mergeTopics` | `from, into` | Appends `from`'s body to `into` under `## <from title>`, moves its notes, makes `from` an alias of `into`, and deletes `from` and its diagram. |
+| `mergeTopics` | `from, into` | Appends `from`'s body to `into` under `## <from title>`, moves its notes, makes `from` an alias of `into`, and deletes `from` and its diagram. The rewrite it queues is given `from`'s title as `mergedFrom`, so the new title can name both pages. |
 | `splitTopic` | `slug, noteIds, into: { slug, title }` | Moves some, not all, of the topic's notes to a new topic with a pinned title. |
 | `moveNote` | `noteId, from, to` | Takes the note off `from` and onto `to`, which does not cite it yet. |
 | `detachNote` | `noteId, from, to` | Takes the note off `from`; `to` already cites it and keeps it. |
@@ -122,7 +122,7 @@ Three MCP tools for the review, each run only when the person asks:
 
 - `summarize_review { save? }` has the model summarize the notes received since the last review and returns `{ since, until, notes, leftOut, summary, usage }`. It is shown at most 32,000 characters of notes, the budget a topic rewrite gets, so one call stays quick and is read in full. Past the cap it is shown the newest notes that fit, and `leftOut` counts the older ones. Nothing is stored unless `save` is true; then it is written to `summaries/<until>.md` and `path` says where. Summaries run one at a time, so two cannot interleave their writes, and a purge deletes saved ones in the same line, after any in flight.
 - `rewrite_touched_topics` marks every topic that cites a note received since the last review `bodyStale`, in one step on the organizer's queue, so the rewrite runs rewrite each from its notes. It returns `{ queued, overCap }`; a topic over the 32,000-character cap is not marked.
-- `suggest_links` shows the model the topic index (`slug | title | N sources`, the 200 most recently updated topics) and returns up to 5 pairs that are related but should stay separate, each with a one-line reason, plus the ones it dropped and why (an unknown topic, a pair already linked or suggested twice, no usable reason). It applies nothing. The review brief tells the agent to apply a pair with `link_topics` only after the person says yes.
+- `suggest_links` shows the model the topic index (`slug | title | N sources`, the 200 most recently updated topics) and returns up to 5 pairs that are related but should stay separate, each with a one-line reason, plus the ones it dropped and why (an unknown topic, a pair already linked or suggested twice, no usable reason, a pair the model itself calls weak, or a pair whose pages score below 0.73 against each other with `embeddinggemma2`). The score gate applies only to a backend with a measured threshold, so TF-IDF gates nothing. It applies nothing. The review brief tells the agent to apply a pair with `link_topics` only after the person says yes.
 
 ## Purge
 

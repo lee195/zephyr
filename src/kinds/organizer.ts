@@ -143,7 +143,8 @@ export function organizerMessages(newEntries: Entry[], views: ViewContext, recen
 /** The topic pages among all views. */
 export const topicsIn = (views: readonly View[]): View[] => views.filter((v) => v.kind === 'organizer')
 
-const topicDocs = (views: readonly View[]): RelevanceDoc[] => topicsIn(views).map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` }))
+/** Each topic as the relevance backend ranks it: its title and body. */
+export const topicDocs = (views: readonly View[]): RelevanceDoc[] => topicsIn(views).map((v) => ({ id: v.id, text: `${v.title}\n${v.body}` }))
 
 /** Waits for every topic to be ranked: a topic left out could not open, and the model would then duplicate it. */
 async function viewContext(world: World, own: View[], newEntries: Entry[]): Promise<ViewContext> {
@@ -255,17 +256,27 @@ const REWRITE_REASON = {
   stale: "The person changed the page's notes, or asked for the page to be rewritten from them: some may have been moved to another page, edited, removed, or merged in from another page. The body may still say what the notes no longer support.",
 }
 
-const rewriteSystem = (reason: string) => `You rewrite one topic page of a person's notes. ${reason}
+const MERGED_RULE = `
+- mergedFrom lists the titles of pages merged into this one. The title must name what they are about too, unless the current title already does.`
+
+const rewriteSystem = (reason: string, merged: boolean) => `You rewrite one topic page of a person's notes. ${reason}
 Reply with JSON only: {"slug":string,"title":string,"sources":string[],"body":string}
 The input has the page's slug, title and body, and notes: every note the page cites, oldest first. The notes are the truth; where the body disagrees with them or says what none of them says, follow the notes.
 - body is the whole page rewritten as one coherent page: group related points, merge repeats, and state a later correction in place of what it corrects. Keep every fact the notes contain; add none they do not contain.
 - sources lists the id of every note in notes; none may be left out.
 - slug stays exactly as given.
-- title describes the whole page; keep the current one when it still does.
+- title names the whole page in a few words. When the current title names only part of what the notes are about now, such as one item of several or one step of a larger plan, replace it with a short name for all of it. A title is a name, not a list of the page's parts: one that already names the whole subject stays as it is, such as Garden for notes on beds, pests and watering.${merged ? MERGED_RULE : ''}
 - body is markdown; do not repeat the title as a heading.`
 
 export function rewriteMessages({ topic, notes }: RewriteInput): ChatMessage[] {
-  return jsonPrompt(rewriteSystem(topic.bodyStale ? REWRITE_REASON.stale : REWRITE_REASON.log), { slug: topic.slug, title: topic.title, body: topic.body, notes: notes.map(promptEntry) })
+  const merged = !!topic.mergedTitles?.length
+  return jsonPrompt(rewriteSystem(topic.bodyStale ? REWRITE_REASON.stale : REWRITE_REASON.log, merged), {
+    slug: topic.slug,
+    title: topic.title,
+    ...(merged && { mergedFrom: topic.mergedTitles }),
+    body: topic.body,
+    notes: notes.map(promptEntry),
+  })
 }
 
 /** Re-checks at run time: a topic written or rewritten since the work was queued no longer qualifies, and makes no call. */

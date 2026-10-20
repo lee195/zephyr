@@ -1,5 +1,7 @@
 import type { ChatMessage, Entry, View } from './domain'
 import { jsonPrompt, promptEntry, sanitizeSlug } from './kinds/common'
+import { topicDocs } from './kinds/organizer'
+import { rankAll, type RelevanceBackend } from './relevance'
 
 /**
  * Note characters one summary is shown: about 8k tokens, the budget a topic rewrite gets. One call then stays a
@@ -25,7 +27,8 @@ export function summaryInput(notes: readonly Entry[]): SummaryInput {
 const SUMMARY_SYSTEM = `You summarize one session of a person's notes for them, after they took them.
 Reply with JSON only: {"summary":string}
 The input has sessionNotes, oldest first, each with the titles of the topics it was filed under.
-- summary is markdown: a few short paragraphs or bullets on what the session was about, grouped by subject, with the decisions, open questions and things to do that the notes mention.
+- summary is markdown: a few short paragraphs or bullets on what the session was about, grouped by subject.
+- Call something a decision, an open question or a thing to do only where a note says it is one. Add no heading or label of your own, such as "To do:" or "Open questions", and no section for a kind the notes do not have.
 - Use only what the notes say; add nothing. Later notes correct earlier ones.`
 
 export function summaryMessages(input: SummaryInput, topics: readonly View[]): ChatMessage[] {
@@ -59,15 +62,62 @@ export function linkIndex(topics: readonly View[]): LinkIndex {
 }
 
 const LINKS_SYSTEM = `You find related topics among a person's topic pages of notes.
-Reply with JSON only: {"links":[{"a":slug,"b":slug,"reason":string}, ...]}
+Reply with JSON only: {"links":[{"a":slug,"b":slug,"strength":"strong"|"weak","reason":string}, ...]}
 The input has topics, one line each: "slug | title | N sources".
 - A link joins two topics that are about related subjects, where a reader of one would want to know of the other, but that are different enough to stay separate pages.
 - Do not link two topics that are about the same subject; those should be merged, not linked.
 - reason is one short sentence saying how the two relate.
+- strength is strong when a reader of one would clearly want the other, weak when the link is a stretch.
 - At most ${MAX_LINKS} links, the strongest first. An empty list is fine.`
 
 export function linkMessages(index: LinkIndex): ChatMessage[] {
   return jsonPrompt(LINKS_SYSTEM, { topics: index.topics.map((v) => `${v.slug} | ${v.title} | ${v.sources.length} sources`) })
+}
+
+/** How alike two topics' pages are, by the relevance backend, keyed by their slugs in sorted order. */
+export interface LinkScores {
+  backend: string
+  scores: Map<string, number>
+}
+
+export const pairKey = (a: string, b: string) => [a, b].sort().join(' ')
+
+/**
+ * Scores each pair by the relevance backend, with the first topic's page as the query; one ranking per distinct first
+ * topic. Null when the backend could not score them all, or switched backends midway, so no pair is judged on a
+ * partial or mixed ranking.
+ */
+export async function linkPairScores(relevance: RelevanceBackend, pairs: readonly (readonly [View, View])[]): Promise<LinkScores | null> {
+  const byFirst = new Map<string, { a: View; bs: View[] }>()
+  for (const [a, b] of pairs) {
+    const group = byFirst.get(a.id) ?? byFirst.set(a.id, { a, bs: [] }).get(a.id)!
+    if (!group.bs.some((v) => v.id === b.id)) group.bs.push(b)
+  }
+  const scores = new Map<string, number>()
+  let backend = ''
+  for (const { a, bs } of byFirst.values()) {
+    const docs = topicDocs(bs)
+    const ranking = await rankAll(relevance, topicDocs([a])[0]!.text, docs)
+    if (ranking.partial || ranking.scored.length < docs.length || (backend && ranking.backend !== backend)) return null
+    backend = ranking.backend
+    const slugOf = new Map(bs.map((b) => [b.id, b.slug]))
+    for (const { id, score } of ranking.scored) {
+      const key = pairKey(a.slug, slugOf.get(id)!)
+      scores.set(key, Math.max(score, scores.get(key) ?? -Infinity))
+    }
+  }
+  return { backend, scores }
+}
+
+/** The pairs a links reply names among the shown topics, before any check: the ones worth scoring. */
+export function proposedPairs(json: unknown, shown: readonly View[]): [View, View][] {
+  const bySlug = new Map(shown.map((v) => [v.slug, v]))
+  const raw = (json as any)?.links
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((l: any) => {
+    const [a, b] = [l?.a, l?.b].map((x) => (typeof x === 'string' ? bySlug.get(sanitizeSlug(x)) : undefined))
+    return a && b && a.id !== b.id ? [[a, b] as [View, View]] : []
+  })
 }
 
 export interface Link {
@@ -78,10 +128,17 @@ export interface Link {
 
 /**
  * Parses `{ links: [...] }`. A malformed reply fails as a whole. A link to a topic not shown, a topic linked to
- * itself, a pair already linked or already suggested, a link with no usable reason and every link past the cap
- * are dropped with a reason.
+ * itself, a pair already linked or already suggested, one the model called weak, one whose topics score below
+ * MIN_LINK_SCORE in `scores`, a link with no usable reason and every link past the cap are dropped with a reason.
  */
-export function validateLinks(json: unknown, shown: readonly View[]): { ok: true; links: Link[]; dropped: string[] } | { ok: false; error: string } {
+/**
+ * Per relevance backend, the pair score below which two topics are too unlike to link. Measured on the corpus by
+ * scripts/measure-deeper.ts --item links; a backend without one gates nothing.
+ */
+export const MIN_LINK_SCORE = new Map([['embedding-embeddinggemma2', 0.73]])
+
+export function validateLinks(json: unknown, shown: readonly View[], scores?: LinkScores | null): { ok: true; links: Link[]; dropped: string[] } | { ok: false; error: string } {
+  const min = scores ? MIN_LINK_SCORE.get(scores.backend) : undefined
   const raw = (json as any)?.links
   if (!Array.isArray(raw)) return { ok: false, error: 'reply has no links array' }
   const bySlug = new Map(shown.map((v) => [v.slug, v]))
@@ -98,6 +155,9 @@ export function validateLinks(json: unknown, shown: readonly View[]): { ok: true
       if (a.slug === b.slug) return 'a topic linked to itself'
       if (a.related?.includes(b.slug)) return 'already linked'
       if (seen.has(pair(a, b))) return 'suggested twice'
+      if (l?.strength === 'weak') return 'the model called it weak'
+      const score = scores?.scores.get(pairKey(a.slug, b.slug))
+      if (min !== undefined && score !== undefined && score < min) return `topics too dissimilar (${score.toFixed(2)} < ${min})`
       if (!reason || reason.length > MAX_REASON_CHARS) return `reason is not one line of at most ${MAX_REASON_CHARS} characters`
       if (links.length >= MAX_LINKS) return `over the cap of ${MAX_LINKS} links`
       return null

@@ -360,3 +360,18 @@ test('editing a task due to null clears it', async () => {
   await adjust({ op: 'editTask', taskId: 't1', due: null })
   expect(view('tasks/tasks')!.tasks![0]).toEqual({ id: 't1', text: 'buy cake', done: false, sources: ['e1'] })
 })
+
+test('a merge tells the rewrite it queues the merged-away title, and the rewrite clears it', async () => {
+  const s = await started({ kinds: { organizer: ALL.organizer } })
+  await s.note('trip: tent', 'camping: stove')
+  const camping = s.view('organizer/camping')!.title
+  s.d.hold('rewrite')
+  await s.z.adjust({ op: 'mergeTopics', from: 'camping', into: 'trip' })
+  expect(s.view('organizer/trip')).toMatchObject({ bodyStale: true, mergedTitles: [camping] })
+  s.d.release()
+  await s.z.idle()
+  expect(s.d.sent.rewrite.at(-1)).toMatchObject({ slug: 'trip', mergedFrom: [camping] })
+  expect(s.view('organizer/trip')!.mergedTitles).toBeUndefined()
+  expect(s.view('organizer/trip')!.bodyStale).toBeUndefined()
+  s.z.stop()
+})

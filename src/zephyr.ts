@@ -3,7 +3,7 @@ import { effectiveEntries, OPS, planAdjustment, planRewrites, relatedFixes, with
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { citesNote, purgeScope, purgeView, scrubbersFor, scrubDeep, type PurgeScope, type Scrubber, type Scrubbers } from './purge'
 import { hintsFor, topicsByNote, type HintReply } from './hints'
-import { linkIndex, linkMessages, parseSummary, summaryInput, summaryMessages, validateLinks, type Link } from './deeper'
+import { linkIndex, linkMessages, linkPairScores, parseSummary, proposedPairs, summaryInput, summaryMessages, validateLinks, type Link } from './deeper'
 import {
   isNote,
   noteEntry,
@@ -370,7 +370,8 @@ export class Zephyr {
     if (index.topics.length < 2) return { ok: false, error: 'fewer than two topics' }
     const reply = await this.backend.complete(linkMessages(index), { json: true }).catch((err: Error) => err)
     if (reply instanceof Error) return { ok: false, error: `the model call failed: ${reply.message}` }
-    const parsed = validateLinks(reply.json, index.topics)
+    const scores = await linkPairScores(this.relevance, proposedPairs(reply.json, index.topics)).catch(() => null)
+    const parsed = validateLinks(reply.json, index.topics, scores)
     if (!parsed.ok) return parsed
     return { ok: true, links: parsed.links, dropped: parsed.dropped, leftOut: index.leftOut, ...(reply.usage && { usage: reply.usage }) }
   }
@@ -527,13 +528,16 @@ export class Zephyr {
     const q = this.queue(kind)
     const key = `${attempt}:${'viewId' in work ? work.viewId : ''}`
     const ids = 'entryIds' in work ? work.entryIds : []
+    const prior = retryOf ? this.runs.find((r) => r.id === retryOf) : undefined
+    const refused = prior?.error?.startsWith(INVALID_REPLY) ? prior.error.slice(INVALID_REPLY.length) : undefined
     let run = q.waiting.get(key)
     if (run) {
       const have = new Set(run.entryIds)
       run.entryIds.push(...ids.filter((id) => !have.has(id)))
       run.retryOf ??= retryOf
+      run.retryAfter ??= refused
     } else {
-      run = { id: `run-${Date.now()}-${this.runSeq++}`, kind, entryIds: [...ids], ...('viewId' in work && { viewIds: [work.viewId] }), status: 'queued', attempt, retryOf }
+      run = { id: `run-${Date.now()}-${this.runSeq++}`, kind, entryIds: [...ids], ...('viewId' in work && { viewIds: [work.viewId] }), status: 'queued', attempt, retryOf, ...(refused && { retryAfter: refused }) }
       q.waiting.set(key, run)
       this.recordRun(run)
     }
@@ -582,7 +586,7 @@ export class Zephyr {
       if (plan) {
         const { json: reply } = await this.backend.complete(plan.messages, { json: true })
         const result = plan.settle(reply)
-        if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
+        if (!result.ok) throw new Error(`${INVALID_REPLY}${result.error}`)
         // A run on one of the kind's own views revisits a page, so the page it replaces is kept.
         const revisit = run.viewIds?.[0]?.startsWith(`${kind.kind}/`) === true
         // Derived kinds start once every write of the run has landed, so one that reads them all sees them all.
@@ -1006,11 +1010,11 @@ export class Zephyr {
   /**
    * The id and directory come from the kind, never from the write, so a kind can only ever write its own views.
    * The title history is kept here, against the stored view, so it holds whichever kind or op changed the title.
-   * Related lists always carry over. Pins and bodyStale carry over from the stored view unless an adjustment passes `own`; a revisit, which
-   * rewrites the page, archives the prior one and clears bodyStale. A write that passes `own` is the person's, and
+   * Related lists always carry over. Pins, bodyStale and mergedTitles carry over from the stored view unless an adjustment passes `own`; a revisit, which
+   * rewrites the page, archives the prior one and clears bodyStale and mergedTitles. A write that passes `own` is the person's, and
    * the title it replaces or the view it creates is marked so.
    */
-  private async writeView(kind: AgentKind, write: ViewWrite, opts: { revisit?: boolean; own?: Pick<View, 'pins' | 'bodyStale'>; derive?: boolean } = {}): Promise<View> {
+  private async writeView(kind: AgentKind, write: ViewWrite, opts: { revisit?: boolean; own?: Pick<View, 'pins' | 'bodyStale' | 'mergedTitles'>; derive?: boolean } = {}): Promise<View> {
     if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
     const id = `${kind.kind}/${write.slug}`
     const prior = this.views.get(id)
@@ -1022,7 +1026,7 @@ export class Zephyr {
     const appendsSinceWrite = prior && extendsBody(write.body, prior.body) ? (prior.appendsSinceWrite ?? 0) + 1 : 0
     const createdAt = prior ? prior.createdAt : updatedAt
     const createdByPerson = prior ? prior.createdByPerson : byPerson || undefined
-    const { pins, bodyStale } = opts.own ?? { pins: prior?.pins, bodyStale: opts.revisit ? undefined : prior?.bodyStale }
+    const { pins, bodyStale, mergedTitles } = opts.own ?? { pins: prior?.pins, ...(!opts.revisit && { bodyStale: prior?.bodyStale, mergedTitles: prior?.mergedTitles }) }
     const view: View = {
       ...write,
       id,
@@ -1034,6 +1038,7 @@ export class Zephyr {
       ...(appendsSinceWrite > 0 && { appendsSinceWrite }),
       ...(pins && { pins }),
       ...(bodyStale && { bodyStale }),
+      ...(bodyStale && mergedTitles?.length && { mergedTitles }),
       ...(prior?.related && { related: prior.related }),
     }
     await this.store.writeView(view)
@@ -1044,6 +1049,9 @@ export class Zephyr {
     return view
   }
 }
+
+/** How a run's error starts when the model replied but the reply failed the kind's check. */
+const INVALID_REPLY = 'invalid reply: '
 
 const endOf = (r: Run) => r.endedAt ?? r.startedAt ?? ''
 

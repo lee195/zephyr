@@ -190,7 +190,7 @@ export interface AdjustState {
 export interface AdjustWrite {
   kind: string
   write: ViewWrite
-  own: Pick<View, 'pins' | 'bodyStale'>
+  own: Pick<View, 'pins' | 'bodyStale' | 'mergedTitles'>
 }
 
 export type NoteChange = { edit: EntryId; text: string } | { tombstone: EntryId }
@@ -210,7 +210,7 @@ const unchanged: Outcome = { ok: true, writes: [], deletes: [], warnings: [] }
 
 /** The view as a kind would write it, without the fields the server owns. */
 export function writeOf(v: View): ViewWrite {
-  const { id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins, bodyStale, related, ...write } = v
+  const { id, kind, updatedAt, createdAt, createdByPerson, pastTitles, appendsSinceWrite, pins, bodyStale, mergedTitles, related, ...write } = v
   return write
 }
 
@@ -251,12 +251,14 @@ class Topics {
     return this.s.entries.filter((e) => set.has(e.id)).map((e) => e.id)
   }
   /** A topic whose notes or body changed: its body is marked stale for a rewrite, or a warning says it cannot be. */
-  changed(prior: Pick<View, 'slug' | 'title' | 'pins'> & Partial<View>, next: Partial<ViewWrite> & { pins?: Pins }): AdjustWrite {
+  changed(prior: Pick<View, 'slug' | 'title' | 'pins'> & Partial<View>, next: Partial<ViewWrite> & { pins?: Pins; mergedTitles?: string[] }): AdjustWrite {
     const write: ViewWrite = { slug: prior.slug, title: next.title ?? prior.title, sources: next.sources ?? prior.sources!, format: 'md', body: next.body ?? prior.body! }
     const fits = rewriteChars(write, this.entries) <= MAX_REWRITE_CHARS
     if (!fits) this.warnings.push(`topic ${write.slug} is over the ${MAX_REWRITE_CHARS}-character rewrite cap, so its body was not rewritten and may still say what its notes no longer do`)
     const pins = tidy(next.pins ?? prior.pins ?? {})
-    return { kind: 'organizer', write, own: { ...(pins && { pins }), ...(fits && { bodyStale: true as const }) } }
+    // Titles merged in since the last rewrite stay for the rewrite this one queues; with no rewrite, none is told them.
+    const mergedTitles = next.mergedTitles ?? prior.mergedTitles
+    return { kind: 'organizer', write, own: { ...(pins && { pins }), ...(fits && { bodyStale: true as const, ...(mergedTitles?.length && { mergedTitles }) }) } }
   }
 }
 
@@ -270,7 +272,7 @@ function renameTopic(a: Extract<Adjustment, { op: 'renameTopic' }>, s: AdjustSta
   if (!title) return fail('title must be a non-empty string of at most 80 characters')
   if (topic.title === title && topic.pins?.title) return unchanged
   const write = { ...writeOf(topic), title }
-  return { ok: true, writes: [{ kind: 'organizer', write, own: { pins: { ...topic.pins, title: true }, ...(topic.bodyStale && { bodyStale: true }) } }], deletes: [], warnings: [] }
+  return { ok: true, writes: [{ kind: 'organizer', write, own: { pins: { ...topic.pins, title: true }, ...(topic.bodyStale && { bodyStale: true, ...(topic.mergedTitles && { mergedTitles: topic.mergedTitles }) }) } }], deletes: [], warnings: [] }
 }
 
 /** The old body goes onto the target as a section under the old title, and a rewrite then makes one page of it. */
@@ -291,7 +293,8 @@ function mergeTopics(a: Extract<Adjustment, { op: 'mergeTopics' }>, s: AdjustSta
     aliases: union(into.pins?.aliases, [from.slug, ...(from.pins?.aliases ?? [])]),
     excluded: minus(union(into.pins?.excluded, from.pins?.excluded), sources),
   }
-  const write = t.changed(into, { sources, body: appendSection(into.body, `## ${from.title}\n\n${from.body}`), pins })
+  const mergedTitles = union(into.mergedTitles, [from.title, ...(from.mergedTitles ?? [])])
+  const write = t.changed(into, { sources, body: appendSection(into.body, `## ${from.title}\n\n${from.body}`), pins, mergedTitles })
   return { ok: true, writes: [write], deletes, warnings: t.warnings }
 }
 
