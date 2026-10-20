@@ -1,6 +1,6 @@
 import { appendFile, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import type { AgentKind, ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
 import { kinds } from '../src/kinds'
@@ -240,6 +240,21 @@ test('views persist as files and reload after restart', async () => {
   const reloaded = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend })
   await reloaded.start()
   expect(reloaded.listViews().map((v) => [v.id, v.sources, v.body])).toEqual([['organizer/all', ['e1'], 'e1']])
+})
+
+test('a view sidecar that fails to parse is skipped with one warning, and start loads the rest', async () => {
+  const dir = await seedDataDir({ entries: [entry('e1'), entry('e2')], runs: [doneRun('organizer', ['e1', 'e2'])], views: [topic('a', ['e1'], 'e1'), topic('b', ['e2'], 'e2')] })
+  await writeFile(join(dir, 'views/organizer/a.json'), '{"slug": "a", trunc')
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    const z = new OrganizerOnly({ dataDir: dir, backend: fakeBackend().backend })
+    await z.start()
+    expect(z.listViews().map((v) => v.id)).toEqual(['organizer/b'])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toContain('skipping view organizer/a.json')
+  } finally {
+    warn.mockRestore()
+  }
 })
 
 test('a registered transcript is backfilled, tailed, and never duplicated across restarts', async () => {

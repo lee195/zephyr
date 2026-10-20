@@ -162,7 +162,13 @@ export class Store {
       const dir = this.viewDir(kind)
       for (const name of await readdir(dir)) {
         if (!name.endsWith('.json')) continue
-        const meta = JSON.parse(await readFile(join(dir, name), 'utf8')) as Omit<View, 'body'>
+        let meta: Omit<View, 'body'>
+        try {
+          meta = JSON.parse(await readFile(join(dir, name), 'utf8'))
+        } catch (err) {
+          console.warn(`[zephyr] skipping view ${kind}/${name}: ${(err as Error).message}`)
+          continue
+        }
         const body = await readText(join(dir, `${meta.slug}.${EXT[meta.format]}`))
         if (body !== null) views.push({ ...meta, body })
       }
