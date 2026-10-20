@@ -19,7 +19,7 @@ The model that answers is set by `ZEPHYR_BACKEND`:
 | Backend | What answers | Settings |
 | --- | --- | --- |
 | `vllm` (default) | Any OpenAI-compatible chat endpoint | `ZEPHYR_CHAT_URL`, `ZEPHYR_CHAT_MODEL`, and `ZEPHYR_CHAT_KEY_VAR`, the name of the variable that holds the key |
-| `claude-code` | `claude -p` with your Claude Code login | Optional `ZEPHYR_HARNESS_MODEL`, such as `sonnet`; unset uses Claude Code's default model |
+| `claude-code` | `claude -p` with your Claude Code login | Optional `ZEPHYR_HARNESS_MODEL`, a name or alias your account can use, as `claude --model` takes it; unset uses Claude Code's default model |
 | `opencode` | `opencode run` with your opencode providers | Optional `ZEPHYR_HARNESS_MODEL` as `provider/model`; unset uses opencode's default model |
 
 `ZEPHYR_HARNESS_BIN` overrides the `claude` or `opencode` binary on `PATH`. A harness call runs with no tools, MCP servers or mods, and its instructions and input go in a private temp folder and on stdin, never in the command line. `claude -p` saves no session. opencode saves every run as a session, so the notes a run was shown also stay in opencode's database; a purge says so. A harness call takes several seconds, against about one for the endpoint, since each one starts the CLI.

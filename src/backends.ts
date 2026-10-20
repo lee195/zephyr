@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Config, Endpoint } from './config'
+import type { Config, Endpoint, Env } from './config'
 import type { ChatMessage, Completion, ModelBackend } from './domain'
 
 export function parseModelJson(content: string): unknown {
@@ -60,25 +60,23 @@ function split(messages: ChatMessage[]): { system: string; input: string } {
   return { system: text('system'), input: text('other') }
 }
 
-/**
- * The environment a harness child runs with: Zephyr's own, without the mod directories, so no Zephyr mod, hook or
- * MCP server starts inside Zephyr's own calls. Passing the environment on is not reading configuration from it.
- */
-function harnessEnv(): Record<string, string | undefined> {
-  const { CLAUDE_CODE_PLUGIN_DIRS: _, ...env } = process.env
-  return env
+/** What a harness CLI printed and how it exited. */
+export interface HarnessRun {
+  stdout: string
+  stderr: string
+  code: number
 }
 
 /**
- * Runs a harness CLI to completion and returns its stdout. The note text goes in files under a private temp
- * folder, deleted afterwards, never in argv, which `ps` shows. A child still running at the timeout is killed: opencode
- * retries an unreachable provider forever.
+ * Runs a harness CLI to completion in the environment config.harness.env gives it. The note text goes in files
+ * under a private temp folder, deleted afterwards, or on stdin, never in argv, which `ps` shows. A child still running
+ * at the timeout is killed: opencode retries an unreachable provider forever.
  */
-async function runHarness(name: string, args: (dir: string) => string[], files: (dir: string) => Record<string, string>, bin: string, timeoutMs: number, stdin?: string): Promise<string> {
+async function runHarness(name: string, args: (dir: string) => string[], files: Record<string, string>, bin: string, env: Env, timeoutMs: number, stdin: string): Promise<HarnessRun> {
   const dir = await mkdtemp(join(tmpdir(), 'zephyr-harness-'))
   try {
-    for (const [file, content] of Object.entries(files(dir))) await writeFile(join(dir, file), content, { mode: 0o600 })
-    const child = Bun.spawn([bin, ...args(dir)], { cwd: dir, env: harnessEnv(), stdin: stdin === undefined ? 'ignore' : new Blob([stdin]), stdout: 'pipe', stderr: 'pipe' })
+    for (const [file, content] of Object.entries(files)) await writeFile(join(dir, file), content, { mode: 0o600 })
+    const child = Bun.spawn([bin, ...args(dir)], { cwd: dir, env: { ...env }, stdin: new Blob([stdin]), stdout: 'pipe', stderr: 'pipe' })
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
@@ -86,8 +84,7 @@ async function runHarness(name: string, args: (dir: string) => string[], files: 
     }, timeoutMs)
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]).finally(() => clearTimeout(timer))
     if (timedOut) throw new Error(`${name} gave no answer in ${timeoutMs / 1000} s`)
-    if (code !== 0 && !stdout.trim()) throw new Error(`${name} exited ${code}: ${stderr.trim().slice(0, 300)}`)
-    return stdout
+    return { stdout, stderr, code }
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -116,8 +113,9 @@ function claudeCode(config: Config, timeoutMs = CALL_TIMEOUT_MS): ModelBackend {
           '--setting-sources', '',
           ...(config.harness.model ? ['--model', config.harness.model] : []),
         ],
-        () => ({ 'system.txt': system }),
+        { 'system.txt': system },
         bin,
+        config.harness.env,
         timeoutMs,
         input,
       )
@@ -126,16 +124,25 @@ function claudeCode(config: Config, timeoutMs = CALL_TIMEOUT_MS): ModelBackend {
   }
 }
 
-export function claudeReply(stdout: string): Completion {
+/** A non-zero exit fails the call even when a reply was printed: the CLI said it did not finish. */
+function exited(name: string, run: HarnessRun): Error {
+  return new Error(`${name} exited ${run.code}: ${(run.stderr.trim() || run.stdout.trim()).slice(0, 300)}`)
+}
+
+/** The reply, or the error the CLI reported, or its exit, in that order: a reported error says more than an exit code. */
+export function claudeReply(run: HarnessRun): Completion {
   let events: unknown
   try {
-    events = JSON.parse(stdout)
+    events = JSON.parse(run.stdout)
   } catch {
-    throw new Error(`claude output is not JSON: ${stdout.slice(0, 200)}`)
+    if (run.code !== 0) throw exited('claude', run)
+    throw new Error(`claude output is not JSON: ${run.stdout.slice(0, 200)}`)
   }
   const result = (Array.isArray(events) ? events : [events]).findLast((e: any) => e?.type === 'result') as any
+  if (result?.is_error) throw new Error(`claude failed: ${String(result.result ?? result.subtype).slice(0, 300)}`)
+  if (run.code !== 0) throw exited('claude', run)
   if (!result) throw new Error('claude output has no result event')
-  if (result.is_error || typeof result.result !== 'string') throw new Error(`claude failed: ${String(result.result ?? result.subtype).slice(0, 300)}`)
+  if (typeof result.result !== 'string') throw new Error(`claude failed: ${String(result.subtype).slice(0, 300)}`)
   const u = result.usage
   const usage = typeof u?.input_tokens === 'number'
     ? { promptTokens: u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), completionTokens: u.output_tokens ?? 0, cachedTokens: u.cache_read_input_tokens }
@@ -162,8 +169,9 @@ function opencode(config: Config, timeoutMs = CALL_TIMEOUT_MS): ModelBackend {
       const out = await runHarness(
         'opencode',
         (dir) => ['run', 'The input follows.', '--format', 'json', '--pure', '--agent', 'zephyr', '--dir', dir, ...(config.harness.model ? ['-m', config.harness.model] : [])],
-        () => ({ 'opencode.json': JSON.stringify({ agent: { zephyr: agent } }) }),
+        { 'opencode.json': JSON.stringify({ agent: { zephyr: agent } }) },
         bin,
+        config.harness.env,
         timeoutMs,
         input,
       )
@@ -172,8 +180,9 @@ function opencode(config: Config, timeoutMs = CALL_TIMEOUT_MS): ModelBackend {
   }
 }
 
-export function opencodeReply(stdout: string): Completion {
-  const events = stdout.split('\n').flatMap((line) => {
+/** As claudeReply: the reply, or the error opencode reported, or its exit. */
+export function opencodeReply(run: HarnessRun): Completion {
+  const events = run.stdout.split('\n').flatMap((line) => {
     try {
       return line.trim() ? [JSON.parse(line)] : []
     } catch {
@@ -183,6 +192,7 @@ export function opencodeReply(stdout: string): Completion {
   const error = events.find((e) => e?.type === 'error')
   // An API error can echo request details, so only its message is kept.
   if (error) throw new Error(`opencode failed: ${String(error.error?.data?.message ?? error.error?.name ?? 'unknown error').slice(0, 300)}`)
+  if (run.code !== 0) throw exited('opencode', run)
   const text = events.filter((e) => e?.type === 'text' && typeof e.part?.text === 'string').map((e) => e.part.text).join('')
   if (!text.trim()) throw new Error('opencode output has no reply text')
   const tokens = events.findLast((e) => e?.type === 'step_finish')?.part?.tokens

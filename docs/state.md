@@ -30,7 +30,7 @@ What is built, how it was checked, and what is open, as of 2026-10-20. The confi
 | Configurable LLM | Chat and embeddings each get their own endpoint, model and key variable; the LLM settings live in a gitignored `.env`, with `.env.example` committed. Two harness backends: `claude-code` (`claude -p`) and `opencode` (`opencode run`) | uncommitted |
 | Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | `896e631` |
 
-Tests: 249 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 42 tests pass under `claude plugin test`.
+Tests: 259 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 42 tests pass under `claude plugin test`.
 
 ## Running on this machine
 

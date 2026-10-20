@@ -18,8 +18,11 @@ export interface Config {
   modelBackend: ModelBackendName
   /** The chat endpoint, for the `vllm` backend only; a harness backend uses the harness's own model setup. */
   chat?: Endpoint
-  /** For a harness backend: a model to ask the harness for, and the binary to run; absent means its own default. */
-  harness: { model?: string; bin?: string }
+  /**
+   * For a harness backend: a model to ask the harness for and the binary to run, absent meaning its own default; and
+   * the environment the child runs with.
+   */
+  harness: { model?: string; bin?: string; env: Env }
   relevance: RelevanceName
   /** The embedding endpoint, for `embedding` relevance only. */
   embed?: Endpoint
@@ -43,13 +46,22 @@ export function parseConfig(env: Env): Config {
   return {
     modelBackend,
     ...(modelBackend === 'vllm' && { chat: endpoint(env, 'CHAT') }),
-    harness: { ...(env.ZEPHYR_HARNESS_MODEL && { model: env.ZEPHYR_HARNESS_MODEL }), ...(env.ZEPHYR_HARNESS_BIN && { bin: env.ZEPHYR_HARNESS_BIN }) },
+    harness: { ...(env.ZEPHYR_HARNESS_MODEL && { model: env.ZEPHYR_HARNESS_MODEL }), ...(env.ZEPHYR_HARNESS_BIN && { bin: env.ZEPHYR_HARNESS_BIN }), env: harnessEnv(env) },
     relevance,
     ...(relevance === 'embedding' && { embed: endpoint(env, 'EMBED') }),
     dataDir: resolve(env.ZEPHYR_DATA ?? './data'),
     port: Number(env.ZEPHYR_PORT ?? 7317),
     sweepMinutes: positive('ZEPHYR_SWEEP_MINUTES', env.ZEPHYR_SWEEP_MINUTES ?? '30'),
   }
+}
+
+/**
+ * Zephyr's own environment without the mod directories, so no Zephyr mod, hook or MCP server starts inside a
+ * harness call Zephyr makes. The child still needs the rest: PATH, HOME and the harness's own login and keys.
+ */
+function harnessEnv(env: Env): Env {
+  const { CLAUDE_CODE_PLUGIN_DIRS: _, ...rest } = env
+  return rest
 }
 
 function endpoint(env: Env, which: 'CHAT' | 'EMBED'): Endpoint {

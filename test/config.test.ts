@@ -113,3 +113,9 @@ test('the sweep interval takes any positive number of minutes and refuses anythi
   expect(parseConfig({ ...LLM_ENV, ZEPHYR_SWEEP_MINUTES: '120' }).sweepMinutes).toBe(120)
   for (const bad of ['0', '-5', 'often', '', 'Infinity']) expect(() => parseConfig({ ...LLM_ENV, ZEPHYR_SWEEP_MINUTES: bad })).toThrow(`ZEPHYR_SWEEP_MINUTES must be a positive number: ${bad}`)
 })
+
+test('a harness child gets the environment without the mod directories, and everything else', () => {
+  const { harness } = parseConfig({ ...LLM_ENV, PATH: '/bin', CLAUDE_CODE_PLUGIN_DIRS: '/mods', ANTHROPIC_API_KEY: 'a' })
+  expect(harness.env).not.toHaveProperty('CLAUDE_CODE_PLUGIN_DIRS')
+  expect(harness.env).toMatchObject({ PATH: '/bin', ANTHROPIC_API_KEY: 'a' })
+})
