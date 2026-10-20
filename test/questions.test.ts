@@ -126,6 +126,20 @@ test('when the chosen topic was merged into the answer, the question closes as m
   s.z.stop()
 })
 
+test('an answer whose adjustment fails partway closes the question, so it is not answered twice', async () => {
+  const s = await asked()
+  const [q] = s.z.listQuestions()
+  const writeView = s.z.store.writeView.bind(s.z.store)
+  s.z.store.writeView = async () => {
+    throw new Error('disk gone')
+  }
+  const answered = await s.z.answerQuestion(q!.id, 'garden')
+  s.z.store.writeView = writeView
+  expect(answered).toMatchObject({ ok: true, closed: { how: 'applied' }, adjustment: { ok: false, pending: true, error: 'disk gone', retryInMs: null } })
+  expect(s.z.listQuestions()).toEqual([])
+  s.z.stop()
+})
+
 test('a task the run doubts is a question; answering deleteTask deletes it, and a tombstoned note makes it moot', async () => {
   const s = await started()
   await s.note('garden: todo water the beans ask:task', 'garden: todo buy a hose ask:task')

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import type { AdjustmentResult } from '../src/domain'
 import { parseAdjustment } from '../src/adjust'
+import { serve } from '../src/server'
 import type { Zephyr } from '../src/zephyr'
 import { ALL, started } from './desk'
 import { entry, eventually, filesUnder } from './helpers'
@@ -230,6 +231,63 @@ test('a request a crash left without a result is applied on the next start, once
   expect(third.d.calls).toEqual([])
 })
 
+test('an adjustment that fails partway is applied again after the retry delay, logged once, and not again on restart', async () => {
+  const { z, dir, note, view } = await started({ kinds: { organizer: ALL.organizer }, retryDelaysMs: [20] })
+  await note('camping: tent', 'trip: train')
+  const deleteView = z.store.deleteView.bind(z.store)
+  let failures = 1
+  z.store.deleteView = async (v) => {
+    if (failures-- > 0) throw new Error('disk gone')
+    return deleteView(v)
+  }
+  const pending = await z.adjust({ op: 'mergeTopics', from: 'camping', into: 'trip' })
+  expect(pending).toMatchObject({ ok: false, pending: true, error: 'disk gone', retryInMs: 20 })
+  expect(z.status().runsInFlight).toBeGreaterThan(0)
+  await z.idle()
+  expect(view('organizer/camping')).toBeUndefined()
+  expect(view('organizer/trip')!.pins!.aliases).toEqual(['camping'])
+  const log = (await readFile(join(dir, 'adjustments.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  expect(log.map((l) => [l.type, l.id === pending.id, l.result?.ok])).toEqual([
+    ['request', true, undefined],
+    ['result', true, true],
+  ])
+  z.stop()
+
+  const restarted = await started({ dir, kinds: { organizer: ALL.organizer } })
+  expect((await readFile(join(dir, 'adjustments.jsonl'), 'utf8')).trim().split('\n')).toHaveLength(2)
+  expect(restarted.d.calls).toEqual([])
+})
+
+test('over HTTP a partway failure answers 202 with when it is retried, and a request that cannot be logged answers 503', async () => {
+  const { z } = await started({ kinds: { organizer: ALL.organizer }, retryDelaysMs: [60_000] })
+  const server = serve(z, { port: 0, distDir: '/nonexistent' })
+  const post = (body: unknown) =>
+    fetch(`http://127.0.0.1:${server.port}/api/adjustments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  try {
+    await z.ingest([entry('e1', 'camping: tent'), entry('e2', 'trip: train')])
+    await z.idle()
+    const deleteView = z.store.deleteView.bind(z.store)
+    z.store.deleteView = async () => {
+      throw new Error('disk gone')
+    }
+    const pending = await post({ op: 'mergeTopics', from: 'camping', into: 'trip' })
+    expect([pending.status, await pending.json()]).toEqual([202, expect.objectContaining({ pending: true, retryInMs: 60_000 })])
+    z.store.deleteView = deleteView
+
+    const appendAdjustment = z.store.appendAdjustment.bind(z.store)
+    z.store.appendAdjustment = async () => {
+      throw new Error('disk full')
+    }
+    const refused = await post({ op: 'renameTopic', slug: 'trip', title: 'Train Trip' })
+    expect(refused.status).toBe(503)
+    expect((await refused.json()).error).toContain('nothing changed')
+    z.store.appendAdjustment = appendAdjustment
+  } finally {
+    server.stop(true)
+    z.stop()
+  }
+})
+
 test('a merge a crash cut short after writing the target finishes on the next start without appending twice', async () => {
   const { z, dir, note, view } = await started({ kinds: { organizer: ALL.organizer } })
   await note('camping: tent', 'trip: train')
@@ -238,7 +296,7 @@ test('a merge a crash cut short after writing the target finishes on the next st
   z.store.deleteView = async () => {
     throw new Error('disk gone')
   }
-  await expect(z.adjust(merge)).rejects.toThrow('disk gone')
+  expect(await z.adjust(merge)).toMatchObject({ ok: false, pending: true, error: 'disk gone', retryInMs: null })
   await z.idle()
   const half = view('organizer/trip')!
   expect(half.pins!.aliases).toEqual(['camping'])

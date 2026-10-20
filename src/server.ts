@@ -101,18 +101,22 @@ async function finishReview(zephyr: Zephyr, req: Request) {
   return closed.ok ? json({ ok: true, lastReviewedAt: closed.until }) : fail(closed.error)
 }
 
-/** 200 with the result when the op applied, 409 when the data it names does not allow it. */
+/**
+ * 200 with the result when the op applied, 409 when the data it names does not allow it, 202 when it failed partway
+ * and is applied again, and 503 when it could not even be logged, so nothing changed.
+ */
 async function adjust(zephyr: Zephyr, req: Request) {
   const parsed = await jsonBody(req)
   if (!parsed.ok) return fail('body must be JSON')
   const adjustment = parseAdjustment(parsed.body)
   if (!adjustment.ok) return fail(adjustment.error)
+  let result: Awaited<ReturnType<Zephyr['adjust']>>
   try {
-    const result = await zephyr.adjust(adjustment.adjustment)
-    return json(result, result.ok ? 200 : 409)
+    result = await zephyr.adjust(adjustment.adjustment)
   } catch (err) {
-    return fail(`the adjustment failed partway and is applied again on the next start: ${(err as Error).message}`, 500)
+    return fail(`the adjustment could not be logged, so nothing changed: ${(err as Error).message}`, 503)
   }
+  return json(result, result.ok ? 200 : 'pending' in result ? 202 : 409)
 }
 
 const MAX_HISTORY_PAGE = 200

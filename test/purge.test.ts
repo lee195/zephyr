@@ -99,7 +99,7 @@ test('a purge a crash cut short finishes on the next start, from whichever step 
     store[failing] = async () => {
       throw new Error('disk gone')
     }
-    await expect(s.z.adjust(purge('e4'))).rejects.toThrow('disk gone')
+    expect(await s.z.adjust(purge('e4'))).toMatchObject({ ok: false, pending: true, error: 'disk gone', retryInMs: null })
     await s.z.idle()
     // A tasks run cut short by the stop, so the restart files e7 again, against the open tasks.
     s.d.hold('tasks')

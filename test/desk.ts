@@ -63,10 +63,10 @@ export function desk() {
 
 export const ALL = { organizer: kinds.organizer!, tasks: kinds.tasks!, visualizer: kinds.visualizer! }
 
-export async function started(opts: { dir?: string; kinds?: typeof ALL | { organizer: typeof ALL.organizer } } = {}) {
+export async function started(opts: { dir?: string; kinds?: typeof ALL | { organizer: typeof ALL.organizer }; retryDelaysMs?: number[] } = {}) {
   const d = desk()
   const dir = opts.dir ?? (await tempDir())
-  const z = new Zephyr({ dataDir: dir, backend: d.backend, kinds: opts.kinds ?? ALL, retryDelaysMs: [] })
+  const z = new Zephyr({ dataDir: dir, backend: d.backend, kinds: opts.kinds ?? ALL, retryDelaysMs: opts.retryDelaysMs ?? [] })
   await z.start()
   await z.idle()
   let n = 0

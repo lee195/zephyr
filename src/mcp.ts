@@ -1,6 +1,6 @@
 import { inputSchema, OPS, parseAdjustment } from './adjust'
 import { MAX_LINK_TOPICS, MAX_LINKS, MAX_SUMMARY_CHARS } from './deeper'
-import type { Adjustment } from './domain'
+import type { Adjustment, PendingAdjustment } from './domain'
 import { MAX_HINT_LIMIT } from './hints'
 import { sanitizeSlug } from './kinds'
 import { areasOf, mapIn } from './kinds/map'
@@ -16,6 +16,10 @@ type Tool = { name: string; description: string; inputSchema: object; call(args:
 const result = (data: unknown): ToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] })
 const toolError = (message: string): ToolResult => ({ content: [{ type: 'text', text: message }], isError: true })
 const noArgs = { type: 'object', properties: {}, additionalProperties: false }
+/** What the agent tells the person about an adjustment that failed partway: it is not lost, and when it applies again. */
+const pendingText = (p: PendingAdjustment) =>
+  `${p.id} failed partway (${p.error}). It is logged and applied again ${p.retryInMs === null ? 'on the next server start' : `in ${Math.round(p.retryInMs / 1000)} s`}; do not send it again.`
+
 const snake = (op: string) => op.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)
 
 function tools(z: Zephyr): Tool[] {
@@ -151,12 +155,14 @@ function tools(z: Zephyr): Tool[] {
       async call(args) {
         const parsed = parseAdjustment({ ...args, op })
         if (!parsed.ok) return toolError(parsed.error)
+        let done: Awaited<ReturnType<Zephyr['adjust']>>
         try {
-          const done = await z.adjust(parsed.adjustment)
-          return done.ok ? result(done) : toolError(done.error)
+          done = await z.adjust(parsed.adjustment)
         } catch (err) {
-          return toolError(`the adjustment failed partway and is applied again on the next start: ${(err as Error).message}`)
+          return toolError(`the adjustment could not be logged, so nothing changed: ${(err as Error).message}`)
         }
+        if ('pending' in done) return toolError(pendingText(done))
+        return done.ok ? result(done) : toolError(done.error)
       },
     }),
   )

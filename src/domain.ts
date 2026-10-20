@@ -302,6 +302,12 @@ export type AdjustmentResult =
   | { id: string; ok: false; error: string }
 
 /**
+ * An adjustment that failed partway, such as on a disk error, and is applied again: after `retryInMs`, or on the next
+ * start once the retries ran out (`retryInMs` null). Never logged; the logged result is the one the retry reaches.
+ */
+export type PendingAdjustment = { id: string; ok: false; pending: true; error: string; retryInMs: number | null }
+
+/**
  * What a purge removed before its result returned. The topics in the result's `rewrites` hold none of the note's
  * words already; their rewrite, still queued, makes them read whole again and catches paraphrase.
  */

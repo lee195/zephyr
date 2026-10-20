@@ -10,6 +10,7 @@ import {
   type Adjustment,
   type AdjustmentLine,
   type AdjustmentResult,
+  type PendingAdjustment,
   type AgentKind,
   type Closed,
   type Entry,
@@ -50,7 +51,7 @@ export type Summary =
 
 export type LinkSuggestions = { ok: true; links: Link[]; dropped: string[]; leftOut: number; usage?: Usage } | { ok: false; error: string }
 
-export type QuestionAnswer = { ok: true; questionId: string; closed: Closed; adjustment?: AdjustmentResult } | { ok: false; error: string }
+export type QuestionAnswer = { ok: true; questionId: string; closed: Closed; adjustment?: AdjustmentResult | PendingAdjustment } | { ok: false; error: string }
 
 const RUN_HISTORY = 50
 /** Wait before attempts 2, 3 and 4 of a failed run, or of the entries a done run left uncovered; after the last, they wait for a restart. */
@@ -241,17 +242,7 @@ export class Zephyr {
    */
   async sweep() {
     const world = this.world()
-    let queued = 0
-    for (const kind of Object.values(this.kinds)) {
-      for (const viewId of kind.sweep?.(world) ?? []) {
-        if (this.busy(kind.kind, viewId)) continue
-        const key = `${kind.kind} ${viewId}`
-        if (this.exhausted.has(key) && this.exhausted.get(key) === this.views.get(viewId)?.updatedAt) continue
-        this.exhausted.delete(key)
-        this.enqueue(kind.kind, { viewId })
-        queued++
-      }
-    }
+    const queued = this.queueSweepWork()
     const overCap = new Set(overCapTopics(world.views, world.entries).map((t) => t.slug))
     for (const slug of overCap)
       if (!this.overCap.has(slug)) console.warn(`[zephyr] sweep: topic ${slug} is over the ${MAX_REWRITE_CHARS}-character rewrite cap and will not be rewritten`)
@@ -263,6 +254,23 @@ export class Zephyr {
     if (compaction) this.compactions = { count: this.compactions.count + 1, last: compaction }
     const cache = compaction && `; embeddings cache ${compaction.before.lines} lines/${compaction.before.bytes} bytes → ${compaction.after.lines} lines/${compaction.after.bytes} bytes`
     if (queued > 0 || cache) console.log(`[zephyr] sweep: queued ${queued} rewrites${cache ?? ''}`)
+  }
+
+  /** Queues the view work each kind's sweep asks for, as the sweep's doc says; returns how many were queued. */
+  private queueSweepWork(): number {
+    const world = this.world()
+    let queued = 0
+    for (const kind of Object.values(this.kinds)) {
+      for (const viewId of kind.sweep?.(world) ?? []) {
+        if (this.busy(kind.kind, viewId)) continue
+        const key = `${kind.kind} ${viewId}`
+        if (this.exhausted.has(key) && this.exhausted.get(key) === this.views.get(viewId)?.updatedAt) continue
+        this.exhausted.delete(key)
+        this.enqueue(kind.kind, { viewId })
+        queued++
+      }
+    }
+    return queued
   }
 
   /** Work keyed by this view is waiting, running, or scheduled to retry in the kind's queue. */
@@ -674,24 +682,58 @@ export class Zephyr {
     if ('error' in r) return { ok: false, error: r.error }
     if ('close' in r) return this.close(asked, answer, r.close)
     const adjustment = await this.adjust(r.adjustment)
-    if (!adjustment.ok) return { ok: false, error: adjustment.error }
+    // A pending adjustment is logged and still applies, so the question closes; left open, it could be answered twice.
+    if (!adjustment.ok && !('pending' in adjustment)) return { ok: false, error: adjustment.error }
     return this.close(asked, answer, { how: 'applied', adjustmentId: adjustment.id }, adjustment)
   }
 
-  private async close(asked: Asked, answer: string, closed: Closed, adjustment?: AdjustmentResult): Promise<QuestionAnswer> {
+  private async close(asked: Asked, answer: string, closed: Closed, adjustment?: AdjustmentResult | PendingAdjustment): Promise<QuestionAnswer> {
     await this.store.appendQuestions([{ type: 'closed', id: asked.id, at: this.stamp(), answer, closed }])
     this.questions.delete(asked.id)
     return { ok: true, questionId: asked.id, closed, ...(adjustment && { adjustment }) }
   }
 
   /**
-   * Logs the request, applies it on its owning kind's queue, and logs the result. A throw leaves the request with
-   * no result, so the next start applies it again; every op converges from whatever state a crash left.
+   * Logs the request, applies it on its owning kind's queue, and logs the result. Every op converges from whatever
+   * state a failure left, so one that throws partway is applied again after each retry delay, and once those run out,
+   * on the next start, which applies every request with no result.
    */
-  async adjust(adjustment: Adjustment): Promise<AdjustmentResult> {
+  async adjust(adjustment: Adjustment): Promise<AdjustmentResult | PendingAdjustment> {
     const id = `adj-${Date.now()}-${this.adjustSeq++}`
     await this.store.appendAdjustment({ type: 'request', id, at: this.stamp(), adjustment })
-    return this.applyLogged(id, adjustment)
+    return this.applyWithRetries(id, adjustment, 1)
+  }
+
+  private async applyWithRetries(id: string, adjustment: Adjustment, attempt: number): Promise<AdjustmentResult | PendingAdjustment> {
+    try {
+      const result = await this.applyLogged(id, adjustment)
+      // Planned from the half-applied state, a retry can find a change already made and not queue the rewrite the
+      // first attempt would have; the pages it left stale are still marked so, and the sweep's work picks them up.
+      if (attempt > 1) this.queueSweepWork()
+      return result
+    } catch (err) {
+      const error = (err as Error).message
+      const delay = this.retryDelaysMs[attempt - 1]
+      console.error(`[zephyr] adjustment ${id} attempt ${attempt} failed: ${error}${delay === undefined ? '; applied again on the next start' : ''}`)
+      if (delay === undefined) return { id, ok: false, pending: true, error, retryInMs: null }
+      let settle!: () => void
+      const done = new Promise<void>((r) => (settle = r))
+      const timer = setTimeout(() => {
+        this.retries.delete(retry)
+        void this.applyWithRetries(id, adjustment, attempt + 1)
+        settle()
+      }, delay)
+      const retry: ScheduledRetry = {
+        kind: adjustment.op === 'purgeNote' ? 'purge' : OPS[adjustment.op].owner!,
+        done,
+        cancel: () => {
+          clearTimeout(timer)
+          settle()
+        },
+      }
+      this.retries.add(retry)
+      return { id, ok: false, pending: true, error, retryInMs: delay }
+    }
   }
 
   /** Folds the edits and tombstones of every adjustment that applied, and returns the requests a crash interrupted. */
