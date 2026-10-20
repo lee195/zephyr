@@ -2,7 +2,7 @@ import { adapters } from './adapters'
 import { effectiveEntries, OPS, planAdjustment, planRewrites, relatedFixes, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
-import { hintsFor, topicsByNote, type HintReply, type TopicRef } from './hints'
+import { hintsFor, topicsByNote, type HintReply } from './hints'
 import { linkIndex, linkMessages, parseSummary, summaryInput, summaryMessages, validateLinks, type Link } from './deeper'
 import {
   isNote,
@@ -19,6 +19,7 @@ import {
   type Question,
   type Run,
   type Session,
+  type TopicRef,
   type Usage,
   type View,
   type ViewWrite,
@@ -566,7 +567,10 @@ export class Zephyr {
         if (!result.ok) throw new Error(`invalid reply: ${result.error}`)
         // A run on one of the kind's own views revisits a page, so the page it replaces is kept.
         const revisit = run.viewIds?.[0]?.startsWith(`${kind.kind}/`) === true
-        for (const w of result.writes) await this.writeView(kind, w, { revisit })
+        // Derived kinds start once every write of the run has landed, so one that reads them all sees them all.
+        const written: View[] = []
+        for (const w of result.writes) written.push(await this.writeView(kind, w, { revisit, derive: false }))
+        for (const v of written) this.deriveFrom(v)
         if (result.dropped.length > 0) run.dropped = result.dropped
         if (result.questions?.length) await this.ask(run, result.questions)
         const covered = new Set(result.covered)
@@ -935,7 +939,7 @@ export class Zephyr {
    * rewrites the page, archives the prior one and clears bodyStale. A write that passes `own` is the person's, and
    * the title it replaces or the view it creates is marked so.
    */
-  private async writeView(kind: AgentKind, write: ViewWrite, opts: { revisit?: boolean; own?: Pick<View, 'pins' | 'bodyStale'> } = {}) {
+  private async writeView(kind: AgentKind, write: ViewWrite, opts: { revisit?: boolean; own?: Pick<View, 'pins' | 'bodyStale'>; derive?: boolean } = {}): Promise<View> {
     if (sanitizeSlug(write.slug) !== write.slug) throw new Error(`${kind.kind} returned an unsafe slug: ${write.slug}`)
     const id = `${kind.kind}/${write.slug}`
     const prior = this.views.get(id)
@@ -965,7 +969,8 @@ export class Zephyr {
     this.views.set(view.id, view)
     this.prepareRelevance(kind.relevanceDocs?.([view]) ?? [])
     this.emit({ type: 'view', data: view })
-    this.deriveFrom(view)
+    if (opts.derive !== false) this.deriveFrom(view)
+    return view
   }
 }
 

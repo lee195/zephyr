@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import type { Run, Task, View } from '../../src/domain'
-import { connect, derivedBySource, type FailedGroup, state, strip, taskList, topicsByEntry, viewsByKind } from './live'
+import { connect, derivedBySource, type FailedGroup, state, strip, taskList, topicMap, topicsByEntry, viewsByKind } from './live'
 import ViewBody from './ViewBody.vue'
 
 const openSource = ref<string | null>(null)
@@ -77,6 +77,19 @@ onMounted(connect)
   <main>
     <div class="views">
       <p v-if="viewsByKind.size === 0 && !taskList" class="muted">No views yet. Type a note in your harness.</p>
+      <section v-if="topicMap?.areas" class="kind" aria-label="Map">
+        <h2>Map</h2>
+        <article class="card map">
+          <div v-for="a in topicMap.areas" :key="a.title" class="area">
+            <h3>{{ a.title }}</h3>
+            <ul>
+              <li v-for="t in a.topics" :key="t.slug">
+                <a :href="`#organizer/${t.slug}`" @click.prevent="scrollToCard(`organizer/${t.slug}`)">{{ state.views.get(`organizer/${t.slug}`)?.title ?? t.title }}</a>
+              </li>
+            </ul>
+          </div>
+        </article>
+      </section>
       <section v-if="taskList" class="kind" aria-label="Tasks">
         <h2>Tasks</h2>
         <article class="card">

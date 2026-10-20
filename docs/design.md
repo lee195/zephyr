@@ -30,7 +30,7 @@ Nothing public started agents from notes typed into a harness when this project 
 
 ## Agents return data; the server writes
 
-An agent kind (`organizer`, `tasks`, `visualizer`) is a function from a bounded prompt to JSON. The server checks the reply at the boundary and does every write itself. The agents get no file tools, so it doesn't matter whether the model supports tool calls, and a malformed reply fails one run, not your data.
+An agent kind (`organizer`, `tasks`, `visualizer`, `map`) is a function from a bounded prompt to JSON. The server checks the reply at the boundary and does every write itself. The agents get no file tools, so it doesn't matter whether the model supports tool calls, and a malformed reply fails one run, not your data.
 
 Each kind owns `data/views/<kind>/` and runs through its own serial queue. Kinds run in parallel and never touch each other's files. Work that changes another kind's views, such as deleting a diagram when its topic goes away, is queued on that kind's queue as a `reconcile` step. This is why no locks are needed.
 

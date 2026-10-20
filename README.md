@@ -71,6 +71,9 @@ Each kind writes only `views/<kind>/`, through its own serial queue.
 | `organizer` | each new entry; a topic the sweep finds has become an append log | topic pages `organizer/<slug>.md` |
 | `tasks` | each new entry | `tasks/tasks.json` holds the tasks as data (`{ id, text, due?, done, sources }`), `tasks/tasks.md` renders them |
 | `visualizer` | an organizer topic with 4 or more sources, not stale, whose diagram is missing or older than the topic | `visualizer/<slug>.svg` or `.txt`, with `derivedFrom` naming the topic version it drew; deleted when its topic is gone or under 4 sources |
+| `map` | an organizer topic written under a slug or title the map does not list; a sweep that finds the map's topics differ from the current ones (a merge or delete) | `map/contents.json` holds the topics grouped into at most 9 areas (`areas: [{ title, topics: [{ slug, title }] }]`), `map/contents.md` renders them with links to the topic pages. The model is shown the current areas and keeps them where they fit; topics it leaves out go under Other. The viewer shows the map above the topics |
+
+A kind derived from views starts once every write of the run that triggered it has landed, so the map sees all the topics one run created and costs one call for them.
 
 The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram never run, and HTML responses carry a Content-Security-Policy that allows only the viewer's own scripts.
 

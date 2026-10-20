@@ -124,3 +124,10 @@ summary { cursor: pointer; }
 .entries li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .entries small { display: block; }
 .entries .topics { margin-top: 2px; }
+
+.map { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 20px; }
+.map h3 { font-size: 14px; margin: 0 0 4px; }
+.map ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.map li { padding: 2px 0; }
+.map a { color: var(--accent); text-decoration: none; }
+.map a:hover { text-decoration: underline; }

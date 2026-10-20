@@ -28,11 +28,13 @@ export const topicsByEntry = computed(() => {
 
 export const taskList = computed(() => [...state.views.values()].find((v) => v.tasks))
 
-/** Every view that is its own card: not the task list, and not a view shown inside its source's card. */
+export const topicMap = computed(() => [...state.views.values()].find((v) => v.areas))
+
+/** Every view that is its own card: not the task list or the map, and not a view shown inside its source's card. */
 export const viewsByKind = computed(() => {
   const groups = new Map<string, View[]>()
   for (const v of state.views.values()) {
-    if (v.tasks || (v.derivedFrom && state.views.has(v.derivedFrom.id))) continue
+    if (v.tasks || v.areas || (v.derivedFrom && state.views.has(v.derivedFrom.id))) continue
     const list = groups.get(v.kind) ?? []
     list.push(v)
     groups.set(v.kind, list)

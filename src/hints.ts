@@ -1,4 +1,4 @@
-import type { Entry, EntryId, View } from './domain'
+import type { Entry, EntryId, TopicRef, View } from './domain'
 import { topicsIn } from './kinds/organizer'
 import { tokenize, type RelevanceBackend } from './relevance'
 
@@ -10,8 +10,6 @@ export interface Hint {
   /** Every topic that cites the note, in view order; empty when none does. */
   topics: TopicRef[]
 }
-
-export type TopicRef = { slug: string; title: string }
 
 /** Each note's topics: every organizer view that cites it, in view order. */
 export function topicsByNote(views: readonly View[]): Map<EntryId, TopicRef[]> {

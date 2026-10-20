@@ -44,6 +44,8 @@ export interface View {
   createdByPerson?: true
   /** The task list as data, on the tasks view only; body is its markdown rendering for plain-file readers. */
   tasks?: Task[]
+  /** The topics grouped into areas, on the map view only; body is its markdown rendering for plain-file readers. */
+  areas?: Area[]
   /** The view this one was derived from, at the version it was derived from; it is stale once that view moves on. */
   derivedFrom?: { id: string; updatedAt: string }
   /** Titles the view had before its current one, oldest first; until is the updatedAt of the write that replaced it. */
@@ -66,6 +68,12 @@ export interface View {
    */
   related?: string[]
 }
+
+/** A topic as other views name it: by slug, with its title at the time. */
+export type TopicRef = { slug: string; title: string }
+
+/** One group of the map: topics that belong together, under a title the map kind chose. */
+export type Area = { title: string; topics: TopicRef[] }
 
 export interface Pins {
   /** The person chose the title; no run may change it. */
