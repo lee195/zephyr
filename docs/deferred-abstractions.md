@@ -2,7 +2,7 @@
 
 Code that appears exactly twice stays duplicated until a third copy shows up, unless sharing it costs a reader nothing. This page lists each known pair, so the next person to add a third copy knows to extract it. Code repeated three or more times is already shared.
 
-Reviewed on 2026-10-19 at commit `d5b510f`, and again on 2026-10-20 for the open-issues work.
+Reviewed on 2026-10-19 at commit `8bb131e`, and again on 2026-10-20 for the open-issues work.
 
 ## Extract when a third copy appears
 
