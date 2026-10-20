@@ -43,8 +43,8 @@ const box = ($: Engine) => $.prompt as Engine['prompt'] & { edit: EngineCall<'pr
 
 const HINTS = JSON.stringify({
   hints: [
-    { entryId: 'e1', text: 'oat milk is cheaper\nat the corner shop', at: '2026-10-18T09:00:00Z', score: 0.9, topic: { slug: 'groceries', title: 'Groceries' } },
-    { entryId: 'e2', text: 'call mum', at: '2026-10-17T09:00:00Z', score: 0.4, topic: null },
+    { entryId: 'e1', text: 'oat milk is cheaper\nat the corner shop', at: '2026-10-18T09:00:00Z', score: 0.9, topics: [{ slug: 'groceries', title: 'Groceries' }] },
+    { entryId: 'e2', text: 'call mum', at: '2026-10-17T09:00:00Z', score: 0.4, topics: [] },
   ],
 })
 
@@ -400,4 +400,29 @@ test('/zephyr review and an unknown argument leave notes mode as it was', async 
   expect((await $.command.run({ ...TOGGLE, args: 'reveiw' })).text).toContain('/zephyr review reviews')
   expect(await $.prompt.submit(typed('hello'))).toEqual({ text: 'hello' })
   expect(notes()).toEqual([])
+})
+
+test('/zephyr where lists matching notes with every topic, without touching notes mode', async ($, on) => {
+  const { seen } = engine(on)
+  const { text } = await $.command.run({ ...TOGGLE, args: 'where  oat milk ' })
+  expect(text).toBe(['Notes matching "oat milk", best first:', '2026-10-18 · Groceries · oat milk is cheaper at the corner shop', '2026-10-17 · no topic yet · call mum'].join('\n'))
+  expect(seen.fetched.map(f => f.url)).toEqual(['http://127.0.0.1:7317/hints?q=oat%20milk&limit=10'])
+  expect(await $.prompt.submit(typed('hello'))).toEqual({ text: 'hello' })
+})
+
+test('/zephyr where with the server down says so', async ($, on) => {
+  const { status } = engine(on)
+  status.text = 'refused'
+  expect(await $.command.run({ ...TOGGLE, args: 'where oat milk' })).toEqual({ text: 'Zephyr is not reachable on http://127.0.0.1:7317.' })
+})
+
+test('the band shows where the newest note went, below the status line', async ($, on) => {
+  const { clock, status } = engine(on, { status: '{"up":true,"runsInFlight":1,"lastViewAt":null,"lastNote":{"id":"n1","topics":[]}}' })
+  await $.command.run(TOGGLE)
+  await clock.settle()
+  expect(await bandTexts($)).toEqual(['zephyr · notes on · server up · 1 run', '✎ last note → filing…', 'beneath'])
+
+  status.text = '{"up":true,"runsInFlight":0,"lastViewAt":null,"lastNote":{"id":"n1","topics":[{"slug":"g","title":"Groceries"},{"slug":"b","title":"Budget"}]}}'
+  await clock.advance(5000)
+  expect(await bandTexts($)).toEqual(['zephyr · notes on · server up', '✎ last note → Groceries, Budget', 'beneath'])
 })

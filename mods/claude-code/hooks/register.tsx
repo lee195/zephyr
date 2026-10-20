@@ -7,6 +7,7 @@ import {
   bandLine,
   decide,
   draftChanged,
+  filedLine,
   HINT_LIMIT,
   hintLine,
   hintsArrived,
@@ -20,6 +21,8 @@ import {
   reviewNotice,
   shownHints,
   transcriptPathFor,
+  WHERE_LIMIT,
+  whereReply,
 } from './notes'
 
 const notesFor = atom({ plugin: 'zephyr', key: 'notesFor' } as const, null)
@@ -137,6 +140,15 @@ async function startReview($: EngineInterface) {
   return { text: 'Zephyr review started.' }
 }
 
+const USAGE = '/zephyr toggles notes mode; /zephyr review reviews the notes since the last review; /zephyr where <words> finds where notes went.'
+
+// Ranked like the hints, so it never calls a model; works with notes mode off too.
+async function findNotes($: EngineInterface, query: string) {
+  const res = await call($, `/hints?q=${encodeURIComponent(query)}&limit=${WHERE_LIMIT}`)
+  if (!res?.ok) return { text: `Zephyr is not reachable on ${base}.` }
+  return { text: whereReply(query, parseHints(res.text, WHERE_LIMIT)) }
+}
+
 export const register: Register = (on, options) => {
   const port = options.port
   if (typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536) base = `http://127.0.0.1:${port}`
@@ -144,8 +156,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'zephyr',
-      description: 'Toggle notes mode: prompts are kept as notes, with no reply. /zephyr review reviews the notes.',
-      argumentHint: '[review]',
+      description: 'Toggle notes mode: prompts are kept as notes, with no reply. /zephyr review reviews the notes; /zephyr where <words> finds them.',
+      argumentHint: '[review | where <words>]',
     })
     if (await isNotesOn($)) void announce($).catch(() => undefined)
     return next(e)
@@ -154,7 +166,9 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'zephyr' }, async ($, e) => {
     const args = e.args.trim()
     if (args === 'review') return startReview($)
-    if (args) return { text: '/zephyr toggles notes mode; /zephyr review reviews the notes since the last review.' }
+    const query = /^where\s+(.+)$/s.exec(args)?.[1]?.trim()
+    if (query) return findNotes($, query)
+    if (args) return { text: USAGE }
     const sessionId = await $.session.id()
     const now = await update($, notesFor, was => (was === sessionId ? null : sessionId))
     if (now === null) {
@@ -203,9 +217,11 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const isOn = await isNotesOn($)
-    const line = bandLine(isOn, await read($, server), await $.clock.now())
+    const status = await read($, server)
+    const line = bandLine(isOn, status, await $.clock.now())
     if (!line) return next(e)
     const shown = isOn ? shownHints(hints) : []
+    const filed = isOn ? filedLine(status) : null
 
     const { Box, Text } = $.ui.resolve(e)
     // The band is one tree for every plugin: keep what the hooks beneath drew.
@@ -215,6 +231,11 @@ export const register: Register = (on, options) => {
         <Text color="claude" wrap="truncate-end">
           {line}
         </Text>
+        {filed && (
+          <Text dimColor wrap="truncate-end">
+            {filed}
+          </Text>
+        )}
         {shown.map((hint, i) => (
           <Text key={`hint-${i}`} dimColor wrap="truncate-end">
             {hintLine(hint)}

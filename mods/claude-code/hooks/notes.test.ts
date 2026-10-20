@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ago, bandLine, decide, encodeProjectDir, hintLine, parseHints, parseReviewCount, parseStatus, reviewNotice, transcriptPathFor } from './notes'
+import { ago, bandLine, decide, encodeProjectDir, filedLine, hintLine, parseHints, parseReviewCount, parseStatus, reviewNotice, transcriptPathFor, whereReply } from './notes'
 
 const typed = (text: string) => ({ text, origin: { kind: 'composer' as const } })
 
@@ -42,6 +42,7 @@ test('status parsing reads the server, and anything else is down', () => {
     entries: 4,
     runsInFlight: 2,
     lastViewAt: 1000,
+    lastNote: null,
   })
   const iso = parseStatus('{"up":true,"lastViewAt":"2026-10-19T10:00:00Z"}', 9)
   expect(iso.kind === 'up' && iso.lastViewAt).toBe(Date.parse('2026-10-19T10:00:00Z'))
@@ -51,19 +52,33 @@ test('status parsing reads the server, and anything else is down', () => {
     entries: 0,
     runsInFlight: 0,
     lastViewAt: null,
+    lastNote: null,
   })
+  const filed = parseStatus('{"up":true,"lastNote":{"id":"n1","at":"x","topics":[{"slug":"a","title":"Q3  Roadmap"},{"slug":"b"},7]}}', 9)
+  expect(filed.kind === 'up' && filed.lastNote).toEqual({ id: 'n1', topics: ['Q3 Roadmap'] })
+  const odd = parseStatus('{"up":true,"lastNote":{"topics":[]}}', 9)
+  expect(odd.kind === 'up' && odd.lastNote).toBeNull()
   expect(parseStatus('<html>', 9)).toEqual({ kind: 'down', checkedAt: 9 })
   expect(parseStatus('{"up":false}', 9)).toEqual({ kind: 'down', checkedAt: 9 })
 })
 
 test('the band line names mode, server, runs and the last view', () => {
-  const up = { kind: 'up' as const, checkedAt: 0, entries: 3, runsInFlight: 2, lastViewAt: 0 }
+  const up = { kind: 'up' as const, checkedAt: 0, entries: 3, runsInFlight: 2, lastViewAt: 0, lastNote: null }
   expect(bandLine(true, up, 120_000)).toBe('zephyr · notes on · server up · 2 runs · last view 2m ago')
   expect(bandLine(true, { ...up, runsInFlight: 0, lastViewAt: null }, 0)).toBe('zephyr · notes on · server up')
   expect(bandLine(true, { kind: 'down', checkedAt: 0 }, 0)).toBe('zephyr · notes on · server down')
   expect(bandLine(false, { ...up, runsInFlight: 1 }, 5_000)).toBe('zephyr · notes off · server up · 1 run · last view 5s ago')
   expect(bandLine(false, { ...up, runsInFlight: 0 }, 0)).toBeNull()
   expect(bandLine(false, { kind: 'unknown' }, 0)).toBeNull()
+})
+
+test('the filed line names the newest note\'s topics, says filing while runs are in flight, and is absent otherwise', () => {
+  const up = { kind: 'up' as const, checkedAt: 0, entries: 3, runsInFlight: 0, lastViewAt: 0 }
+  expect(filedLine({ ...up, lastNote: { id: 'n', topics: ['Q3 Roadmap', 'Hiring'] } })).toBe('✎ last note → Q3 Roadmap, Hiring')
+  expect(filedLine({ ...up, runsInFlight: 1, lastNote: { id: 'n', topics: [] } })).toBe('✎ last note → filing…')
+  expect(filedLine({ ...up, lastNote: { id: 'n', topics: [] } })).toBeNull()
+  expect(filedLine({ ...up, lastNote: null })).toBeNull()
+  expect(filedLine({ kind: 'down', checkedAt: 0 })).toBeNull()
 })
 
 test('ages round down to the largest unit', () => {
@@ -73,18 +88,29 @@ test('ages round down to the largest unit', () => {
   expect(ago(3 * 86_400_000)).toBe('3d')
 })
 
-test('hints parsing keeps up to three readable hints, and anything else is none', () => {
-  const hint = (text: unknown, topic: unknown = null) => ({ entryId: 'e', text, at: '', score: 1, topic })
+test('hints parsing keeps up to the limit of readable hints, every topic title each, and anything else is none', () => {
+  const hint = (text: unknown, topics: unknown = []) => ({ entryId: 'e', text, at: '2026-10-18T09:00:00Z', score: 1, topics })
   const body = (hints: unknown) => JSON.stringify({ hints })
-  expect(parseHints(body([hint('a  b\nc', { slug: 's', title: 'Shopping' }), hint(''), hint(7), hint('d', { slug: 's' })]))).toEqual([
-    { topic: 'Shopping', text: 'a b c' },
-    { topic: null, text: 'd' },
+  expect(parseHints(body([hint('a  b\nc', [{ slug: 's', title: 'Shopping' }, { slug: 'b', title: 'Budget' }]), hint(''), hint(7), hint('d', [{ slug: 's' }])]))).toEqual([
+    { topics: ['Shopping', 'Budget'], text: 'a b c', at: '2026-10-18T09:00:00Z' },
+    { topics: [], text: 'd', at: '2026-10-18T09:00:00Z' },
   ])
-  expect(parseHints(body(['1', '2', '3', '4'].map(t => hint(t))))).toHaveLength(3)
+  const many = body(Array.from({ length: 12 }, (_, i) => hint(String(i))))
+  expect(parseHints(many)).toHaveLength(3)
+  expect(parseHints(many, 10)).toHaveLength(10)
   expect(parseHints('<html>')).toEqual([])
   expect(parseHints('null')).toEqual([])
   expect(parseHints('{"hints":{}}')).toEqual([])
-  expect(hintLine({ topic: null, text: 'call mum' })).toBe('↳ note · call mum')
+  expect(hintLine({ topics: [], text: 'call mum', at: '' })).toBe('↳ note · call mum')
+  expect(hintLine({ topics: ['Family', 'Calls'], text: 'call mum', at: '' })).toBe('↳ Family, Calls · call mum')
+})
+
+test('the where reply lists date, topics and text per note, or says nothing matched', () => {
+  expect(whereReply('oat milk', [
+    { topics: ['Groceries', 'Budget'], text: 'oat milk is cheaper', at: '2026-10-18T09:00:00Z' },
+    { topics: [], text: 'buy oat milk', at: '2026-10-20T08:00:00Z' },
+  ])).toBe(['Notes matching "oat milk", best first:', '2026-10-18 · Groceries, Budget · oat milk is cheaper', '2026-10-20 · no topic yet · buy oat milk'].join('\n'))
+  expect(whereReply('xyz', [])).toBe('No notes match "xyz".')
 })
 
 test('the review notice counts notes, singular for one, and is absent for none', () => {

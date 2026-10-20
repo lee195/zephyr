@@ -2,7 +2,10 @@
 export type Server =
   | { kind: 'unknown' }
   | { kind: 'down'; checkedAt: number }
-  | { kind: 'up'; checkedAt: number; entries: number; runsInFlight: number; lastViewAt: number | null }
+  | { kind: 'up'; checkedAt: number; entries: number; runsInFlight: number; lastViewAt: number | null; lastNote: LastNote | null }
+
+/** The newest note and the titles of the topics it is filed under so far. */
+export type LastNote = { id: string; topics: readonly string[] }
 
 declare module 'claude-code' {
   interface PluginState {

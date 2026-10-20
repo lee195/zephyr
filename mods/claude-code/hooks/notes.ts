@@ -1,6 +1,6 @@
 import type { PromptSubmitInput } from 'claude-code'
 
-import type { Server } from '../types'
+import type { LastNote, Server } from '../types'
 
 export const NOTE_PREFIX = '[zephyr] '
 
@@ -38,7 +38,7 @@ export function parseStatus(text: string, checkedAt: number): Server {
     return { kind: 'down', checkedAt }
   }
   if (typeof raw !== 'object' || raw === null || (raw as { up?: unknown }).up !== true) return { kind: 'down', checkedAt }
-  const r = raw as { entries?: unknown; runsInFlight?: unknown; lastViewAt?: unknown }
+  const r = raw as { entries?: unknown; runsInFlight?: unknown; lastViewAt?: unknown; lastNote?: unknown }
   const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
   const at =
     typeof r.lastViewAt === 'number' ? r.lastViewAt : typeof r.lastViewAt === 'string' ? Date.parse(r.lastViewAt) : NaN
@@ -48,7 +48,23 @@ export function parseStatus(text: string, checkedAt: number): Server {
     entries: count(r.entries),
     runsInFlight: count(r.runsInFlight),
     lastViewAt: Number.isFinite(at) ? at : null,
+    lastNote: parseLastNote(r.lastNote),
   }
+}
+
+function parseLastNote(raw: unknown): LastNote | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as { id?: unknown; topics?: unknown }
+  return typeof r.id === 'string' ? { id: r.id, topics: topicTitles(r.topics) } : null
+}
+
+/** The readable titles of a `topics` list from the server; anything else counts as no topics. */
+function topicTitles(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap(t => {
+    const title = typeof t === 'object' && t !== null ? oneLine((t as { title?: unknown }).title) : ''
+    return title ? [title] : []
+  })
 }
 
 export function ago(ms: number): string {
@@ -75,6 +91,16 @@ export function bandLine(isNotesOn: boolean, server: Server, now: number): strin
     if (server.lastViewAt !== null) parts.push(`last view ${ago(now - server.lastViewAt)} ago`)
   }
   return parts.join(' · ')
+}
+
+/**
+ * Where the newest note went, for the band while notes mode is on: its topics once filed, "filing…" while runs are
+ * in flight, otherwise nothing.
+ */
+export function filedLine(server: Server): string | null {
+  if (server.kind !== 'up' || !server.lastNote) return null
+  if (server.lastNote.topics.length > 0) return `✎ last note → ${server.lastNote.topics.join(', ')}`
+  return server.runsInFlight > 0 ? '✎ last note → filing…' : null
 }
 
 /** `notes.count` from the body of `GET /api/review`; null when unreadable. */
@@ -107,8 +133,8 @@ export function mcpMissing(base: string): string {
   ].join('\n')
 }
 
-/** One hint as the band shows it: the matching note's topic title, when it has one, and its text. */
-export type Hint = { topic: string | null; text: string }
+/** One hint as the band shows it: the titles of the matching note's topics, and its text and time. */
+export type Hint = { topics: readonly string[]; text: string; at: string }
 
 export const HINT_LIMIT = 3
 
@@ -143,8 +169,8 @@ export function hintsArrived(hints: Hints, seq: number, arrived: readonly Hint[]
 
 const oneLine = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
-/** The body of `GET /hints`; anything unreadable counts as no hints. */
-export function parseHints(text: string): readonly Hint[] {
+/** The body of `GET /hints`, up to `limit` hints; anything unreadable counts as no hints. */
+export function parseHints(text: string, limit = HINT_LIMIT): readonly Hint[] {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -156,14 +182,24 @@ export function parseHints(text: string): readonly Hint[] {
   return list
     .flatMap((h: unknown): Hint[] => {
       if (typeof h !== 'object' || h === null) return []
-      const r = h as { text?: unknown; topic?: unknown }
+      const r = h as { text?: unknown; topics?: unknown; at?: unknown }
       const text = oneLine(r.text)
-      const topic = typeof r.topic === 'object' && r.topic !== null ? oneLine((r.topic as { title?: unknown }).title) : ''
-      return text ? [{ topic: topic || null, text }] : []
+      return text ? [{ topics: topicTitles(r.topics), text, at: typeof r.at === 'string' ? r.at : '' }] : []
     })
-    .slice(0, HINT_LIMIT)
+    .slice(0, limit)
 }
 
+const where = (hint: Hint) => (hint.topics.length > 0 ? hint.topics.join(', ') : 'no topic yet')
+
 export function hintLine(hint: Hint): string {
-  return `↳ ${hint.topic ?? 'note'} · ${hint.text}`
+  return `↳ ${hint.topics.length > 0 ? hint.topics.join(', ') : 'note'} · ${hint.text}`
+}
+
+/** The most notes `/zephyr where` lists; the server's own cap. */
+export const WHERE_LIMIT = 10
+
+/** What `/zephyr where` says: each matching note's date, its topics and its text, best match first. */
+export function whereReply(query: string, hints: readonly Hint[]): string {
+  if (hints.length === 0) return `No notes match "${query}".`
+  return [`Notes matching "${query}", best first:`, ...hints.map(h => `${h.at.slice(0, 10) || '?'} · ${where(h)} · ${h.text}`)].join('\n')
 }

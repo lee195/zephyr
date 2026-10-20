@@ -19,6 +19,17 @@ function reviewToast(body: unknown): string | null {
   return `${count} ${count === 1 ? 'note' : 'notes'} since last review · /zephyr-review`
 }
 
+/** The topic titles of the newest note in a `GET /status` body, when it was written at or after `since` and is filed. */
+function filedTopics(body: unknown, since: number): string[] | null {
+  const note = (body as { lastNote?: { at?: unknown; topics?: unknown } } | null)?.lastNote
+  if (typeof note?.at !== 'string' || !(Date.parse(note.at) >= since) || !Array.isArray(note.topics)) return null
+  const titles = note.topics.flatMap((t: { title?: unknown } | null) => (typeof t?.title === 'string' && t.title ? [t.title] : []))
+  return titles.length > 0 ? titles : null
+}
+
+const FILED_POLL_MS = 2000
+const FILED_WAIT_MS = 60_000
+
 const tui: TuiPlugin = async (api, options) => {
   const port = typeof options?.port === 'number' ? options.port : 7317
   const base = `http://127.0.0.1:${port}`
@@ -50,15 +61,34 @@ const tui: TuiPlugin = async (api, options) => {
       .catch(() => undefined)
   }
 
+  // Only the newest note is watched; each note restarts the watch.
+  let watch = 0
+
+  // Says where the note went once the organizer files it; gives up quietly after a minute or when the server is down.
+  async function toastWhenFiled(since: number) {
+    const mine = ++watch
+    for (let waited = 0; waited < FILED_WAIT_MS && mine === watch; waited += FILED_POLL_MS) {
+      await new Promise((r) => setTimeout(r, FILED_POLL_MS))
+      const body = await fetch(`${base}/status`, { signal: AbortSignal.timeout(1500) })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null)
+      const topics = mine === watch ? filedTopics(body, since) : null
+      if (topics) return api.ui.toast({ variant: 'info', message: `✎ → ${topics.join(', ')}` })
+    }
+  }
+
   async function keep(sessionID: string, value: string) {
     const text = value.trim()
     if (!text) return endNotes()
+    // A second of slack: opencode stamps the message after this, on the same clock.
+    const since = Date.now() - 1000
     const res = await api.client.session.prompt({ sessionID, noReply: true, parts: [{ type: 'text', text: NOTE_PREFIX + text }] })
     if (res.error) {
       api.ui.toast({ variant: 'error', message: 'not noted' })
       return api.ui.dialog.clear()
     }
     api.ui.toast({ variant: 'success', message: 'noted' })
+    void toastWhenFiled(since)
     register(sessionID)
     ask(sessionID)
   }
