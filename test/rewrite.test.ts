@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { kinds } from '../src/kinds'
-import { validateRewrite } from '../src/kinds/organizer'
+import { MAX_REWRITE_CHARS, validateRewrite } from '../src/kinds/organizer'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
 import { doneRun, entry, eventually, filesUnder, gate, payloadOf, seedDataDir, tempDir } from './helpers'
 
@@ -156,6 +156,26 @@ test('a rewrite that leaves out a source fails naming it, and its retry succeeds
     { viewIds: ['organizer/party'], status: 'done', attempt: 2, retryOf: lines[0].id },
   ])
   expect(topicOf(z, 'party').body).toBe('all of it, rewritten')
+})
+
+test('a topic due for a rewrite but over the cap is not rewritten, warns once, and is listed in status', async () => {
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    const { z, book, note } = await started()
+    await note('party: venue')
+    await note(`party: ${'x'.repeat(MAX_REWRITE_CHARS)}`)
+    for (let i = 1; i <= 4; i++) await note(`party: item ${i}`)
+    await note('garden: tomatoes')
+    await z.sweep()
+    await z.sweep()
+    await z.idle()
+    expect(book.calls.filter((c) => c.startsWith('rewrite'))).toEqual([])
+    expect(z.status().overCap).toEqual(['party'])
+    const capWarnings = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('rewrite cap'))
+    expect(capWarnings).toEqual([`[zephyr] sweep: topic party is over the ${MAX_REWRITE_CHARS}-character rewrite cap and will not be rewritten`])
+  } finally {
+    warn.mockRestore()
+  }
 })
 
 test('sweeping again while a rewrite runs queues no second one', async () => {

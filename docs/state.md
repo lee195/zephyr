@@ -25,7 +25,7 @@ What is built, how it was checked, and what is open, as of 2026-10-19 at commit 
 | Questions | Agents park `whichTopic` and `isTask` questions for the review | `705c5e0`, `81a3739` |
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
 
-Tests: 212 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 36 tests pass under `claude plugin test`.
+Tests: 213 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 36 tests pass under `claude plugin test`.
 
 ## Running on this machine
 
@@ -64,7 +64,6 @@ Model behavior:
 Behavior gaps:
 
 - opencode notes go in the `/note` dialog, not the main prompt, and the plugin only knows the database path of release builds.
-- Topics over 32,000 characters are never rewritten, and nothing logs it.
 - The memory of a rewrite that used up its attempts is lost on restart, so a stuck topic gets one more round.
 - Answering a question with a topic that was merged away since returns an error instead of following the alias.
 - Purge's word matching is coarse: a word of 4+ characters found only in the purged note becomes `[purged]` everywhere. Slugs that contain the note's words stay.

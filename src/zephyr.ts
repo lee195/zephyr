@@ -26,7 +26,7 @@ import {
   type ZephyrEvent,
 } from './domain'
 import { kinds as defaultKinds, sanitizeSlug } from './kinds'
-import { topicsIn } from './kinds/organizer'
+import { MAX_REWRITE_CHARS, overCapTopics, topicsIn } from './kinds/organizer'
 import { relevanceBackends, type Compaction, type RelevanceBackend, type RelevanceDoc } from './relevance'
 import { buildDigest, closeWindow, windowNotes, type Digest, type WindowClose } from './review'
 import { Store } from './store'
@@ -150,6 +150,8 @@ export class Zephyr {
   private lastReviewedAt: string | null = null
   /** Compactions of the relevance backend's disk cache since start, and the latest one. */
   private compactions: { count: number; last: Compaction | null } = { count: 0, last: null }
+  /** Slugs of topics the last sweep found due for a rewrite but over the cap; each warns once when it joins. */
+  private overCap = new Set<string>()
   /** Readying every doc the relevance backend will be asked about, started by start() and never awaited by it. */
   private warmup: 'idle' | 'running' | 'done' | 'failed' = 'idle'
 
@@ -247,6 +249,10 @@ export class Zephyr {
         queued++
       }
     }
+    const overCap = new Set(overCapTopics(world.views, world.entries).map((t) => t.slug))
+    for (const slug of overCap)
+      if (!this.overCap.has(slug)) console.warn(`[zephyr] sweep: topic ${slug} is over the ${MAX_REWRITE_CHARS}-character rewrite cap and will not be rewritten`)
+    this.overCap = overCap
     const compaction = await this.relevance.compact?.(this.relevantDocs()).catch((err) => {
       console.warn(`[zephyr] sweep: embeddings cache compaction failed: ${(err as Error).message}`)
       return undefined
@@ -382,6 +388,7 @@ export class Zephyr {
       runsInFlight: this.runs.filter((r) => r.status === 'queued' || r.status === 'running').length + this.retries.size,
       lastViewAt,
       sessions: this.sessions.size,
+      overCap: [...this.overCap],
       relevance: {
         warmup: this.warmup,
         pending: this.relevance.pending?.() ?? 0,

@@ -197,13 +197,19 @@ export function rewriteChars(topic: Pick<View, 'body' | 'sources'>, entries: rea
   return entries.reduce((n, e) => (cited.has(e.id) ? n + e.text.length : n), topic.body.length)
 }
 
+/** Stale, or grown by enough appends in a row to read as a log. */
+const rewriteDue = (topic: View) => topic.bodyStale || (topic.appendsSinceWrite ?? 0) >= REWRITE_AFTER_APPENDS
+
+/** Topics due for a rewrite that the cap keeps from ever getting one. */
+export const overCapTopics = (views: readonly View[], entries: readonly Entry[]) =>
+  topicsIn(views).filter((t) => rewriteDue(t) && rewriteChars(t, entries) > MAX_REWRITE_CHARS)
+
 /**
  * The rewrite input for this topic, or null when it does not qualify: neither stale nor grown by enough appends in
  * a row, or too big to show in full.
  */
 export function rewriteInput(topic: View, entries: readonly Entry[]): RewriteInput | null {
-  if (!topic.bodyStale && (topic.appendsSinceWrite ?? 0) < REWRITE_AFTER_APPENDS) return null
-  if (rewriteChars(topic, entries) > MAX_REWRITE_CHARS) return null
+  if (!rewriteDue(topic) || rewriteChars(topic, entries) > MAX_REWRITE_CHARS) return null
   const cited = new Set(topic.sources)
   return { topic, notes: entries.filter((e) => cited.has(e.id)) }
 }
