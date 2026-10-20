@@ -29,20 +29,51 @@ function filedTopics(body: unknown, since: number): string[] | null {
 
 const FILED_POLL_MS = 2000
 const FILED_WAIT_MS = 60_000
+const REGISTER_RETRY_MS = 10_000
+/** After this, a session whose registration keeps failing waits for its next note again. */
+const REGISTER_RETRY_FOR_MS = 60 * 60_000
 
 const tui: TuiPlugin = async (api, options) => {
   const port = typeof options?.port === 'number' ? options.port : 7317
   const base = `http://127.0.0.1:${port}`
   const registered = new Set<string>()
 
-  // A note is in the transcript before the server hears of it, so a server that is down loses nothing.
-  function register(sessionId: string) {
-    if (registered.has(sessionId)) return
+  // Sessions the server has not acknowledged yet, by when their registration first failed.
+  const unregistered = new Map<string, number>()
+  let retrying: ReturnType<typeof setInterval> | null = null
+
+  function post(sessionId: string): Promise<boolean> {
     const body = JSON.stringify({ harness: 'opencode', sessionId, transcriptPath: dbPath() })
-    fetch(`${base}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body }).then(
-      (res) => res.ok && registered.add(sessionId),
-      () => api.ui.toast({ variant: 'warning', message: `noted; Zephyr is not reachable on ${base}` }),
+    return fetch(`${base}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(1500) }).then(
+      (res) => res.ok,
+      () => false,
     )
+  }
+
+  async function settle(sessionId: string) {
+    if (!(await post(sessionId))) return false
+    registered.add(sessionId)
+    unregistered.delete(sessionId)
+    return true
+  }
+
+  // A note is in the transcript before the server hears of it, so a server that is down loses nothing; the session
+  // is registered again until the server answers, so notes typed while it was down reach it with no further note.
+  async function register(sessionId: string) {
+    if (registered.has(sessionId) || (await settle(sessionId))) return
+    if (unregistered.has(sessionId)) return
+    unregistered.set(sessionId, Date.now())
+    api.ui.toast({ variant: 'warning', message: `noted; Zephyr is not reachable on ${base}, retrying` })
+    retrying ??= setInterval(() => {
+      for (const [id, since] of unregistered) {
+        if (Date.now() - since > REGISTER_RETRY_FOR_MS) unregistered.delete(id)
+        else void settle(id)
+      }
+      if (unregistered.size === 0 && retrying) {
+        clearInterval(retrying)
+        retrying = null
+      }
+    }, REGISTER_RETRY_MS)
   }
 
   // Counts note boxes opened; a box's close ends notes only while it is the latest one.
@@ -89,7 +120,7 @@ const tui: TuiPlugin = async (api, options) => {
     }
     api.ui.toast({ variant: 'success', message: 'noted' })
     void toastWhenFiled(since)
-    register(sessionID)
+    void register(sessionID)
     ask(sessionID)
   }
 
@@ -165,6 +196,7 @@ const tui: TuiPlugin = async (api, options) => {
     bindings: [],
   })
   api.lifecycle.onDispose(dispose)
+  api.lifecycle.onDispose(() => retrying && clearInterval(retrying))
 }
 
 export default { id: 'zephyr', tui }

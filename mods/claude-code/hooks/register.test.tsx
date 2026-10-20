@@ -172,6 +172,22 @@ test('turning notes on registers the session with the server', async ($, on) => 
   })
 })
 
+test('notes taken while the server was down register the session once the server is back, with no new note', async ($, on) => {
+  const { clock, seen, status, notes } = engine(on, { status: 'refused' })
+  await $.command.run(TOGGLE)
+  await clock.settle()
+  expect(await $.prompt.submit(typed('noted while down'))).toEqual({ drop: 'noted' })
+  expect(notes()).toEqual(['[zephyr] noted while down'])
+  const registrations = () => seen.fetched.filter(f => f.url === 'http://127.0.0.1:7317/sessions')
+  const before = registrations().length
+
+  status.text = '{"up":true,"runsInFlight":0,"lastViewAt":null}'
+  await clock.advance(5000)
+  expect(registrations()).toHaveLength(before + 1)
+  await clock.advance(10_000)
+  expect(registrations()).toHaveLength(before + 1)
+})
+
 test('the port comes from the plugin options', { options: { port: 9001 } }, async ($, on) => {
   const { clock, seen } = engine(on)
   await $.command.run(TOGGLE)

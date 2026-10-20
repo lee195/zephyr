@@ -63,8 +63,12 @@ async function poll($: EngineInterface) {
     const res = await call($, '/status')
     const now = await $.clock.now()
     const next: Server = res?.ok ? parseStatus(res.text, now) : { kind: 'down', checkedAt: now }
+    const before = await read($, server)
     await update($, server, () => next)
-    if (!isBandShown(await isNotesOn($), next)) {
+    const isOn = await isNotesOn($)
+    // A server that was down missed the registration, and notes typed meanwhile only reach it once it knows the session.
+    if (isOn && before.kind === 'down' && next.kind === 'up') void registerSession($).catch(() => undefined)
+    if (!isBandShown(isOn, next)) {
       poller?.cancel()
       poller = null
     }
@@ -114,11 +118,15 @@ function startPolling($: EngineInterface) {
 }
 
 // The server is idempotent on this and backfills from offset 0, so a note typed while it was down is not lost.
-async function announce($: EngineInterface) {
+async function registerSession($: EngineInterface) {
   const sessionId = await $.session.id()
   const body = JSON.stringify({ harness: 'claude-code', sessionId, transcriptPath: await transcriptPath($, sessionId) })
-  startPolling($)
   await call($, '/sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+}
+
+async function announce($: EngineInterface) {
+  startPolling($)
+  await registerSession($)
 }
 
 // A notice row is drawn in the transcript and never read by the model; nothing shows when the server is down.
