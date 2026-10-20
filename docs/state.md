@@ -70,7 +70,7 @@ Behavior gaps:
 
 - opencode notes go in the `/note` dialog, not the main prompt, and the plugin only knows the database path of release builds.
 - Purge's word matching is coarse: a word of 4+ characters found only in the purged note becomes `[purged]` everywhere. Slugs that contain the note's words stay.
-- `adjustments.jsonl`, `questions.jsonl` and `runs.jsonl` only grow.
+- `adjustments.jsonl`, `questions.jsonl` and `runs.jsonl` only grow. Left open on purpose: at 50 notes a day `runs.jsonl` reaches about 14 MB in four years (projected), and 300k runs parse in 87 ms (measured). Compaction could keep every behavior and lose only history, and archiving would lose nothing; [design.md](design.md#storage-plain-files-not-a-database) has what must be kept and when to move to a database backend.
 
 Viewer:
 

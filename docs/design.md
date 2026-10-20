@@ -86,7 +86,14 @@ Live processing files each note as it arrives. The review is where you look at w
 - A query must run over more data than fits in memory.
 - Start-up parsing nears 500 ms.
 
-The logs only growing is a compaction question that a database wouldn't answer either.
+**Growing logs.** `runs.jsonl`, `adjustments.jsonl` and `questions.jsonl` only grow, and a database alone would not change that. Shrinking them is a policy choice that costs only history:
+
+- Old done runs can fold into one coverage record per kind, which covers exactly the same notes. Runs since the last review, which the digest reads, and runs whose `exhausted` mark still matches their page must stay.
+- Closed questions and finished structural adjustments (rename, merge, move, split, links, task edits) can go, since their effect lives on the views as pins, aliases and related lists.
+- Every edited text of a note must stay, because purge uses them to find the note's old words in `.history` versions and saved summaries. Purge requests and results must stay for `get_purge`.
+- What is lost is the record of the past: older runs on the activity page, when each fix was made, and which answers were given. Moving old lines to an archive file that start-up does not read would keep even that.
+
+**When the information grows large enough, move to a proper database backend** rather than stretching plain files. The signals are the revisit triggers above: start-up parsing nearing 500 ms, a query over more than fits in memory, or a second writer. Put it behind a storage interface, as relevance and models are, and keep three things: topic pages stay plain files a person can read, a purge stays provably complete (`VACUUM` or secure delete, so no deleted row lingers), and every edited text of a note stays available to purge.
 
 ## Interfaces that can be swapped
 
