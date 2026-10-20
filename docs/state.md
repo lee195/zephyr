@@ -81,4 +81,4 @@ Code that appears exactly twice and is left duplicated on purpose is listed in [
 
 ## Where the plan lives
 
-The working plan, with the phase-by-phase history and every decision as it was made, is `~/.claude/plans/greedy-stirring-hennessy.md` on this machine. This file and [design.md](design.md) are the versions kept with the code.
+The plan up to 2026-10-20, phase by phase with every decision as it was made, is [history.md](history.md). Work planned after that lives in `~/.claude/plans/greedy-stirring-hennessy.md` on this machine until it is built.
