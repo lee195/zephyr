@@ -8,7 +8,7 @@ Notes mode for Claude Code: what you type is kept in the transcript as a `[zephy
 | `/zephyr review` | Reviews the notes since the last review |
 | `/zephyr where <words>` | Lists matching notes with their topics |
 
-The mod is built from Claude Code's function hooks (`hooks/register.tsx`), checked on Claude Code 2.1.303.
+The mod is built from Claude Code's function hooks (`hooks/register.tsx`), so it needs a Claude Code build that loads function-hook mods through `CLAUDE_CODE_PLUGIN_DIRS`; it was built and tested on Claude Code 2.1.303. If `claude plugin test --help` reports an unknown command, your build cannot load it, and the [opencode plugin](../opencode/) is the way to take notes.
 
 ## Install
 
