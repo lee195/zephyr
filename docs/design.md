@@ -60,6 +60,34 @@ Live processing files each note as it arrives. The review is where you look at w
 - **Body changes reuse the rewrite run.** A move, split, edit or merge marks the page `bodyStale`, and the sweep's rewrite run cleans the text. The flag is stored, so a restart can't lose a pending cleanup.
 - **Purge is for secrets.** It removes a note's text from everything under `data/` and suppresses its id so re-reading the transcript can't bring it back. It needs the exact confirmation `purge <noteId>`. The harness transcript still holds the text, and Zephyr never writes there, so the result tells you where to remove it yourself.
 
+## Storage: plain files, not a database
+
+`data/` is JSONL logs, small JSON files and real view files: `.md`, `.svg` and `.txt` bodies, each with a JSON sidecar. SQLite was considered on 2026-10-20 and not adopted.
+
+**Why files are enough.**
+
+- Every log is read into memory once at start. After that the hot path never reads the disk.
+- Only the review digest and purge read a file again, and both run only on request.
+- At a heavy 50 notes a day with about 3 runs per note, four years come to about 20k entries (6 MB) and 60k runs (14 MB). Bun parses 60k run lines in 17 ms and 300k (69 MB) in 87 ms.
+- Atomicity comes from the design, not a database:
+  - Each file has one writer.
+  - Appends and rewrites of the same file share an exclusive section.
+  - Rewrites go through a tmp file and a rename.
+  - A view's sidecar is written after its body, and a view is read only through its sidecar.
+
+**Why a database would hurt.**
+
+- Topic pages are meant to be files you can open, grep and keep without Zephyr. A database would still need those files, so there would be two stores to keep in step.
+- Purge is checked by `rg` finding nothing under `data/`. In SQLite a deleted row stays in free pages and in the write-ahead log until a `VACUUM`.
+
+**When to revisit.**
+
+- A second process writes `data/`.
+- A query must run over more data than fits in memory.
+- Start-up parsing nears 500 ms.
+
+The logs only growing is a compaction question that a database wouldn't answer either.
+
 ## Interfaces that can be swapped
 
 Anything that ranks, embeds or calls a model sits behind an interface with a registry: `TranscriptAdapter` (`src/adapters`), `ModelBackend` (`src/backends.ts`) and `RelevanceBackend` (`src/relevance.ts`). Configuration is parsed once in `src/config.ts`, and an unknown name fails there with the registered names.
