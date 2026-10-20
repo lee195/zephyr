@@ -87,6 +87,45 @@ test('a question whose note was moved since closes as moot on any answer, and ch
   s.z.stop()
 })
 
+test('an answer naming a topic merged away since moves the note to the topic it was merged into', async () => {
+  const s = await asked()
+  await s.note('yard: fence')
+  const [q] = s.z.listQuestions()
+  expect(await s.adjust({ op: 'mergeTopics', from: 'garden', into: 'yard' })).toMatchObject({ ok: true })
+  expect(s.z.listQuestions()[0]!).toMatchObject({ answers: ['keep', 'garden'], alternatives: [{ slug: 'yard', title: 'YARD' }] })
+  const answered = await s.z.answerQuestion(q!.id, 'garden')
+  await s.z.idle()
+  expect(answered).toMatchObject({ ok: true, closed: { how: 'applied' }, adjustment: { ok: true } })
+  expect(s.view('organizer/yard')!.sources).toContain('e4')
+  expect(s.view('organizer/balcony')!.sources).not.toContain('e4')
+  s.z.stop()
+})
+
+test('a question whose chosen topic was merged away still applies on the topic it was merged into', async () => {
+  const s = await asked()
+  await s.note('yard: fence')
+  const [q] = s.z.listQuestions()
+  expect(await s.adjust({ op: 'mergeTopics', from: 'balcony', into: 'yard' })).toMatchObject({ ok: true })
+  expect(s.z.listQuestions()[0]!).toMatchObject({ chosen: { slug: 'yard', title: 'YARD' } })
+  expect(s.z.listQuestions()[0]!.moot).toBeUndefined()
+  const answered = await s.z.answerQuestion(q!.id, 'garden')
+  await s.z.idle()
+  expect(answered).toMatchObject({ ok: true, closed: { how: 'applied' }, adjustment: { ok: true } })
+  expect(s.view('organizer/garden')!.sources).toEqual(['e1', 'e4'])
+  expect(s.view('organizer/yard')!.sources).not.toContain('e4')
+  s.z.stop()
+})
+
+test('when the chosen topic was merged into the answer, the question closes as moot and nothing changes', async () => {
+  const s = await asked()
+  const [q] = s.z.listQuestions()
+  expect(await s.adjust({ op: 'mergeTopics', from: 'balcony', into: 'garden' })).toMatchObject({ ok: true })
+  const before = state(s.z.listViews())
+  expect(await s.z.answerQuestion(q!.id, 'garden')).toEqual({ ok: true, questionId: q!.id, closed: { how: 'moot', reason: 'balcony and garden were merged into garden' } })
+  expect(state(s.z.listViews())).toEqual(before)
+  s.z.stop()
+})
+
 test('a task the run doubts is a question; answering deleteTask deletes it, and a tombstoned note makes it moot', async () => {
   const s = await started()
   await s.note('garden: todo water the beans ask:task', 'garden: todo buy a hose ask:task')

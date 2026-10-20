@@ -28,7 +28,7 @@ What is built, how it was checked, and what is open, as of 2026-10-19 at commit 
 | Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | `78c2a76` |
 | Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | `896e631` |
 
-Tests: 231 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
+Tests: 234 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
 
 ## Running on this machine
 
@@ -69,7 +69,6 @@ Model behavior:
 Behavior gaps:
 
 - opencode notes go in the `/note` dialog, not the main prompt, and the plugin only knows the database path of release builds.
-- Answering a question with a topic that was merged away since returns an error instead of following the alias.
 - Purge's word matching is coarse: a word of 4+ characters found only in the purged note becomes `[purged]` everywhere. Slugs that contain the note's words stay.
 - An adjustment that fails partway with an I/O error returns 500 and is applied again only on the next start.
 - Stopping a transcript reader doesn't cancel a read already in progress.
