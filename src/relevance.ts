@@ -148,7 +148,7 @@ export const relevanceBackends = {
   embedding(config, deps) {
     const embed = config.embed
     if (!embed) throw new Error('embedding relevance needs ZEPHYR_EMBED_URL, ZEPHYR_EMBED_MODEL and ZEPHYR_EMBED_KEY_VAR')
-    if (!embed.apiKey) throw new Error(`${embed.keyVar} is not set; embedding relevance needs it (for the shared endpoint, run under \`wick exec --only vllm --\`)`)
+    if (!embed.apiKey) throw new Error(`${embed.keyVar} is not set; embedding relevance needs it in the server's environment`)
     return embeddingBackend({ baseUrl: embed.url, model: embed.model, apiKey: embed.apiKey, ...deps })
   },
 } satisfies Record<string, (config: Config, deps: RelevanceDeps) => RelevanceBackend>

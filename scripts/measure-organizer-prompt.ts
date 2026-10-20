@@ -1,7 +1,7 @@
 /**
  * Measures the organizer prompt against the real model endpoint.
  *
- *   wick exec --only vllm -- bun scripts/measure-organizer-prompt.ts [--topics 20] [--reps 1] [--breakdown] [--out file.json]
+ *   bun scripts/measure-organizer-prompt.ts [--topics 20] [--reps 1] [--breakdown] [--out file.json]
  *
  * Builds a data dir at steady state from scripts/fixtures/organizer-corpus.json (one topic per subject,
  * 3 to 8 notes each, body one bullet per note, entries interleaved in time), then sends each probe note

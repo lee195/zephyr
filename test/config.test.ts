@@ -93,18 +93,18 @@ test('an unknown backend or relevance name fails at parse time, listing the regi
   expect(() => parseConfig({ ...LLM_ENV, ZEPHYR_BACKEND: 'gpt' })).toThrow('unknown ZEPHYR_BACKEND: gpt; registered: vllm, claude-code, opencode')
 })
 
-test(".env.example parses to today's settings: the shared endpoint for chat and embeddings, keyed by DEEPSEEK_API_KEY", async () => {
+test('.env.example parses: OpenAI for chat keyed by OPENAI_API_KEY, tfidf relevance, and no embed endpoint', async () => {
   const example = readEnvFile(await Bun.file(join(import.meta.dir, '../.env.example')).text())
-  expect(example).not.toHaveProperty('DEEPSEEK_API_KEY')
-  const config = parseConfig({ ...example, DEEPSEEK_API_KEY: 'k' })
+  expect(example).not.toHaveProperty('OPENAI_API_KEY')
+  const config = parseConfig({ ...example, OPENAI_API_KEY: 'k' })
   expect(config).toMatchObject({
     modelBackend: 'vllm',
-    chat: { url: 'https://llm.example.com/v1', model: 'deepseek-v4-flash-fast', keyVar: 'DEEPSEEK_API_KEY', apiKey: 'k' },
-    relevance: 'embedding',
-    embed: { url: 'https://llm.example.com/v1', model: 'embeddinggemma2', keyVar: 'DEEPSEEK_API_KEY', apiKey: 'k' },
+    chat: { url: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', keyVar: 'OPENAI_API_KEY', apiKey: 'k' },
+    relevance: 'tfidf',
     port: 7317,
     sweepMinutes: 30,
   })
+  expect(config.embed).toBeUndefined()
   expect(config.dataDir).toEndWith('/data')
 })
 

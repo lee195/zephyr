@@ -8,7 +8,7 @@ export type Env = Readonly<Record<string, string | undefined>>
 export interface Endpoint {
   url: string
   model: string
-  /** The variable that holds the key, such as DEEPSEEK_API_KEY; named in errors, never the key itself. */
+  /** The variable that holds the key, such as OPENAI_API_KEY; named in errors, never the key itself. */
   keyVar: string
   /** Absent when that variable is unset or empty: calls fail until it is set. */
   apiKey?: string

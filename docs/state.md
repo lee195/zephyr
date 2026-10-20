@@ -27,17 +27,16 @@ What is built, how it was checked, and what is open, as of 2026-10-20. The confi
 | Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
 | Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | `78c2a76` |
 | Open-issues work | Viewer: `.history` versions in each topic card, a Summaries page, `vue-tsc` in `bun run typecheck`, a fixed `aria-controls`. Purge: plain words scrubbed only where the note was. Model: retitling rewrites and merges, a weak and similarity gate on link suggestions, no added framing in summaries, a repair retry for refused diagrams. Measured with `scripts/measure-deeper.ts` (below) | `30f9acf`..`4512d1a` |
-| Configurable LLM | Chat and embeddings each get their own endpoint, model and key variable; the LLM settings live in a gitignored `.env`, with `.env.example` committed. Two harness backends: `claude-code` (`claude -p`) and `opencode` (`opencode run`) | uncommitted |
+| Configurable LLM | Chat and embeddings each get their own endpoint, model and key variable; the LLM settings live in a gitignored `.env`, with `.env.example` committed. Two harness backends: `claude-code` (`claude -p`) and `opencode` (`opencode run`) | `6c40ef6`, `d640373`, `593781d` |
 | Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | `896e631` |
 
 Tests: 259 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 42 tests pass under `claude plugin test`.
 
-## Running on this machine
+## Running it
 
-- The server runs detached on `127.0.0.1:7317`, started from this folder with `wick exec --only vllm -- bun run start`. Its log is `data/server.log`. To stop it, kill `wick` and both `bun` processes; killing only `wick` leaves `bun` running.
-- The `zephyr` mod is in `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`.
-- The `zephyr` MCP server is in the user-scope Claude Code config (`claude mcp get zephyr`).
-- The first review has not happened yet. The data predates the review cursor, so the first digest covers all 13 notes and the one topic, "LLM Context Degradation".
+- The server runs on `127.0.0.1:7317`, started from the repo folder with `bun run start`, with the chat key in its environment when `ZEPHYR_BACKEND` is `vllm`.
+- The Claude Code mod loads through `CLAUDE_CODE_PLUGIN_DIRS`, the opencode plugin through `tui.json`; see [mods/claude-code](../mods/claude-code/README.md) and [mods/opencode](../mods/opencode/README.md).
+- The review commands need the `zephyr` MCP server added once in each harness; see the README's MCP section.
 
 ## Checked live, and not yet
 

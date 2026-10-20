@@ -1,6 +1,6 @@
 # Zephyr
 
-Take notes by typing into your agent harness. The Zephyr mod writes each note into the session transcript as a user row starting with `[zephyr] `. This server tails the registered transcripts, copies each note into `data/entries.jsonl`, runs agent kinds on the vLLM endpoint, and writes the derived views as plain files. A localhost viewer shows them live. The viewer only displays; input always comes from the harness.
+Take notes by typing into your agent harness. The Zephyr mod writes each note into the session transcript as a user row starting with `[zephyr] `. This server tails the registered transcripts, copies each note into `data/entries.jsonl`, runs agent kinds on a model of your choice (an OpenAI-compatible endpoint, or your own Claude Code or opencode), and writes the derived views as plain files. A localhost viewer shows them live. The viewer only displays; input always comes from the harness.
 
 Why it is built this way is in [docs/design.md](docs/design.md). What is built, what was checked and what is open is in [docs/state.md](docs/state.md).
 
@@ -9,10 +9,10 @@ Why it is built this way is in [docs/design.md](docs/design.md). What is built, 
 ```sh
 bun install
 cp .env.example .env
-wick exec --only vllm -- bun run start
+bun run start
 ```
 
-Start from the repo folder: Bun loads `.env` from the working directory on its own, and a variable already set in the process wins over it. `.env` is gitignored and holds no key. `.env.example` lists every setting with today's values. `wick` injects `DEEPSEEK_API_KEY` into that one process. `start` builds the viewer when its sources are newer than `viewer/dist`, then serves everything on http://127.0.0.1:7317.
+Start from the repo folder: Bun loads `.env` from the working directory on its own, and a variable already set in the process wins over it. `.env` is gitignored and holds no key. `.env.example` lists every setting, set up for OpenAI's API. The key goes in the variable that `ZEPHYR_CHAT_KEY_VAR` names, in the server's environment only: export it from your password manager's CLI or a secrets runner for that one process, never into `.env`. With `ZEPHYR_BACKEND=claude-code` or `opencode`, no key is needed. `start` builds the viewer when its sources are newer than `viewer/dist`, then serves everything on http://127.0.0.1:7317.
 
 The model that answers is set by `ZEPHYR_BACKEND`:
 
@@ -24,7 +24,7 @@ The model that answers is set by `ZEPHYR_BACKEND`:
 
 `ZEPHYR_HARNESS_BIN` overrides the `claude` or `opencode` binary on `PATH`. A harness call runs with no tools, MCP servers or mods, and its instructions and input go in a private temp folder and on stdin, never in the command line. `claude -p` saves no session. opencode saves every run as a session, so the notes a run was shown also stay in opencode's database; a purge says so. A harness call takes several seconds, against about one for the endpoint, since each one starts the CLI.
 
-Relevance (`ZEPHYR_RELEVANCE`) is `embedding` by default, through its own endpoint: `ZEPHYR_EMBED_URL`, `ZEPHYR_EMBED_MODEL` and `ZEPHYR_EMBED_KEY_VAR`. Neither harness offers embeddings. Without the embedding key the server falls back to `tfidf`, which ranked the right topic first for 30% of notes on the test corpus, against 65% for `embeddinggemma2`. The relatedness thresholds are measured per embedding model; for another one, measure them with `scripts/measure-relevance.ts`.
+Relevance (`ZEPHYR_RELEVANCE`) is `tfidf` in `.env.example`, local and with no key, and `embedding` when unset. `embedding` goes through its own endpoint: `ZEPHYR_EMBED_URL`, `ZEPHYR_EMBED_MODEL` and `ZEPHYR_EMBED_KEY_VAR`. Neither harness offers embeddings. Without the embedding key the server falls back to `tfidf`, which ranked the right topic first for 30% of notes on the test corpus, against 65% for `embeddinggemma2`. The relatedness thresholds are measured per embedding model; for another one, measure them with `scripts/measure-relevance.ts`.
 
 | Server setting | Default |
 | --- | --- |

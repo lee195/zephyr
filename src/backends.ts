@@ -20,7 +20,7 @@ function chatEndpoint(config: Config): Endpoint {
 /** POSTs body, with the configured chat model, to the chat endpoint's completions and returns the reply as JSON. */
 export async function chatCompletion(config: Config, body: object, signal?: AbortSignal): Promise<any> {
   const chat = chatEndpoint(config)
-  if (!chat.apiKey) throw new Error(`${chat.keyVar} missing; for the shared endpoint, start with \`wick exec --only vllm -- bun run start\``)
+  if (!chat.apiKey) throw new Error(`${chat.keyVar} missing; set it in the server's environment, or use ZEPHYR_BACKEND=claude-code or opencode`)
   const res = await fetch(`${chat.url}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${chat.apiKey}` },

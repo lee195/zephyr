@@ -2,7 +2,7 @@
  * Measures a relevance backend on a subject-labelled corpus, offline and without a model.
  *
  *   bun scripts/measure-relevance.ts [corpus.json] [--backend tfidf|embedding] [--cache dir]
- *   wick exec --only vllm -- bun scripts/measure-relevance.ts --backend embedding
+ *   bun scripts/measure-relevance.ts --backend embedding
  *
  * Each note is ranked against every other note; a hit is relevant when it shares the note's subject.
  * Prints JSON: top-1 / recall@3 / recall@5 / MRR over all notes and over the notes that share no content word

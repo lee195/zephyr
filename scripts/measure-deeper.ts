@@ -1,7 +1,7 @@
 /**
  * Measures the prompts behind the open model-behavior issues against the real model endpoint.
  *
- *   wick exec --only vllm -- bun scripts/measure-deeper.ts --item <retitle|rewrite|merge|links|summary|svg|ambiguity> [--reps 5] [--out file.json]
+ *   bun scripts/measure-deeper.ts --item <retitle|rewrite|merge|links|summary|svg|ambiguity> [--reps 5] [--out file.json]
  *
  * Each item calls the prompt builders directly with fixed fixtures built from scripts/fixtures/organizer-corpus.json,
  * so it needs no data dir and never touches ./data or a running server. It prints one line per call and a summary.

@@ -26,12 +26,12 @@ From you:
 - **Input.** You type in the harness. The server watches the harness transcript.
 - **What agents may change.** Agents write derived views only.
 - **Visuals.** SVG or ASCII in a localhost viewer. No Mermaid.
-- **Model.** Agents run on the vLLM endpoint.
+- **Model.** Agents run on a vLLM endpoint.
 - **Status.** A Claude Code mod shows the server's state.
 
 My defaults. Change any of them before approving.
 
-- **Location.** `~/ai-workspace/zephyr`, with the mod at `~/ai-workspace/jlee-mods/zephyr`.
+- **Location.** The server in its own repo, with the mod in a separate mods repo; both now live here, the mods under `mods/`.
 - **Stack.** Bun server, with Server-Sent Events (SSE) for live updates, and a Vite + Vue 3 + TS viewer.
 - **Key.** `DEEPSEEK_API_KEY` loads with `bun --env-file=.env.local`.
 
@@ -158,7 +158,7 @@ Critical files: `src/zephyr.ts`, `src/domain.ts`, `src/kinds/organizer.ts`, `src
 
 ## Verification
 
-Each phase's check is its gate. Unit tests drive a real `Zephyr` with scripted model replies, as the existing tests do. Live checks use scratch data dirs, free ports (never 7317) and `wick exec --only vllm`. Review flows are checked in a real Claude Code session and a real opencode session.
+Each phase's check is its gate. Unit tests drive a real `Zephyr` with scripted model replies, as the existing tests do. Live checks use scratch data dirs, free ports (never 7317) and the real endpoint. Review flows are checked in a real Claude Code session and a real opencode session.
 
 ---
 
