@@ -1,4 +1,4 @@
-# zephyr-opencode
+# Zephyr plugin for opencode
 
 Take Zephyr notes in opencode. This is an opencode TUI plugin, not a Claude Code mod. `/note` opens a note box inside the TUI. Each Enter keeps what you typed in the session as a user message starting with `[zephyr] `, sent with opencode's `noReply`, so no model turn runs. Esc ends notes. The note shows in the session, and a toast says `noted`. Once the server has filed the note, a second toast says where it went, such as `✎ → Q3 Roadmap, Hiring`; it gives up quietly after a minute. Ending notes shows a toast such as `3 notes since last review · /zephyr-review` when the server has notes nobody has reviewed yet. Run from the home screen, `/note` starts a new session.
 
@@ -13,14 +13,14 @@ Add the plugin to a `tui.json`. That can be the project's `.opencode/tui.json`, 
 ```json
 {
   "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["/path/to/jlee-mods/zephyr-opencode/zephyr.ts"]
+  "plugin": ["/path/to/zephyr/mods/opencode/zephyr.ts"]
 }
 ```
 
 Restart opencode to load it. To reach Zephyr on a port other than 7317, give the plugin options:
 
 ```json
-{ "plugin": [["/path/to/jlee-mods/zephyr-opencode/zephyr.ts", { "port": 7400 }]] }
+{ "plugin": [["/path/to/zephyr/mods/opencode/zephyr.ts", { "port": 7400 }]] }
 ```
 
 ## Review

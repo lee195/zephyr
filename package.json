@@ -8,7 +8,8 @@
     "dev:viewer": "vite --config viewer/vite.config.ts",
     "build": "vite build --config viewer/vite.config.ts",
     "test": "bun test",
-    "typecheck": "tsc -p tsconfig.json && vue-tsc -p viewer/tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json && vue-tsc -p viewer/tsconfig.json",
+    "test:mod": "claude plugin test mods/claude-code"
   },
   "dependencies": {
     "dompurify": "^3.2.6",

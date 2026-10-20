@@ -29,7 +29,7 @@ test('a note with an image is refused, not sent to the model', () => {
 })
 
 test('the transcript path follows Claude Code project naming', () => {
-  expect(encodeProjectDir('/Users/me/ai-workspace/example-project')).toBe('-Users-me-ai-workspace-example-project')
+  expect(encodeProjectDir('/home/me/work/example.co.uk')).toBe('-home-me-work-example-co-uk')
   expect(transcriptPathFor('/Users/me', '/Users/me/ai-workspace/zephyr', 'abc')).toBe(
     '/Users/me/.claude/projects/-Users-me-ai-workspace-zephyr/abc.jsonl',
   )

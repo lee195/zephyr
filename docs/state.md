@@ -10,21 +10,21 @@ What is built, how it was checked, and what is open, as of 2026-10-20. The confi
 | Retries | Persist every run in `runs.jsonl`; retry failed and skipped notes (5 s, 30 s, 120 s); recover on start | `fa50423`, `f55a8e6` |
 | Bounded organizer | Top-3 topics in full plus a one-line index; `write` and `append` operations | `df099e3`..`8e0dbad` |
 | Tasks and diagrams | `tasks` kind with add, complete and update; `visualizer` kind drawing SVG or ASCII for topics with 4+ notes | `a2ad1be`..`fd49116` |
-| Hints | `GET /hints` and the mod's band lines while you type | `6c1f0b2`, `005e70a` (jlee-mods) |
+| Hints | `GET /hints` and the mod's band lines while you type | `6c1f0b2`, `005e70a` |
 | Relevance | TF-IDF with stopwords; `embeddinggemma2` embeddings with TF-IDF fallback; cache warm-up | `ddf5ab6`..`7499cba` |
 | Config and registries | One config parser; registries for adapters, model backends and relevance backends | `a3368e0`..`a7655ed` |
-| opencode | SQLite adapter and the `/note` plugin | `c8408dc`, `5d90094`, `415c269` (jlee-mods) |
+| opencode | SQLite adapter and the `/note` plugin | `c8408dc`, `5d90094`, `415c269` |
 | Codex | Added, then removed | added `8454c88`, removed `b20ef6f` |
 | Viewer | Multi-topic marker, title history, collapsed failure chips | `e8eb44a`, `15d6719`, `0e167cd`, `82fffcb` |
 | Retitle | `append` may carry a new title | `550d595` |
 | Cleanup sweep | Rewrite append-log pages, save old bodies to `.history`, compact the embeddings cache | `5db8396`..`9de559c` |
 | Review digest | `GET /api/review`, the review cursor, the request guard | `f40bca8` |
 | Adjustments | Rename, merge, move, detach, split, note edit and tombstone, task ops, pins | `a7e66a3`..`0410b2f` |
-| MCP and review commands | `/mcp`, `/zephyr review`, `/zephyr-review` | `4796dbb`, `942e0b0`, `f0c3c63` (jlee-mods) |
+| MCP and review commands | `/mcp`, `/zephyr review`, `/zephyr-review` | `4796dbb`, `942e0b0`, `f0c3c63` |
 | Purge | Remove a note's text from `data/` for good | `e13fbfe`..`37fcba6` |
 | Questions | Agents park `whichTopic` and `isTask` questions for the review | `705c5e0`, `81a3739` |
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
-| Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
+| Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` |
 | Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | `78c2a76` |
 | Open-issues work | Viewer: `.history` versions in each topic card, a Summaries page, `vue-tsc` in `bun run typecheck`, a fixed `aria-controls`. Purge: plain words scrubbed only where the note was. Model: retitling rewrites and merges, a weak and similarity gate on link suggestions, no added framing in summaries, a repair retry for refused diagrams. Measured with `scripts/measure-deeper.ts` (below) | `30f9acf`..`4512d1a` |
 | Configurable LLM | Chat and embeddings each get their own endpoint, model and key variable; the LLM settings live in a gitignored `.env`, with `.env.example` committed. Two harness backends: `claude-code` (`claude -p`) and `opencode` (`opencode run`) | `6c40ef6`, `d640373`, `593781d` |

@@ -10,8 +10,8 @@ This is the one decision everything else follows from. An early plan had a web t
 
 Two harnesses are supported:
 
-- **Claude Code.** The `zephyr` mod (`jlee-mods/zephyr`) catches the prompt in notes mode, appends it to the transcript as a hidden user row with `$.session.append`, drops the turn so no model runs, and echoes a visible `✎` notice. Hidden rows are never drawn in the transcript, which is why the echo exists.
-- **opencode.** The `zephyr-opencode` TUI plugin adds `/note`, a dialog that sends each line with the SDK's `noReply` flag.
+- **Claude Code.** The `zephyr` mod (`mods/claude-code`) catches the prompt in notes mode, appends it to the transcript as a hidden user row with `$.session.append`, drops the turn so no model runs, and echoes a visible `✎` notice. Hidden rows are never drawn in the transcript, which is why the echo exists.
+- **opencode.** The opencode TUI plugin (`mods/opencode`) adds `/note`, a dialog that sends each line with the SDK's `noReply` flag.
 
 Codex was supported briefly and then dropped. It has no way to keep a message without a model turn, so every note cost a full turn of its session context (about 6.7k tokens in the measurement), and it needed a request-shape shim to talk to the vLLM endpoint.
 

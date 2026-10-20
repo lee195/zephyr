@@ -2,6 +2,8 @@
 
 Take notes by typing into your agent harness. The Zephyr mod writes each note into the session transcript as a user row starting with `[zephyr] `. This server tails the registered transcripts, copies each note into `data/entries.jsonl`, runs agent kinds on a model of your choice (an OpenAI-compatible endpoint, or your own Claude Code or opencode), and writes the derived views as plain files. A localhost viewer shows them live. The viewer only displays; input always comes from the harness.
 
+The repo holds the server and viewer, and under [`mods/`](mods/) the capture for each harness: [`mods/claude-code`](mods/claude-code/) for Claude Code and [`mods/opencode`](mods/opencode/) for opencode. Install the one for your harness from its README, and add the MCP server for reviews (see [MCP](#mcp)).
+
 Why it is built this way is in [docs/design.md](docs/design.md). What is built, what was checked and what is open is in [docs/state.md](docs/state.md).
 
 ## Run
@@ -34,7 +36,7 @@ Relevance (`ZEPHYR_RELEVANCE`) is `tfidf` in `.env.example`, local and with no k
 
 `ZEPHYR_VLLM_URL` and `ZEPHYR_MODEL` were renamed to the chat and embed settings; if either is still set, the server refuses to start and names the replacement.
 
-Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, proxied to the server), `bun run build`, `bun test`, and `bun run typecheck` (`tsc` for the server and tests, `vue-tsc` for the viewer's `.vue` files).
+Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, proxied to the server), `bun run build`, `bun test`, `bun run test:mod` (the Claude Code mod's tests, under `claude plugin test`), and `bun run typecheck` (`tsc` for the server and tests, `vue-tsc` for the viewer's `.vue` files).
 
 ## Data
 
@@ -73,8 +75,8 @@ A note is a user row whose text starts with `[zephyr] `, in every harness. Each 
 
 | Harness | Transcript (`transcriptPath`) | Capture |
 | --- | --- | --- |
-| `claude-code` | the session `.jsonl`, tailed from a byte offset | the Zephyr mod in `jlee-mods/zephyr` |
-| `opencode` | opencode's SQLite database (`opencode db path`); each read returns the session's user text again and dedupe drops repeats | the `/note` TUI plugin in `jlee-mods/zephyr-opencode` |
+| `claude-code` | the session `.jsonl`, tailed from a byte offset | the Zephyr mod in [`mods/claude-code`](mods/claude-code/) |
+| `opencode` | opencode's SQLite database (`opencode db path`); each read returns the session's user text again and dedupe drops repeats | the `/note` TUI plugin in [`mods/opencode`](mods/opencode/) |
 
 ## Kinds
 
