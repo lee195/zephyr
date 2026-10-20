@@ -50,6 +50,9 @@ function topic(id: string) {
       <li>
         <a href="#/activity" :aria-current="isCurrent({ page: 'activity' }) ? 'page' : undefined" @click="emit('navigate')">Activity</a>
       </li>
+      <li>
+        <a href="#/summaries" :aria-current="isCurrent({ page: 'summaries' }) ? 'page' : undefined" @click="emit('navigate')">Summaries</a>
+      </li>
     </ul>
   </nav>
 </template>

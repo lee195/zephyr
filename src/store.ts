@@ -20,6 +20,43 @@ async function readText(path: string): Promise<string | null> {
   }
 }
 
+/** An ISO timestamp as views and summaries carry it; the only shape a version or summary name read from a request may take. */
+const ISO_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
+const VIEW_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** A kind and slug from a request name a folder under views/ and nothing else. */
+const validViewName = (v: Pick<View, 'kind' | 'slug'>) => VIEW_NAME.test(v.kind) && VIEW_NAME.test(v.slug)
+
+export interface ArchivedVersion {
+  at: string
+  format: ViewFormat
+}
+
+function parseArchivedName(name: string): ArchivedVersion | null {
+  const dot = name.lastIndexOf('.')
+  const at = name.slice(0, dot)
+  const format = (Object.entries(EXT) as [ViewFormat, string][]).find(([, ext]) => ext === name.slice(dot + 1))?.[0]
+  return format && ISO_AT.test(at) ? { at, format } : null
+}
+
+export interface SavedSummary {
+  since: string | null
+  until: string
+  noteCount: number
+}
+
+function parseSummaryFile(text: string | null): { meta: SavedSummary; summary: string } | null {
+  const m = text && /^---\nsince: (.*)\nuntil: (.*)\nnotes: (.*)\n---\n\n([\s\S]*)$/.exec(text)
+  if (!m) return null
+  let ids: unknown
+  try {
+    ids = JSON.parse(m[3]!)
+  } catch {
+    return null
+  }
+  return { meta: { since: m[1] === 'null' ? null : m[1]!, until: m[2]!, noteCount: Array.isArray(ids) ? ids.length : 0 }, summary: m[4]!.trimEnd() }
+}
+
 function parseJsonl<T>(text: string | null): T[] {
   const out: T[] = []
   for (const line of (text ?? '').split('\n')) {
@@ -245,6 +282,27 @@ export class Store {
     return deleted
   }
 
+  /** The archived versions of a view, newest first, by the updatedAt each was saved under; none for a name that is not one. */
+  async listHistory(view: Pick<View, 'kind' | 'slug'>): Promise<ArchivedVersion[]> {
+    if (!validViewName(view)) return []
+    const versions: ArchivedVersion[] = []
+    for (const name of await readdir(this.historyDir(view)).catch(() => [] as string[])) {
+      const version = parseArchivedName(name)
+      if (version) versions.push(version)
+    }
+    return versions.sort((a, b) => b.at.localeCompare(a.at))
+  }
+
+  /** One archived version's body, or null when there is none by that name. */
+  async readHistory(view: Pick<View, 'kind' | 'slug'>, at: string): Promise<{ at: string; format: ViewFormat; body: string } | null> {
+    if (!validViewName(view) || !ISO_AT.test(at)) return null
+    for (const [format, ext] of Object.entries(EXT) as [ViewFormat, string][]) {
+      const body = await readText(join(this.historyDir(view), `${at}.${ext}`))
+      if (body !== null) return { at, format, body }
+    }
+    return null
+  }
+
   /** Every archived version of the view. */
   async deleteHistory(view: Pick<View, 'kind' | 'slug'>) {
     await rm(this.historyDir(view), { recursive: true, force: true })
@@ -264,6 +322,24 @@ export class Store {
     const front = [`since: ${s.since ?? 'null'}`, `until: ${s.until}`, `notes: ${JSON.stringify(s.noteIds)}`]
     await writeAtomic(path, `---\n${front.join('\n')}\n---\n\n${s.summary}\n`)
     return path
+  }
+
+  /** The saved summaries, newest first, read from their front matter. */
+  async listSummaries(): Promise<SavedSummary[]> {
+    const out: SavedSummary[] = []
+    for (const name of await readdir(this.summariesDir).catch(() => [] as string[])) {
+      if (!name.endsWith('.md')) continue
+      const parsed = parseSummaryFile(await readText(join(this.summariesDir, name)))
+      if (parsed) out.push(parsed.meta)
+    }
+    return out.sort((a, b) => b.until.localeCompare(a.until))
+  }
+
+  /** One saved summary by its window's until, or null when there is none. */
+  async readSummary(until: string): Promise<(SavedSummary & { summary: string }) | null> {
+    if (!ISO_AT.test(until)) return null
+    const parsed = parseSummaryFile(await readText(join(this.summariesDir, `${until.replace(/:/g, '-')}.md`)))
+    return parsed && parsed.meta.until === until ? { ...parsed.meta, summary: parsed.summary } : null
   }
 
   /** Deletes every saved summary for which `drop` holds, given the note ids it summarized and its text. Returns how many. */

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { Run, RunStatus } from '../src/domain'
-import { stripOf } from '../viewer/src/live'
+import { hrefOf, parseRoute, stripOf } from '../viewer/src/live'
 
 let seq = 0
 const run = (kind: string, status: RunStatus, endedAt?: string, extra: Partial<Run> = {}): Run => ({
@@ -52,4 +52,10 @@ test('done runs that needed no model call stay out of the strip', () => {
   const called = run('map', 'done', '2026-10-19T10:00:00Z')
   const idle = { ...run('map', 'done', '2026-10-19T10:01:00Z'), noCall: true as const }
   expect(stripOf([called, idle]).runs).toEqual([called])
+})
+
+test('every page route reads back from the hash it writes, summaries included', () => {
+  for (const r of [{ page: 'space', slug: 'home-life' }, { page: 'tasks' }, { page: 'activity' }, { page: 'summaries' }, { page: 'all' }] as const)
+    expect(parseRoute(hrefOf(r))).toEqual(r)
+  expect(parseRoute('#/nowhere')).toBeNull()
 })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { View } from '../../src/domain'
-import { derivedBySource, goToTopic, openSource, state, topicsByEntry } from './live'
+import { ref, watch } from 'vue'
+import type { View, ViewFormat } from '../../src/domain'
+import { derivedBySource, fetchJson, goToTopic, openSource, state, topicsByEntry } from './live'
 import ViewBody from './ViewBody.vue'
 
 const props = defineProps<{ view: View }>()
@@ -19,6 +19,36 @@ function toggleSource(entryId: string) {
 /** The other topics citing an entry this topic cites; a note may belong to several, and showing them makes a wrong one easy to spot. */
 const otherTopics = (entryId: string) => (topicsByEntry.value.get(entryId) ?? []).filter((t) => t.id !== props.view.id)
 
+/** The page as it was before each rewrite, newest first, read from `.history` only while the list is open. */
+const versionsOpen = ref(false)
+const versions = ref<{ at: string; format: ViewFormat }[]>([])
+const shown = ref<{ at: string; view: View } | null>(null)
+const historyPath = () => `/api/history/${props.view.kind}/${props.view.slug}`
+
+async function loadVersions() {
+  versions.value = (await fetchJson<{ at: string; format: ViewFormat }[]>(historyPath())) ?? []
+  if (shown.value && !versions.value.some((v) => v.at === shown.value!.at)) shown.value = null
+}
+
+function toggleVersions(e: Event) {
+  versionsOpen.value = (e.target as HTMLDetailsElement).open
+  if (versionsOpen.value) void loadVersions()
+  else shown.value = null
+}
+
+async function showVersion(at: string) {
+  if (shown.value?.at === at) return (shown.value = null)
+  const v = await fetchJson<{ at: string; format: ViewFormat; body: string }>(`${historyPath()}/${encodeURIComponent(at)}`)
+  shown.value = v ? { at, view: { ...props.view, format: v.format, body: v.body } } : null
+  if (!v) void loadVersions()
+}
+
+// A rewrite archives the page it replaces, and a purge may delete versions; an open list follows both.
+watch(
+  () => props.view.updatedAt,
+  () => versionsOpen.value && loadVersions(),
+)
+
 /** The topics the person linked to this one, as loaded topic cards. */
 const related = () => (props.view.related ?? []).flatMap((slug) => state.views.get(`organizer/${slug}`) ?? [])
 </script>
@@ -33,7 +63,7 @@ const related = () => (props.view.related ?? []).flatMap((slug) => state.views.g
           <span class="history-mark muted"><span aria-hidden="true">↺</span> {{ view.pastTitles.length }}<span class="sr-only"> earlier titles</span></span>
         </button>
       </h3>
-      <ol v-if="historyOpen" :id="`${view.id}:titles`" class="past-titles" aria-label="earlier titles">
+      <ol v-show="historyOpen" :id="`${view.id}:titles`" class="past-titles" aria-label="earlier titles">
         <li v-for="p in newestFirst(view)" :key="p.until">
           <span>{{ p.title }}</span>
           <time class="muted" :datetime="p.until">{{ when(p.until) }}</time>
@@ -42,6 +72,18 @@ const related = () => (props.view.related ?? []).flatMap((slug) => state.views.g
     </template>
     <ViewBody :view="view" />
     <ViewBody v-for="d in derivedBySource.get(view.id) ?? []" :key="d.id" :view="d" class="derived" />
+    <details class="versions" @toggle="toggleVersions">
+      <summary class="muted">Earlier versions</summary>
+      <p v-if="versions.length === 0" class="muted small">None saved; a rewrite saves the page it replaces.</p>
+      <ol v-else class="version-list">
+        <li v-for="v in versions" :key="v.at">
+          <button class="chip" :aria-pressed="shown?.at === v.at" @click="showVersion(v.at)">{{ when(v.at) }}</button>
+        </li>
+      </ol>
+      <div v-if="shown" class="version-body" :aria-label="`Version of ${when(shown.at)}`" role="region">
+        <ViewBody :view="shown.view" />
+      </div>
+    </details>
     <p v-if="related().length > 0" class="related">
       <span class="muted">Related:</span>
       <template v-for="(t, j) in related()" :key="t.id">

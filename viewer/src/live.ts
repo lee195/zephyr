@@ -50,13 +50,14 @@ export const unplaced = computed(() => {
   return allTopics.value.filter((t) => !placed.has(t.id))
 })
 
-export type Route = { page: 'space'; slug: string } | { page: 'tasks' } | { page: 'activity' } | { page: 'all' }
+export type Route = { page: 'space'; slug: string } | { page: 'tasks' } | { page: 'activity' } | { page: 'summaries' } | { page: 'all' }
 
 export function parseRoute(hash: string): Route | null {
   const space = /^#\/space\/([a-z0-9-]+)$/.exec(hash)
   if (space) return { page: 'space', slug: space[1]! }
   if (hash === '#/tasks') return { page: 'tasks' }
   if (hash === '#/activity') return { page: 'activity' }
+  if (hash === '#/summaries') return { page: 'summaries' }
   if (hash === '#/all') return { page: 'all' }
   return null
 }
@@ -147,6 +148,16 @@ const feeds: { path: string; event: ZephyrEvent['type']; map: Map<string, { id: 
 async function load(path: string): Promise<{ id: string }[]> {
   const res = await fetch(path)
   return res.ok ? res.json() : []
+}
+
+/** A JSON read the page shows once, such as a view's archived versions; null when the server has none or is unreachable. */
+export async function fetchJson<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(path)
+    return res.ok ? ((await res.json()) as T) : null
+  } catch {
+    return null
+  }
 }
 
 export async function connect() {

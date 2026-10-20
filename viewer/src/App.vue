@@ -4,6 +4,7 @@ import type { Entry, View } from '../../src/domain'
 import ActivityPage from './ActivityPage.vue'
 import { allTopics, connect, type FailedGroup, goToTopic, route, runDetail, runSubject, spaces, state, strip, topicsByEntry } from './live'
 import Sidebar from './Sidebar.vue'
+import SummariesPage from './SummariesPage.vue'
 import TasksPage from './TasksPage.vue'
 import TopicCard from './TopicCard.vue'
 
@@ -55,6 +56,7 @@ onMounted(connect)
     <main class="page">
       <TasksPage v-if="route.page === 'tasks'" />
       <ActivityPage v-else-if="route.page === 'activity'" />
+      <SummariesPage v-else-if="route.page === 'summaries'" />
       <section v-else class="kind" :aria-label="space?.title ?? 'All topics'">
         <h2>{{ space?.title ?? 'All topics' }}</h2>
         <p v-if="topics.length === 0" class="muted">No topics yet. Type a note in your harness.</p>

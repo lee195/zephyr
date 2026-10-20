@@ -49,3 +49,33 @@ test('run history pages through runs.jsonl newest first, and says when older run
     z.stop()
   }
 })
+
+test('archived versions and saved summaries are listed and read, and a name outside their folders is refused', async () => {
+  const dataDir = await tempDir()
+  const z = new Zephyr({ dataDir, backend: scripted({ ops: [] }).backend, kinds: {} })
+  await z.start()
+  const view = { id: 'organizer/garden', kind: 'organizer', slug: 'garden', title: 'Garden', format: 'md' as const, body: 'old body', sources: [], updatedAt: '2026-10-20T08:00:00.000Z' }
+  await z.store.archiveView(view)
+  await z.store.archiveView({ ...view, body: 'older body', updatedAt: '2026-10-19T08:00:00.000Z' })
+  await z.store.saveSummary({ since: null, until: '2026-10-20T09:00:00.000Z', noteIds: ['a', 'b'], summary: 'We talked about tomatoes.' })
+  const server = serve(z, { port: 0, distDir: '/nonexistent' })
+  try {
+    const get = (path: string) => fetch(`http://127.0.0.1:${server.port}${path}`)
+    expect(await (await get('/api/history/organizer/garden')).json()).toEqual([
+      { at: '2026-10-20T08:00:00.000Z', format: 'md' },
+      { at: '2026-10-19T08:00:00.000Z', format: 'md' },
+    ])
+    expect(await (await get(`/api/history/organizer/garden/${encodeURIComponent('2026-10-19T08:00:00.000Z')}`)).json()).toEqual({ at: '2026-10-19T08:00:00.000Z', format: 'md', body: 'older body' })
+    expect(await (await get('/api/history/organizer/unknown')).json()).toEqual([])
+    expect((await get('/api/history/organizer/garden/2026-01-01T00:00:00.000Z')).status).toBe(404)
+    // Lists answer an empty list for a name that is not one; reads answer 404.
+    for (const bad of ['/api/history/..%2F..%2Fentries/x']) expect(await (await get(bad)).json()).toEqual([])
+    for (const bad of ['/api/history/organizer/%2E%2E', '/api/history/organizer/garden/..%2F..%2Fgarden', '/api/summaries/..%2Freview', '/api/history/a/b/c/d']) expect((await get(bad)).status).toBe(404)
+    expect(await (await get('/api/summaries')).json()).toEqual([{ since: null, until: '2026-10-20T09:00:00.000Z', noteCount: 2 }])
+    expect(await (await get(`/api/summaries/${encodeURIComponent('2026-10-20T09:00:00.000Z')}`)).json()).toEqual({ since: null, until: '2026-10-20T09:00:00.000Z', noteCount: 2, summary: 'We talked about tomatoes.' })
+    expect((await get('/api/summaries/2026-10-21T09:00:00.000Z')).status).toBe(404)
+  } finally {
+    server.stop(true)
+    z.stop()
+  }
+})

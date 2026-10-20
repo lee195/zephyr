@@ -21,7 +21,7 @@ wick exec --only vllm -- bun run start
 | `ZEPHYR_MODEL` | `deepseek-v4-flash-fast` |
 | `ZEPHYR_SWEEP_MINUTES` | `30`: minutes between cleanup sweeps; any positive number |
 
-Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, proxied to the server), `bun run build`, `bun test`.
+Other scripts: `bun run dev` (server with reload), `bun run dev:viewer` (Vite, proxied to the server), `bun run build`, `bun test`, and `bun run typecheck` (`tsc` for the server and tests, `vue-tsc` for the viewer's `.vue` files).
 
 ## Data
 
@@ -43,7 +43,7 @@ data/
   summaries/<until>.md          a review summary saved on request; front matter holds the window and the ids it summarized
 ```
 
-The viewer does not show `.history`; the files are plain markdown next to the page.
+The viewer shows a topic's `.history` versions under its card and the saved summaries on their own page; the files stay plain markdown next to the page.
 
 ## Cleanup sweep
 
@@ -77,8 +77,9 @@ A kind derived from views starts once every write of the run that triggered it h
 
 ## Viewer
 
-- **Sidebar.** A sticky left column lists the spaces, one per map area, each with its topic count and expandable to its topics. Below them are All topics, Tasks and Activity. Under 760 px wide it folds behind a "☰ Spaces" button and opens as a drawer.
-- **Pages.** The URL hash names the page: `#/space/<slug>` shows that space's topic cards, newest first, and narrows the notes column to the notes they cite. `#/all` shows every topic, including ones the map does not list yet. `#/tasks` and `#/activity` are the task list and the run history. Without a hash, the first space opens.
+- **Sidebar.** A sticky left column lists the spaces, one per map area, each with its topic count and expandable to its topics. Below them are All topics, Tasks, Activity and Summaries. Under 760 px wide it folds behind a "☰ Spaces" button and opens as a drawer.
+- **Pages.** The URL hash names the page: `#/space/<slug>` shows that space's topic cards, newest first, and narrows the notes column to the notes they cite. `#/all` shows every topic, including ones the map does not list yet. `#/tasks` and `#/activity` are the task list and the run history. `#/summaries` lists the saved review summaries, newest first, each opening to its text. Without a hash, the first space opens.
+- **Earlier versions.** Each topic card has an "Earlier versions" disclosure. Opened, it lists the page's `.history` versions, newest first, and shows one in place when picked. It reads the files only while open and again whenever the page changes, so a version a purge deleted is not shown.
 - **Activity.** The header shows runs in flight, the 3 newest done runs that called the model, and one chip per failing kind. The activity page pages through `runs.jsonl` with filters for kind and status. Runs that finished without a model call (`noCall`), such as map runs another run already did the work for, are hidden unless asked for.
 
 The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram never run, and HTML responses carry a Content-Security-Policy that allows only the viewer's own scripts.
@@ -161,6 +162,8 @@ The reply is checked like its ops: a question about a note not in the run, a slu
 | `POST /api/review/done` `{ until }` | Ends a review: the next digest starts after `until`, the value the digest that was reviewed returned. A note received after that digest was read stays in the next one. Refuses an `until` in the future or before the last review. |
 | `POST /api/adjustments` `{ op, ... }` | Apply one adjustment (below). 200 with `{ id, ok: true, written, deleted, rewrites, warnings }`; 400 for a malformed op; 409 with `{ id, ok: false, error }` when the data refuses it, such as an unknown topic; 202 with `{ id, ok: false, pending: true, error, retryInMs }` when it failed partway and is applied again, after `retryInMs` or, when that is `null`, on the next start; 503 when the request could not be logged, so nothing changed. |
 | `GET /api/purge/<noteId>` | `{ noteId, done, scrubbing, pending }` for a purged note: `scrubbing` until the purge's result is logged, then `pending` lists the topics whose rewrite is still queued. 404 for a note never purged. |
+| `GET /api/history/<kind>/<slug>` | `[{ at, format }]`: the view's `.history` versions, newest first; `[]` for a view with none or a name that is not one. `/<at>` returns `{ at, format, body }`, or 404. |
+| `GET /api/summaries` | `[{ since, until, noteCount }]`: the saved review summaries, newest first. `/<until>` returns one with its `summary`, or 404. |
 | `GET /api/review/brief` | The prompt a harness's review command submits, as text: the review's rules, naming the MCP tools, then the digest as JSON. |
 | `POST /mcp` | MCP for the harness agent; see below. `GET /mcp` answers 405, since there is no server-to-client stream. |
 | `GET /events` | SSE stream of `entry`, `run`, `view` and `removed` (`{ of: 'entry' \| 'view', id }`) events |

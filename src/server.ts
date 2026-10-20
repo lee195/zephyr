@@ -138,6 +138,33 @@ async function hints(zephyr: Zephyr, params: URLSearchParams) {
   return json(await zephyr.hints(q, n))
 }
 
+const segments = (rest: string) => {
+  try {
+    return rest.split('/').filter(Boolean).map(decodeURIComponent)
+  } catch {
+    return null
+  }
+}
+
+/** `<kind>/<slug>` lists a view's archived versions, newest first; `<kind>/<slug>/<at>` returns one. */
+async function history(zephyr: Zephyr, rest: string) {
+  const parts = segments(rest)
+  if (!parts || parts.length < 2 || parts.length > 3) return fail('expected /api/history/<kind>/<slug>[/<at>]', 404)
+  const [kind, slug, at] = parts as [string, string, string?]
+  if (at === undefined) return json(await zephyr.store.listHistory({ kind, slug }))
+  const version = await zephyr.store.readHistory({ kind, slug }, at)
+  return version ? json(version) : fail(`no version ${at} of ${kind}/${slug}`, 404)
+}
+
+/** With no name, lists the saved review summaries, newest first; `/<until>` returns one. */
+async function summaries(zephyr: Zephyr, rest: string) {
+  const parts = segments(rest)
+  if (!parts || parts.length > 1) return fail('expected /api/summaries[/<until>]', 404)
+  if (parts.length === 0) return json(await zephyr.store.listSummaries())
+  const summary = await zephyr.store.readSummary(parts[0]!)
+  return summary ? json(summary) : fail(`no summary until ${parts[0]}`, 404)
+}
+
 /** Defense in depth behind the viewer's own rendering rules: no inline or foreign script can run in the page. */
 export const CSP = "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
 
@@ -204,6 +231,8 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
         const status = await zephyr.purgeStatus(noteId)
         return status ? json(status) : fail(`note ${noteId} was not purged`, 404)
       }
+      if (req.method === 'GET' && pathname.startsWith('/api/history/')) return history(zephyr, pathname.slice('/api/history/'.length))
+      if (req.method === 'GET' && (pathname === '/api/summaries' || pathname.startsWith('/api/summaries/'))) return summaries(zephyr, pathname.slice('/api/summaries'.length))
       if (req.method === 'GET') return serveStatic(opts.distDir, pathname)
       return fail('not found', 404)
     },

@@ -165,3 +165,13 @@ summary { cursor: pointer; }
 .entries li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .entries small { display: block; }
 .entries .topics { margin-top: 2px; }
+
+.versions { font-size: 13px; }
+.version-list { list-style: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 6px 0 0; }
+.chip[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
+.version-body { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 6px; font-size: 14px; }
+
+.summaries { list-style: none; padding: 0; margin: 0; }
+.summaries > li + li { margin-top: 8px; }
+.summaries summary { font-size: 14px; }
+.summaries .md { margin-top: 8px; }
