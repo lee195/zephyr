@@ -937,7 +937,8 @@ export class Zephyr {
     const session = note && this.sessions.get(sessionKey(note.harness, note.sessionId))
     const where = note && session ? adapters[note.harness]?.locate(session.transcriptPath, note.sessionId, note.id) : undefined
     const place = where ?? (note ? `the ${note.harness} transcript of session ${note.sessionId}` : 'the harness transcript that recorded it')
-    return `Zephyr never writes to harness transcripts, so the note's text is still in ${place}. Remove it there yourself.`
+    const copies = this.backend.keepsCopies ? ` The model backend may hold it too: ${this.backend.keepsCopies}.` : ''
+    return `Zephyr never writes to harness transcripts, so the note's text is still in ${place}. Remove it there yourself.${copies}`
   }
 
   /**

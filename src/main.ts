@@ -7,7 +7,7 @@ import { Zephyr } from './zephyr'
 
 const config = parseConfig(process.env)
 if (config.chat && !config.chat.apiKey) console.warn(`[zephyr] ${config.chat.keyVar} is not set; runs will fail until it is`)
-if (config.chat) console.log(`[zephyr] model: ${config.chat.model} at ${config.chat.url}`)
+console.log(`[zephyr] model: ${config.chat ? `${config.chat.model} at ${config.chat.url}` : `${config.modelBackend}${config.harness.model ? ` (${config.harness.model})` : ', its default model'}`}`)
 
 /**
  * tfidf answers whenever the chosen backend cannot be built (no key), fails, or is slow. With tfidf chosen it

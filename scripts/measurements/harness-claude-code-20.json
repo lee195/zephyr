@@ -1,0 +1,196 @@
+{
+  "summary": {
+    "label": "claude-code",
+    "topics": 20,
+    "entries": 106,
+    "runs": 5,
+    "meanPromptTokens": 5828,
+    "meanCompletionTokens": 160,
+    "medianLatencyMs": 7190,
+    "latencyRangeMs": [
+      2308,
+      8942
+    ],
+    "correct": 5,
+    "duplicates": 0,
+    "failed": 0,
+    "asked": 0
+  },
+  "results": [
+    {
+      "rep": 0,
+      "probe": "sourdough",
+      "expect": "sourdough-baking",
+      "status": "done",
+      "promptTokens": 5904,
+      "cachedTokens": 384,
+      "completionTokens": 149,
+      "latencyMs": 2331,
+      "replyOps": [
+        "append:sourdough-baking"
+      ],
+      "open": [
+        "pizza-dough",
+        "backend-hiring",
+        "forgejo-ci-pipelines"
+      ],
+      "landed": [
+        "sourdough-baking"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "sourdough-baking 369->512 chars"
+      ],
+      "correct": true,
+      "questions": [],
+      "promptChars": {
+        "system": 1592,
+        "topicIndex": 880,
+        "openTopics": 2402,
+        "recentEntries": 6200,
+        "newEntries": 228
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "forgejo",
+      "expect": "forgejo-ci-pipelines",
+      "status": "done",
+      "promptTokens": 5932,
+      "cachedTokens": 384,
+      "completionTokens": 176,
+      "latencyMs": 7896,
+      "replyOps": [
+        "append:forgejo-ci-pipelines"
+      ],
+      "open": [
+        "forgejo-ci-pipelines",
+        "vllm-endpoint-ops",
+        "coolify-deployments"
+      ],
+      "landed": [
+        "forgejo-ci-pipelines"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "forgejo-ci-pipelines 785->960 chars"
+      ],
+      "correct": true,
+      "questions": [],
+      "promptChars": {
+        "system": 1592,
+        "topicIndex": 851,
+        "openTopics": 2604,
+        "recentEntries": 6200,
+        "newEntries": 235
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "marathon",
+      "expect": "marathon-training",
+      "status": "done",
+      "promptTokens": 5780,
+      "cachedTokens": 2304,
+      "completionTokens": 136,
+      "latencyMs": 7190,
+      "replyOps": [
+        "append:marathon-training"
+      ],
+      "open": [
+        "marathon-training",
+        "backend-hiring",
+        "vue-viewer-ui"
+      ],
+      "landed": [
+        "marathon-training"
+      ],
+      "created": [],
+      "duplicateTopic": false,
+      "rewrittenExisting": [
+        "marathon-training 469->623 chars"
+      ],
+      "correct": true,
+      "questions": [],
+      "promptChars": {
+        "system": 1592,
+        "topicIndex": 882,
+        "openTopics": 2011,
+        "recentEntries": 6200,
+        "newEntries": 239
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "sailing",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 5755,
+      "cachedTokens": 2304,
+      "completionTokens": 199,
+      "latencyMs": 8942,
+      "replyOps": [
+        "write:dinghy-sailing"
+      ],
+      "open": [
+        "coolify-deployments",
+        "marathon-training",
+        "film-photography"
+      ],
+      "landed": [
+        "dinghy-sailing"
+      ],
+      "created": [
+        "dinghy-sailing"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "questions": [],
+      "promptChars": {
+        "system": 1592,
+        "topicIndex": 866,
+        "openTopics": 1819,
+        "recentEntries": 6200,
+        "newEntries": 231
+      }
+    },
+    {
+      "rep": 0,
+      "probe": "beekeeping",
+      "expect": "new",
+      "status": "done",
+      "promptTokens": 5768,
+      "cachedTokens": 2176,
+      "completionTokens": 138,
+      "latencyMs": 2308,
+      "replyOps": [
+        "write:beekeeping"
+      ],
+      "open": [
+        "tax-return-2026",
+        "home-espresso",
+        "sourdough-baking"
+      ],
+      "landed": [
+        "beekeeping"
+      ],
+      "created": [
+        "beekeeping"
+      ],
+      "duplicateTopic": false,
+      "rewrittenExisting": [],
+      "correct": true,
+      "questions": [],
+      "promptChars": {
+        "system": 1592,
+        "topicIndex": 882,
+        "openTopics": 1828,
+        "recentEntries": 6200,
+        "newEntries": 228
+      }
+    }
+  ]
+}

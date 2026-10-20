@@ -1,6 +1,6 @@
 # Zephyr state
 
-What is built, how it was checked, and what is open, as of 2026-10-20. The open-issues work of that day is not committed yet. Why it is built this way is in [design.md](design.md). How to run it is in the [README](../README.md).
+What is built, how it was checked, and what is open, as of 2026-10-20. The configurable-LLM work is not committed yet. Why it is built this way is in [design.md](design.md). How to run it is in the [README](../README.md).
 
 ## Built
 
@@ -26,7 +26,8 @@ What is built, how it was checked, and what is open, as of 2026-10-20. The open-
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
 | Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
 | Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | `78c2a76` |
-| Open-issues work | Viewer: `.history` versions in each topic card, a Summaries page, `vue-tsc` in `bun run typecheck`, a fixed `aria-controls`. Purge: plain words scrubbed only where the note was. Model: retitling rewrites and merges, a weak and similarity gate on link suggestions, no added framing in summaries, a repair retry for refused diagrams. Measured with `scripts/measure-deeper.ts` (below) | uncommitted |
+| Open-issues work | Viewer: `.history` versions in each topic card, a Summaries page, `vue-tsc` in `bun run typecheck`, a fixed `aria-controls`. Purge: plain words scrubbed only where the note was. Model: retitling rewrites and merges, a weak and similarity gate on link suggestions, no added framing in summaries, a repair retry for refused diagrams. Measured with `scripts/measure-deeper.ts` (below) | `30f9acf`..`4512d1a` |
+| Configurable LLM | Chat and embeddings each get their own endpoint, model and key variable; the LLM settings live in a gitignored `.env`, with `.env.example` committed. Two harness backends: `claude-code` (`claude -p`) and `opencode` (`opencode run`) | uncommitted |
 | Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | `896e631` |
 
 Tests: 249 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 42 tests pass under `claude plugin test`.
@@ -75,6 +76,20 @@ On the real endpoint, 5 repetitions per probe, with `scripts/measure-deeper.ts`.
 
 Changing the organizer's filing prompt to retitle on append was tried and reverted. It raised retitling on appends from 10/15 to 15/15, but filing correctness fell from 25/25 to 20/25. So appends keep the old title rule, and the next log rewrite fixes the title.
 
+## Harness backends, measured on 2026-10-20
+
+The organizer measurement, 20 topics and 5 probes, run once per backend with TF-IDF relevance. Results are in `scripts/measurements/harness-*.json`.
+
+| Backend | Correct | Median latency |
+|---|---|---|
+| `vllm`, `deepseek-v4-flash-fast` (25 runs, earlier) | 25/25 | 0.9 s |
+| `claude-code`, its default model (Opus 5.5) | 5/5 | 7.2 s |
+| `opencode`, `llm-proxy/deepseek-v4-flash-fast` | 4/5 | 6.4 s |
+
+The opencode miss filed the sailing probe on the sourdough topic, with the same model the endpoint gets. One run is not enough to tell that from noise. The prompts were not retuned for either harness.
+
+Found while building it: opencode cuts an attached file (`-f`) off after about 2,000 characters, so the backend sends its input on stdin, which arrives whole. opencode also retries an unreachable provider forever, so the call's 180 s timeout kills it. That matters because the opencode default model on this machine is a local server that is not running.
+
 ## Open issues
 
 Model behavior:
@@ -83,6 +98,9 @@ Model behavior:
 - A retitle on append still depends on the model, at 10/15 for clearly outgrown titles; the log rewrite after 5 appends catches the rest.
 
 Behavior gaps:
+
+- The opencode backend leaves one opencode session per run in opencode's database, holding the notes that run was shown. A purge result says so, but Zephyr does not delete them.
+- A harness backend is about seven times slower per call than the endpoint, and the claude-code calls count against the Claude plan's usage limits.
 
 - opencode notes go in the `/note` dialog, not the main prompt, and the plugin only knows the database path of release builds.
 - A slug that contains the purged note's words stays, since it is the page's id and file name; the purge result counts them. Aliases too.

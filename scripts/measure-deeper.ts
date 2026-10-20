@@ -345,6 +345,6 @@ const items: Record<string, () => Promise<void>> = { retitle, rewrite, merge, li
 const run = items[args.item ?? '']
 if (!run) throw new Error(`--item must be one of ${Object.keys(items).join(', ')}`)
 await run()
-const report = { item: args.item, label: args.label, reps, model: config.chat?.model, summary }
+const report = { item: args.item, label: args.label, reps, model: config.chat?.model ?? `${config.modelBackend} ${config.harness.model ?? 'default'}`, summary }
 console.log(JSON.stringify(report))
 if (args.out) await Bun.write(args.out, JSON.stringify({ ...report, results }, null, 2))

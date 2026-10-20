@@ -71,11 +71,14 @@ test('a key comes from the variable its *_KEY_VAR names; unset or empty counts a
   await expect(chatCompletion(config, {})).rejects.toThrow('CHAT_KEY missing')
 })
 
-test('each LLM setting is required, pointing at .env.example; the embed ones only for embedding relevance', () => {
+test('each LLM setting is required, pointing at .env.example; the embed ones only for embedding relevance, the chat ones only for vllm', () => {
   for (const name of ['ZEPHYR_CHAT_URL', 'ZEPHYR_CHAT_MODEL', 'ZEPHYR_CHAT_KEY_VAR', 'ZEPHYR_EMBED_URL', 'ZEPHYR_EMBED_MODEL', 'ZEPHYR_EMBED_KEY_VAR'])
     expect(() => parseConfig({ ...LLM_ENV, [name]: undefined })).toThrow(`${name} is not set; copy .env.example to .env`)
   const local = parseConfig({ ZEPHYR_CHAT_URL: 'u', ZEPHYR_CHAT_MODEL: 'm', ZEPHYR_CHAT_KEY_VAR: 'K', ZEPHYR_RELEVANCE: 'tfidf' })
   expect(local.embed).toBeUndefined()
+  const harness = parseConfig({ ZEPHYR_BACKEND: 'claude-code', ZEPHYR_RELEVANCE: 'tfidf', ZEPHYR_HARNESS_MODEL: 'sonnet' })
+  expect(harness).toMatchObject({ modelBackend: 'claude-code', harness: { model: 'sonnet' } })
+  expect(harness.chat).toBeUndefined()
 })
 
 test('the renamed variables fail loudly instead of being ignored', () => {
@@ -87,7 +90,7 @@ test('an unknown backend or relevance name fails at parse time, listing the regi
   expect(Object.keys(relevanceBackends).join(', ')).toBe('tfidf, embedding')
   expect(() => parseConfig({ ...LLM_ENV, ZEPHYR_RELEVANCE: 'bm25' })).toThrow('unknown ZEPHYR_RELEVANCE: bm25; registered: tfidf, embedding')
   expect(() => parseConfig({ ...LLM_ENV, ZEPHYR_RELEVANCE: 'toString' })).toThrow('unknown ZEPHYR_RELEVANCE: toString')
-  expect(() => parseConfig({ ...LLM_ENV, ZEPHYR_BACKEND: 'gpt' })).toThrow('unknown ZEPHYR_BACKEND: gpt; registered: vllm')
+  expect(() => parseConfig({ ...LLM_ENV, ZEPHYR_BACKEND: 'gpt' })).toThrow('unknown ZEPHYR_BACKEND: gpt; registered: vllm, claude-code, opencode')
 })
 
 test(".env.example parses to today's settings: the shared endpoint for chat and embeddings, keyed by DEEPSEEK_API_KEY", async () => {

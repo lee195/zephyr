@@ -206,6 +206,8 @@ export interface Completion {
 
 export interface ModelBackend {
   complete(messages: ChatMessage[], opts: { json: true }): Promise<Completion>
+  /** Where the backend keeps its own copy of what runs were shown, which a purge cannot reach; absent when it keeps none. */
+  keepsCopies?: string
 }
 
 /** What a kind's run may read: every entry and every view, of any kind. */
