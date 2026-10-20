@@ -1,0 +1,3 @@
+[test]
+# The mods under mods/ have their own test runners: claude plugin test for the Claude Code mod.
+root = "test"

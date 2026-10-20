@@ -1,0 +1,14 @@
+{
+  "name": "zephyr",
+  "version": "0.1.0",
+  "description": "Notes mode: prompts are kept in the transcript as notes, with no model reply, for the local Zephyr server to organize",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "port": {
+      "type": "number",
+      "title": "Zephyr server port",
+      "description": "Port of the Zephyr server on 127.0.0.1",
+      "default": 7317
+    }
+  }
+}
