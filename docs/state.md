@@ -24,8 +24,9 @@ What is built, how it was checked, and what is open, as of 2026-10-19 at commit 
 | Purge | Remove a note's text from `data/` for good | `e13fbfe`..`37fcba6` |
 | Questions | Agents park `whichTopic` and `isTask` questions for the review | `705c5e0`, `81a3739` |
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
+| Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
 
-Tests: 214 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 36 tests pass under `claude plugin test`.
+Tests: 222 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
 
 ## Running on this machine
 
@@ -40,6 +41,7 @@ Checked against the real vLLM endpoint or in a real harness:
 
 - Organizing, retries, tasks, diagrams, hints, embeddings and warm-up, on scratch data.
 - The opencode five-note organize check.
+- The map on scratch data: 8 notes made 4 topics and one map call (the other three map runs found it current); 2 more notes added a fifth topic, and the map kept its four areas and added one.
 - Every adjustment op, purge, questions and the deeper tools, on scratch data.
 - `/zephyr review` in a real Claude Code session and `/zephyr-review` in a real opencode session: a rename, a move and finishing the review.
 
@@ -50,6 +52,7 @@ Not checked yet:
 - The opencode toasts for "MCP not connected" and "server down".
 - An `isTask` question raised by the real model; only scripted tests cover it.
 - Purge removing the text from a task and a diagram live; unit tests cover both.
+- The band's "last note →" line and `/zephyr where` in a real Claude Code session, and the opencode "✎ →" toast; mod tests cover the band and the command, nothing covers the toast.
 
 ## Open issues
 
