@@ -104,6 +104,8 @@ export interface Run {
   uncovered?: EntryId[]
   /** View work on a view an adjustment marked bodyStale: the run carries out a change the person made. */
   forced?: true
+  /** On failed view work that gets no further attempt: the view's updatedAt then. The sweep skips the view until it changes. */
+  exhausted?: string
 }
 
 export interface Session {

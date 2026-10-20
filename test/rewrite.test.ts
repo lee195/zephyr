@@ -243,6 +243,26 @@ test('a rewrite whose attempts ran out is not queued again until the topic chang
   expect(book.calls.filter((c) => c === 'rewrite party')).toHaveLength(2)
 })
 
+test('a rewrite whose attempts ran out stays skipped after a restart, until the topic changes', async () => {
+  const { z, dir, book } = await partyWith(5)
+  book.replyWith((p) => ({ slug: p.slug, title: p.title, sources: [], body: 'lost every note' }))
+  await z.sweep()
+  await z.idle()
+  await z.stop()
+
+  const again = await started({ dataDir: dir })
+  again.book.replyWith((p) => ({ slug: p.slug, title: p.title, sources: [], body: 'lost every note' }))
+  await again.z.sweep()
+  await again.z.idle()
+  expect(again.book.calls.filter((c) => c === 'rewrite party')).toEqual([])
+
+  await again.z.ingest([entry('n7', 'party: item 6')])
+  await again.z.idle()
+  await again.z.sweep()
+  await again.z.idle()
+  expect(again.book.calls.filter((c) => c === 'rewrite party')).toHaveLength(1)
+})
+
 test('a topic written anew after its rewrite was queued is not rewritten, and costs no call', async () => {
   const { z, book } = await partyWith(5)
   book.hold(isFiling)

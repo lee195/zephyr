@@ -142,9 +142,10 @@ export class Zephyr {
   private retries = new Set<ScheduledRetry>()
   /**
    * `${kind} ${viewId}` of view work whose last attempt failed, with the view's updatedAt then. The sweep skips it
-   * until the view changes, so a page the model cannot rewrite costs no calls every sweep. Lost on restart.
+   * until the view changes, so a page the model cannot rewrite costs no calls every sweep. Rebuilt on start from
+   * the runs' `exhausted`.
    */
-  private exhausted = new Map<string, string | undefined>()
+  private exhausted = new Map<string, string>()
   private lastStamp = 0
   /** The until of the last finished review; persisted in review.json. */
   private lastReviewedAt: string | null = null
@@ -185,6 +186,7 @@ export class Zephyr {
     for (const v of await this.store.loadViews()) this.views.set(v.id, v)
     const finished = await this.store.loadRuns()
     this.runs = (finished ?? []).slice(-RUN_HISTORY)
+    for (const r of finished ?? []) if (r.exhausted && r.viewIds) this.exhausted.set(`${r.kind} ${r.viewIds[0]}`, r.exhausted)
     // Queued before any run, so on each queue they go first.
     for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
     for (const line of interrupted) {
@@ -587,7 +589,11 @@ export class Zephyr {
     const delay = this.retryDelaysMs[run.attempt - 1]
     const viewId = 'viewId' in work ? work.viewId : undefined
     if (delay === undefined) {
-      if (viewId) this.exhausted.set(`${run.kind} ${viewId}`, this.views.get(viewId)?.updatedAt)
+      const updatedAt = viewId && this.views.get(viewId)?.updatedAt
+      if (updatedAt) {
+        this.exhausted.set(`${run.kind} ${viewId}`, updatedAt)
+        run.exhausted = updatedAt
+      }
       return
     }
     let settle!: () => void
