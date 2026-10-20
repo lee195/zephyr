@@ -3,7 +3,8 @@ import { appendFile, copyFile, readdir, readFile, stat, writeFile } from 'node:f
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import { parseAdjustment } from '../src/adjust'
-import type { AdjustmentResult } from '../src/domain'
+import type { AdjustmentResult, View } from '../src/domain'
+import { purgeScope, scrubbersFor } from '../src/purge'
 import { serve } from '../src/server'
 import { Zephyr } from '../src/zephyr'
 import { ALL, started } from './desk'
@@ -282,4 +283,58 @@ test('a filing run that was shown the note when the purge started cannot write i
   await s.z.idle()
   expect(await filesHolding(s.dir, ['7Q4X', 'wifi'])).toEqual([])
   s.z.stop()
+})
+
+test('plain words of the note go only where it was cited; its text and token-like words go everywhere', () => {
+  const { full, wide } = scrubbersFor(['Granny Weatherwax keeps the key sk-live.9QX2 at api.example.com/v1'], [entry('other', 'beans need water')])
+  const page = 'Granny visited; the key sk-live.9QX2 and api.example.com/v1 are noted, and a follow-up on 2026 plans'
+  expect(full.scrub(page)).toBe('[purged] visited; the key [purged] and [purged] are noted, and a follow-up on 2026 plans')
+  expect(wide.scrub(page)).toBe('Granny visited; the key [purged] and [purged] are noted, and a follow-up on 2026 plans')
+  expect(wide.scrub('Granny Weatherwax keeps the key sk-live.9QX2 at api.example.com/v1')).toBe('[purged]')
+})
+
+test('the purge scope follows the note through moves, detaches, splits and later merges, and to the diagrams drawn from them', () => {
+  const view = (slug: string, extra: Partial<View> = {}): View => ({ id: `organizer/${slug}`, kind: 'organizer', slug, title: slug, format: 'md', body: '', sources: [], updatedAt: '', ...extra })
+  const views = [
+    view('cites', { sources: ['n'] }),
+    view('excluded', { pins: { excluded: ['n'] } }),
+    view('merged-target', { pins: { aliases: ['moved-off'] } }),
+    view('split-from'),
+    view('unrelated'),
+    { ...view('diagram'), id: 'visualizer/split-from', kind: 'visualizer', slug: 'split-from', derivedFrom: { id: 'organizer/split-from', updatedAt: '' } },
+    { ...view('diagram'), id: 'visualizer/unrelated', kind: 'visualizer', slug: 'unrelated', derivedFrom: { id: 'organizer/unrelated', updatedAt: '' } },
+  ]
+  const scope = purgeScope(views, 'n', [
+    { op: 'moveNote', noteId: 'n', from: 'moved-off', to: 'cites' },
+    { op: 'mergeTopics', from: 'moved-off', into: 'merged-target' },
+    { op: 'splitTopic', slug: 'split-from', noteIds: ['n'], into: { slug: 'cites', title: 'Cites' } },
+    { op: 'moveNote', noteId: 'other', from: 'unrelated', to: 'cites' },
+  ], ['visualizer'])
+  expect(scope.views).toEqual(['organizer/cites', 'organizer/excluded', 'organizer/merged-target', 'organizer/split-from', 'visualizer/split-from'])
+  expect(scope.history).toEqual([
+    ...['cites', 'excluded', 'merged-target', 'moved-off', 'split-from'].map((s) => `organizer/${s}`),
+    ...['cites', 'excluded', 'merged-target', 'moved-off', 'split-from'].map((s) => `visualizer/${s}`),
+  ])
+})
+
+test('a purge leaves a plain word on a page that never cited the note, and takes it from the page that did and its versions', async () => {
+  const s = await started({ kinds: { organizer: ALL.organizer } })
+  await s.note('party: Weatherwax brings the wifi key ZK-77.QQ', 'garden: beans')
+  const garden = s.view('organizer/garden')!
+  // A word the model brought to a page on its own, and an archived version of an unrelated page holding the same.
+  await s.z.store.writeView({ ...garden, body: 'Weatherwax would like these beans; key ZK-77.QQ' })
+  await s.z.store.archiveView({ ...garden, body: 'Weatherwax, earlier', updatedAt: '2026-01-01T00:00:00.000Z' })
+  await s.z.store.archiveView({ ...s.view('organizer/party')!, body: 'Weatherwax at the party', updatedAt: '2026-01-01T00:00:00.000Z' })
+  s.z.stop()
+  const t = await started({ dir: s.dir, kinds: { organizer: ALL.organizer } })
+  // Held, so the page is seen as the scrub left it, before its rewrite builds it from the notes again.
+  t.d.hold('rewrite')
+  expect(await t.z.adjust(purge('e1'))).toMatchObject({ ok: true, deleted: ['organizer/party'], rewrites: ['organizer/garden'] })
+  expect(t.view('organizer/garden')!.body).toBe('Weatherwax would like these beans; key [purged]')
+  expect(await filesHolding(t.dir, ['ZK-77'])).toEqual([])
+  expect(await filesHolding(t.dir, ['Weatherwax'])).toEqual(['views/organizer/.history/garden/2026-01-01T00:00:00.000Z.md', 'views/organizer/garden.md'])
+  expect(await filesUnder(t.dir)).not.toContain('purge-scopes.json')
+  t.d.release()
+  await t.z.idle()
+  t.z.stop()
 })

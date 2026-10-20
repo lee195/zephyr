@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AdjustmentLine, Entry, QuestionLine, Run, Session, View, ViewFormat } from './domain'
+import type { PurgeScope } from './purge'
 
 const EXT: Record<ViewFormat, string> = { md: 'md', svg: 'svg', ascii: 'txt' }
 
@@ -155,6 +156,27 @@ export class Store {
     await writeAtomic(this.purgedPath, JSON.stringify({ ids }, null, 2))
   }
 
+  private get purgeScopesPath() {
+    return join(this.dir, 'purge-scopes.json')
+  }
+
+  /**
+   * The scope of each purge in progress, by note id. A purge saves it before it scrubs anything, since scrubbing
+   * removes the citations it is computed from, and a purge resumed after a crash must match as the first try did.
+   */
+  async loadPurgeScope(noteId: string): Promise<PurgeScope | null> {
+    const text = await readText(this.purgeScopesPath)
+    return text ? ((JSON.parse(text) as Record<string, PurgeScope>)[noteId] ?? null) : null
+  }
+
+  async savePurgeScope(noteId: string, scope: PurgeScope | null) {
+    const text = await readText(this.purgeScopesPath)
+    const { [noteId]: _, ...rest } = text ? (JSON.parse(text) as Record<string, PurgeScope>) : {}
+    const next = scope ? { ...rest, [noteId]: scope } : rest
+    if (Object.keys(next).length > 0) await writeAtomic(this.purgeScopesPath, JSON.stringify(next, null, 2))
+    else await rm(this.purgeScopesPath, { force: true })
+  }
+
   /** Every finished run, oldest first; null when the data dir predates runs.jsonl. */
   async loadRuns(): Promise<Run[] | null> {
     const text = await readText(this.runsPath)
@@ -263,8 +285,8 @@ export class Store {
     return join(this.viewDir(view.kind), '.history', view.slug)
   }
 
-  /** Deletes every archived body that holds matching text. Returns how many it deleted. */
-  async deleteHistoryWhere(holds: (text: string) => boolean): Promise<number> {
+  /** Deletes every archived body that holds matching text, given the view's kind and slug too. Returns how many it deleted. */
+  async deleteHistoryWhere(holds: (text: string, kind: string, slug: string) => boolean): Promise<number> {
     let deleted = 0
     for (const kind of await readdir(join(this.dir, 'views')).catch(() => [] as string[])) {
       const root = join(this.viewDir(kind), '.history')
@@ -273,7 +295,7 @@ export class Store {
           const path = join(root, slug, name)
           // A tmp file can vanish under the read, renamed into place by an archive in flight; the next pass sees it.
           const text = await readText(path)
-          if (text === null || !holds(text)) continue
+          if (text === null || !holds(text, kind, slug)) continue
           await rm(path, { force: true })
           deleted++
         }

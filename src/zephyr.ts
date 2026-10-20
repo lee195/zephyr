@@ -1,7 +1,7 @@
 import { adapters } from './adapters'
 import { effectiveEntries, OPS, planAdjustment, planRewrites, relatedFixes, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
-import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
+import { citesNote, purgeScope, purgeView, scrubbersFor, scrubDeep, type PurgeScope, type Scrubber, type Scrubbers } from './purge'
 import { hintsFor, topicsByNote, type HintReply } from './hints'
 import { linkIndex, linkMessages, parseSummary, summaryInput, summaryMessages, validateLinks, type Link } from './deeper'
 import {
@@ -835,12 +835,20 @@ export class Zephyr {
     this.overlay.edits.delete(noteId)
     this.overlay.tombstoned.delete(noteId)
 
-    const edited = (await this.store.loadAdjustments()).flatMap((l) => (l.type === 'request' && l.adjustment.op === 'editNote' && l.adjustment.noteId === noteId ? [l.adjustment.text] : []))
-    const scrubber = scrubberFor([...(note ? [note.text] : []), ...edited], this.entries)
+    const logged = await this.store.loadAdjustments()
+    const edited = logged.flatMap((l) => (l.type === 'request' && l.adjustment.op === 'editNote' && l.adjustment.noteId === noteId ? [l.adjustment.text] : []))
+    const scrubbers = scrubbersFor([...(note ? [note.text] : []), ...edited], this.entries)
+    const scrubber = scrubbers.full
+    let scope = await this.store.loadPurgeScope(noteId)
+    if (!scope) {
+      const applied = logged.flatMap((l) => (l.type === 'request' ? [l.adjustment] : []))
+      scope = purgeScope(this.listViews(), noteId, applied, Object.values(this.kinds).filter((k) => k.trigger.on === 'view').map((k) => k.kind))
+      await this.store.savePurgeScope(noteId, scope)
+    }
     const done = { written: [] as string[], deleted: [] as string[], rewrites: [] as string[], warnings: [] as string[], tasksDeleted: [] as string[] }
     const derivedLast = Object.values(this.kinds).sort((a, b) => Number(a.trigger.on === 'view') - Number(b.trigger.on === 'view'))
-    for (const kind of derivedLast) await this.step(kind.kind, () => this.purgeViews((v) => v.kind === kind.kind, noteId, scrubber, done))
-    await this.purgeViews((v) => !this.kinds[v.kind], noteId, scrubber, done)
+    for (const kind of derivedLast) await this.step(kind.kind, () => this.purgeViews((v) => v.kind === kind.kind, noteId, scrubbers, scope, done))
+    await this.purgeViews((v) => !this.kinds[v.kind], noteId, scrubbers, scope, done)
     for (const viewId of done.rewrites) {
       const kind = viewId.slice(0, viewId.indexOf('/'))
       if (this.kinds[kind] && !this.busy(kind, viewId)) this.enqueue(kind, { viewId })
@@ -848,8 +856,9 @@ export class Zephyr {
     const slugs = this.listViews().filter((v) => [v.slug, ...(v.pins?.aliases ?? [])].some(scrubber.slugHits)).length
     if (slugs > 0) done.warnings.push(`${slugs} view slugs or aliases contain the note's words; a slug is a page's id and file name, so it stays`)
 
-    const historyFilesDeleted = await this.store.deleteHistoryWhere(scrubber.hits)
-    const summariesDeleted = await this.oneSummaryAtATime(() => this.store.deleteSummariesWhere((ids, text) => ids.includes(noteId) || scrubber.hits(text)))
+    const fullHistory = new Set(scope.history)
+    const historyFilesDeleted = await this.store.deleteHistoryWhere((text, kind, slug) => (fullHistory.has(`${kind}/${slug}`) ? scrubbers.full : scrubbers.wide).hits(text))
+    const summariesDeleted = await this.oneSummaryAtATime(() => this.store.deleteSummariesWhere((ids, text) => ids.includes(noteId) || scrubbers.wide.hits(text)))
     // In place: queues hold these same objects and keep updating them.
     for (const r of this.runs) if (scrubber.hits(JSON.stringify(r))) Object.assign(r, scrubDeep(r, scrubber))
     const runs = await this.store.rewriteRuns((r) => scrubDeep(r, scrubber))
@@ -857,6 +866,7 @@ export class Zephyr {
     await this.relevance.compact?.(this.relevantDocs()).catch((err) => console.warn(`[zephyr] purge: embeddings cache compaction failed: ${(err as Error).message}`))
     const adjustments = await this.store.rewriteAdjustments((l) => scrubDeep(l, scrubber))
     const entries = await this.store.rewriteEntries((e) => (e.id === noteId ? null : e))
+    await this.store.savePurgeScope(noteId, null)
     this.purging.delete(noteId)
     for (const kind of Object.keys(this.kinds)) this.reconcile(kind)
 
@@ -872,10 +882,19 @@ export class Zephyr {
     return { id, ok: true, written: done.written, deleted: done.deleted, rewrites: done.rewrites, warnings: done.warnings, purge: report }
   }
 
-  /** Applies purgeView to every view the filter takes, deleting rather than archiving, since an archive would keep the words. */
-  private async purgeViews(which: (v: View) => boolean, noteId: EntryId, scrubber: Scrubber, done: { written: string[]; deleted: string[]; rewrites: string[]; warnings: string[]; tasksDeleted: string[] }) {
+  /**
+   * Applies purgeView to every view the filter takes, with the full scrubber on views in the purge's scope and the wide
+   * one elsewhere, deleting rather than archiving, since an archive would keep the words.
+   */
+  private async purgeViews(which: (v: View) => boolean, noteId: EntryId, scrubbers: Scrubbers, scope: PurgeScope, done: { written: string[]; deleted: string[]; rewrites: string[]; warnings: string[]; tasksDeleted: string[] }) {
     for (const v of this.listViews().filter(which)) {
-      const p = purgeView(v, noteId, scrubber, this.entries)
+      // A run in flight when the scope was saved may have cited the note since, or drawn from a topic that did.
+      if (!scope.views.includes(v.id) && (citesNote(v, noteId) || (v.derivedFrom && scope.views.includes(v.derivedFrom.id)))) {
+        scope.views = [...scope.views, v.id].sort()
+        scope.history = [...new Set([...scope.history, ...[v.slug, ...(v.pins?.aliases ?? [])].map((s) => `${v.kind}/${s}`)])].sort()
+        await this.store.savePurgeScope(noteId, scope)
+      }
+      const p = purgeView(v, noteId, scope.views.includes(v.id) ? scrubbers.full : scrubbers.wide, this.entries)
       if (p.op === 'keep') continue
       if (p.op === 'drop') {
         await this.store.deleteView(v)
