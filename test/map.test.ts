@@ -100,6 +100,8 @@ test('several new topics in one run cost one map call', async () => {
   const { z, book, note } = await started()
   await note('garden: tomatoes', 'party: venue', 'taxes: receipts')
   expect(book.maps).toHaveLength(1)
+  const mapRuns = z.listRuns().filter((r) => r.kind === 'map')
+  expect(mapRuns.map((r) => r.noCall ?? false).sort()).toEqual([false, true, true])
   expect(book.maps[0]!.sort()).toEqual(['garden | GARDEN | 1 notes', 'party | PARTY | 1 notes', 'taxes | TAXES | 1 notes'])
   expect(mapOf(z)?.areas?.flatMap((a) => a.topics.map((t) => t.slug)).sort()).toEqual(['garden', 'party', 'taxes'])
 })

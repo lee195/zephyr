@@ -115,6 +115,16 @@ async function adjust(zephyr: Zephyr, req: Request) {
   }
 }
 
+const MAX_HISTORY_PAGE = 200
+
+async function runHistory(zephyr: Zephyr, params: URLSearchParams) {
+  const limit = params.get('limit') ?? '50'
+  const n = Number(limit)
+  if (!/^\d+$/.test(limit) || n < 1 || n > MAX_HISTORY_PAGE) return fail(`limit must be an integer from 1 to ${MAX_HISTORY_PAGE}`)
+  const page = await zephyr.runHistory(params.get('before'), n)
+  return json(page)
+}
+
 async function hints(zephyr: Zephyr, params: URLSearchParams) {
   const q = params.get('q')
   if (q === null) return fail('q is required')
@@ -178,6 +188,8 @@ export function serve(zephyr: Zephyr, opts: { port: number; distDir: string }) {
           return json(zephyr.listEntries())
         case 'GET /api/runs':
           return json(zephyr.listRuns())
+        case 'GET /api/runs/history':
+          return runHistory(zephyr, searchParams)
         case 'GET /hints':
           return hints(zephyr, searchParams)
         case 'GET /events':

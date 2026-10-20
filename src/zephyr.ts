@@ -306,6 +306,16 @@ export class Zephyr {
     return this.runs
   }
 
+  /**
+   * Finished runs from runs.jsonl, newest first, ended strictly before `before` when given; `more` says older ones
+   * remain. A run from before endedAt was recorded sorts by its start, or last.
+   */
+  async runHistory(before: string | null, limit: number): Promise<{ runs: Run[]; more: boolean }> {
+    const finished = (await this.store.loadRuns()) ?? []
+    const older = finished.filter((r) => before === null || endOf(r) < before).sort((a, b) => endOf(b).localeCompare(endOf(a)))
+    return { runs: older.slice(0, limit), more: older.length > limit }
+  }
+
   async hints(draft: string, limit: number): Promise<HintReply> {
     const reply = await hintsFor(draft, limit, this.entries, this.listViews(), this.relevance)
     // A partial answer means the endpoint is back while a failed warm-up left docs uncached, so finish the warm-up.
@@ -576,7 +586,7 @@ export class Zephyr {
         const covered = new Set(result.covered)
         const uncovered = run.entryIds.filter((id) => !covered.has(id) && !gone(id))
         if (uncovered.length > 0) run.uncovered = uncovered
-      }
+      } else run.noCall = true
       run.status = 'done'
     } catch (err) {
       run.status = 'failed'
@@ -973,6 +983,8 @@ export class Zephyr {
     return view
   }
 }
+
+const endOf = (r: Run) => r.endedAt ?? r.startedAt ?? ''
 
 /** The first waiting entry work, else the first waiting work. */
 function nextWork(waiting: Map<string, Run>): [string, Run] | undefined {

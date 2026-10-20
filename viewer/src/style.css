@@ -47,8 +47,49 @@ h3 { font-size: 16px; margin: 0 0 8px; }
 .run.dropped { border-style: dashed; }
 .run.recovered { opacity: 0.55; }
 
-main { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
-@media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+#app { max-width: 1400px; }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 8px 0; flex-wrap: wrap; }
+.activity { flex-wrap: nowrap; overflow: hidden; margin: 0 0 0 12px; flex: 1; min-width: 0; align-items: center; }
+.activity .run { white-space: nowrap; }
+.all-activity { margin-left: auto; white-space: nowrap; color: var(--accent); text-decoration: none; font-size: 12px; }
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 260px; gap: 24px; margin-top: 12px; }
+.sidebar { position: sticky; top: 56px; align-self: start; max-height: calc(100vh - 72px); overflow: auto; overscroll-behavior: contain; font-size: 14px; }
+.sidebar ul { list-style: none; padding: 0; margin: 0; }
+.sidebar a { color: var(--fg); text-decoration: none; }
+.sidebar a:hover { color: var(--accent); }
+.sidebar a[aria-current='page'] { color: var(--accent); font-weight: 600; }
+.space-row { display: flex; align-items: center; gap: 4px; padding: 3px 0; }
+.space-row a { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.caret { font: inherit; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 2px; width: 1.2em; }
+.count { font-size: 12px; white-space: nowrap; }
+.space-topics { margin: 0 0 6px 1.4em !important; font-size: 13px; }
+.space-topics li { padding: 2px 0; }
+.pages { margin-top: 12px !important; padding-top: 8px !important; border-top: 1px solid var(--border) !important; }
+.pages li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.small { font-size: 13px; }
+.drawer-toggle { display: none; font: inherit; font-size: 13px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.entries { position: sticky; top: 56px; align-self: start; max-height: calc(100vh - 72px); overflow: auto; overscroll-behavior: contain; }
+.card { scroll-margin-top: 64px; }
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 200px minmax(0, 1fr); }
+  .entries { grid-column: 2; position: static; max-height: none; }
+}
+@media (max-width: 760px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .drawer-toggle { display: inline-block; }
+  .activity { flex-basis: 100%; margin: 6px 0 0; }
+  .sidebar { display: none; position: fixed; top: 0; left: 0; bottom: 0; width: min(280px, 85vw); max-height: none; z-index: 3; background: var(--card); border-right: 1px solid var(--border); padding: 16px; box-shadow: 0 0 24px rgb(0 0 0 / 0.25); }
+  .sidebar.open { display: block; }
+  .entries { grid-column: 1; }
+}
+
+.filters { display: flex; gap: 12px; margin-bottom: 8px; font-size: 13px; }
+.filters select { font: inherit; margin-left: 4px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
+.history { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.history li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.history time { min-width: 9.5em; font-size: 12px; }
+.history .detail { flex-basis: 100%; white-space: pre-wrap; }
+.more { margin-top: 12px; font: inherit; font-size: 13px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
 .kind { margin-bottom: 24px; }
 .card {
   background: var(--card);
@@ -124,10 +165,3 @@ summary { cursor: pointer; }
 .entries li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .entries small { display: block; }
 .entries .topics { margin-top: 2px; }
-
-.map { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 20px; }
-.map h3 { font-size: 14px; margin: 0 0 4px; }
-.map ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
-.map li { padding: 2px 0; }
-.map a { color: var(--accent); text-decoration: none; }
-.map a:hover { text-decoration: underline; }

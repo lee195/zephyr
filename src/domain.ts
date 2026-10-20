@@ -112,6 +112,8 @@ export interface Run {
   uncovered?: EntryId[]
   /** View work on a view an adjustment marked bodyStale: the run carries out a change the person made. */
   forced?: true
+  /** Done without a model call, because there was nothing left to do, such as a map another run already brought up to date. */
+  noCall?: true
   /** On failed view work that gets no further attempt: the view's updatedAt then. The sweep skips the view until it changes. */
   exhausted?: string
 }

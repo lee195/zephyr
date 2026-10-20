@@ -1,4 +1,4 @@
-import { computed, reactive } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import type { Entry, Run, View, ZephyrEvent } from '../../src/domain'
 
 export const state = reactive({
@@ -30,18 +30,63 @@ export const taskList = computed(() => [...state.views.values()].find((v) => v.t
 
 export const topicMap = computed(() => [...state.views.values()].find((v) => v.areas))
 
-/** Every view that is its own card: not the task list or the map, and not a view shown inside its source's card. */
-export const viewsByKind = computed(() => {
-  const groups = new Map<string, View[]>()
-  for (const v of state.views.values()) {
-    if (v.tasks || v.areas || (v.derivedFrom && state.views.has(v.derivedFrom.id))) continue
-    const list = groups.get(v.kind) ?? []
-    list.push(v)
-    groups.set(v.kind, list)
-  }
-  for (const list of groups.values()) list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  return groups
+/** A space is one area of the map, as a page of its own; numbered by its place on the map until spaces get stable ids. */
+export interface Space {
+  n: number
+  title: string
+  topics: View[]
+}
+
+export const spaces = computed<Space[]>(() =>
+  (topicMap.value?.areas ?? []).map((a, n) => ({ n, title: a.title, topics: a.topics.flatMap((t) => state.views.get(`organizer/${t.slug}`) ?? []) })),
+)
+
+export const allTopics = computed(() => [...state.views.values()].filter((v) => v.kind === 'organizer').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+
+/** Topics the map does not list yet, such as one written since its last run; they show under All topics. */
+export const unplaced = computed(() => {
+  const placed = new Set(spaces.value.flatMap((s) => s.topics.map((t) => t.id)))
+  return allTopics.value.filter((t) => !placed.has(t.id))
 })
+
+export type Route = { page: 'space'; n: number } | { page: 'tasks' } | { page: 'activity' } | { page: 'all' }
+
+export function parseRoute(hash: string): Route | null {
+  const space = /^#\/space\/(\d+)$/.exec(hash)
+  if (space) return { page: 'space', n: Number(space[1]) }
+  if (hash === '#/tasks') return { page: 'tasks' }
+  if (hash === '#/activity') return { page: 'activity' }
+  if (hash === '#/all') return { page: 'all' }
+  return null
+}
+
+export const hrefOf = (r: Route) => (r.page === 'space' ? `#/space/${r.n}` : `#/${r.page}`)
+
+// Set by connect(), so importing this module touches no browser global; the strip's tests import it under Bun.
+const hashRoute = ref<Route | null>(null)
+
+/** The page shown: the one the hash names while it exists, else the first space, else all topics. */
+export const route = computed<Route>(() => {
+  const r = hashRoute.value
+  if (r && (r.page !== 'space' || r.n < spaces.value.length)) return r
+  return spaces.value.length > 0 ? { page: 'space', n: 0 } : { page: 'all' }
+})
+
+/** The space a topic is in, by its view id; undefined while the map does not list it. */
+export const spaceOf = (topicId: string) => spaces.value.find((s) => s.topics.some((t) => t.id === topicId))
+
+/** The note opened inside a topic card, as `${topicId}:${entryId}`; one at a time across the page. */
+export const openSource = ref<string | null>(null)
+
+/** Opens the page holding the topic, optionally with one of its notes open, and scrolls its card into view. */
+export async function goToTopic(topicId: string, entryId?: string) {
+  if (entryId) openSource.value = `${topicId}:${entryId}`
+  const space = spaceOf(topicId)
+  const target = space ? hrefOf({ page: 'space', n: space.n }) : '#/all'
+  if (location.hash !== target) location.hash = target
+  await nextTick()
+  document.getElementById(topicId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 /** A kind's failed runs as one chip. `recoveredAt` is set when a run of that kind finished done after its latest failure. */
 export interface FailedGroup {
@@ -51,12 +96,12 @@ export interface FailedGroup {
   recoveredAt?: string
 }
 
-const DONE_SHOWN = 12
+const DONE_SHOWN = 3
 
-/** The activity strip: in-flight runs, then the newest done runs, then one group per failing kind, current failures before recovered ones. */
+/** The activity strip: in-flight runs, then the newest done runs that called the model, then one group per failing kind, current failures before recovered ones. */
 export function stripOf(all: readonly Run[]): { runs: Run[]; failed: FailedGroup[] } {
   const inFlight = all.filter((r) => r.status === 'queued' || r.status === 'running').reverse()
-  const done = all.filter((r) => r.status === 'done')
+  const done = all.filter((r) => r.status === 'done' && !r.noCall)
   const lastDone = new Map<string, string>()
   for (const r of done) if (r.endedAt && r.endedAt > (lastDone.get(r.kind) ?? '')) lastDone.set(r.kind, r.endedAt)
   const groups = new Map<string, FailedGroup>()
@@ -81,6 +126,16 @@ export function stripOf(all: readonly Run[]): { runs: Run[]; failed: FailedGroup
 
 export const strip = computed(() => stripOf([...state.runs.values()]))
 
+/** What a run worked on: its notes, its own view, or the view of another kind it was derived from. */
+export function runSubject(r: Run): string {
+  const id = r.viewIds?.[0]
+  if (!id) return `${r.entryIds.length} ${r.entryIds.length === 1 ? 'note' : 'notes'}`
+  const slug = id.split('/').at(-1)
+  return id.startsWith(`${r.kind}/`) ? `${slug}` : `from ${slug}`
+}
+export const runDetail = (r: Run) =>
+  [r.error, ...(r.dropped ?? []).map((d) => `dropped: ${d}`), r.uncovered && `not covered: ${r.uncovered.length} notes`].filter(Boolean).join('\n')
+
 /** Each live collection: the path that loads it and the server event that updates it, both keyed by id. */
 const feeds: { path: string; event: ZephyrEvent['type']; map: Map<string, { id: string }> }[] = [
   { path: '/api/views', event: 'view', map: state.views },
@@ -94,6 +149,8 @@ async function load(path: string): Promise<{ id: string }[]> {
 }
 
 export async function connect() {
+  hashRoute.value = parseRoute(location.hash)
+  window.addEventListener('hashchange', () => (hashRoute.value = parseRoute(location.hash)))
   const loaded = await Promise.all(feeds.map((f) => load(f.path)))
   feeds.forEach((f, i) => {
     for (const item of loaded[i]!) f.map.set(item.id, item)

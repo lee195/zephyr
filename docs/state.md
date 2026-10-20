@@ -25,8 +25,9 @@ What is built, how it was checked, and what is open, as of 2026-10-19 at commit 
 | Questions | Agents park `whichTopic` and `isTask` questions for the review | `705c5e0`, `81a3739` |
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
 | Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
+| Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | not committed yet |
 
-Tests: 222 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
+Tests: 224 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
 
 ## Running on this machine
 
@@ -79,6 +80,21 @@ Viewer:
 - `.history` versions and saved summaries are not shown.
 - The `.vue` files are not type-checked (`vue-tsc` is not installed), and state is a hand-built `reactive()` store rather than rstore.
 - The title-history button's `aria-controls` points at an id that exists only while the list is open.
+
+## Ideas not built yet
+
+From the 2026-10-20 ideas for finding things as notes pile up; the first slice (the "last note →" line, `/zephyr where`, the map) is built.
+
+- `ask_notes`: an MCP tool that answers from notes and topic bodies with citations.
+- `search_notes` that also ranks topic bodies.
+- Merge suggestions for near-duplicate topics and split suggestions for oversized ones, in the review.
+- An index of people, projects and terms, each mapped to its topics and notes.
+- Archiving topics untouched for some weeks, still searchable.
+- A duplicate warning in hints when the draft is nearly a note already written.
+- A "where it went" list in the digest.
+- A note timeline in the viewer.
+- A topic graph from related links and shared notes.
+- A search box in the viewer.
 
 Code that appears exactly twice and is left duplicated on purpose is listed in [deferred-abstractions.md](deferred-abstractions.md).
 

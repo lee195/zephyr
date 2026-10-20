@@ -41,9 +41,15 @@ test('a kind done after its latest failure is marked recovered and sorts after c
   ])
 })
 
-test('only the newest twelve done runs show, newest first', () => {
+test('only the newest three done runs show, newest first; the rest are on the activity page', () => {
   const done = Array.from({ length: 15 }, (_, i) => run('organizer', 'done', `2026-10-19T10:${String(i).padStart(2, '0')}:00Z`))
   const s = stripOf(done)
-  expect(s.runs).toHaveLength(12)
+  expect(s.runs).toEqual([done[14], done[13], done[12]])
   expect(s.runs[0]).toBe(done[14]!)
+})
+
+test('done runs that needed no model call stay out of the strip', () => {
+  const called = run('map', 'done', '2026-10-19T10:00:00Z')
+  const idle = { ...run('map', 'done', '2026-10-19T10:01:00Z'), noCall: true as const }
+  expect(stripOf([called, idle]).runs).toEqual([called])
 })
