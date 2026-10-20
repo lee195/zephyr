@@ -1,8 +1,9 @@
 import { appendFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
-import { readComplete } from '../src/tailer'
-import { tempDir } from './helpers'
+import type { Batch } from '../src/domain'
+import { readComplete, Tailer } from '../src/tailer'
+import { gate, tempDir } from './helpers'
 
 async function tempFile(content: string) {
   const path = join(await tempDir(), 't.jsonl')
@@ -37,4 +38,29 @@ test('multi-byte text keeps byte offsets exact', async () => {
 
 test('a missing file reads as empty without moving the offset', async () => {
   expect(await readComplete('/nonexistent/zephyr.jsonl', 5)).toEqual({ lines: [], offset: 5 })
+})
+
+test('a read in flight when the tailer stops delivers nothing, and no further read starts', async () => {
+  const g = gate()
+  g.hold()
+  let reads = 0
+  const delivered: Batch[] = []
+  const tailer = new Tailer(
+    '/nonexistent/t.jsonl',
+    0,
+    async () => {
+      reads++
+      await g.pass()
+      return { rows: [{ id: 'r1', sessionId: 's', at: '2026-10-20T00:00:00Z', role: 'user', text: '[zephyr] note' }], offset: 10 }
+    },
+    async (batch) => void delivered.push(batch),
+    60_000,
+  )
+  const first = tailer.start()
+  await Bun.sleep(5)
+  void tailer.poke()
+  tailer.stop()
+  g.release()
+  await first
+  expect([reads, delivered.length]).toEqual([1, 0])
 })

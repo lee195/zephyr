@@ -38,6 +38,7 @@ export class Tailer {
   private timer: ReturnType<typeof setInterval> | null = null
   private reading = false
   private again = false
+  private stopped = false
 
   constructor(
     private path: string,
@@ -58,7 +59,9 @@ export class Tailer {
     return this.poke()
   }
 
+  /** Also drops the result of a read already in flight, so nothing is delivered once this returns. */
   stop() {
+    this.stopped = true
     this.watcher?.close()
     if (this.timer) clearInterval(this.timer)
     this.watcher = null
@@ -66,6 +69,7 @@ export class Tailer {
   }
 
   async poke(): Promise<void> {
+    if (this.stopped) return
     if (this.reading) {
       this.again = true
       return
@@ -75,11 +79,12 @@ export class Tailer {
       do {
         this.again = false
         const batch = await this.read(this.offset)
+        if (this.stopped) return
         if (batch.rows.length > 0 || batch.offset !== this.offset) {
           await this.onBatch(batch)
           this.offset = batch.offset
         }
-      } while (this.again)
+      } while (this.again && !this.stopped)
     } catch (err) {
       console.error(`[zephyr] tail ${this.path}: ${(err as Error).message}`)
     } finally {

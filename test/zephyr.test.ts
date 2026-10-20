@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { expect, spyOn, test } from 'bun:test'
 import type { AgentKind, ChatMessage, ModelBackend, View } from '../src/domain'
 import { withFallback, type RelevanceBackend } from '../src/relevance'
+import { adapters } from '../src/adapters'
 import { kinds } from '../src/kinds'
 import { Zephyr, type ZephyrOptions } from '../src/zephyr'
 import { doneRun, entry, eventually, filesUnder, gate, payloadOf, scripted, seedDataDir, tempDir } from './helpers'
@@ -271,6 +272,36 @@ test('status names the newest note, with no topics until the organizer files it'
   fake.release()
   await z.idle()
   expect(z.status().lastNote).toEqual({ id: 'e1', at: '2026-10-20T09:00:00Z', topics: [{ slug: 'all', title: 'All' }] })
+})
+
+test('a transcript read in flight when the server stops ingests nothing and queues no run', async () => {
+  const dir = await tempDir()
+  const transcript = join(dir, 'session.jsonl')
+  await writeFile(transcript, noteRow('u1', 'party: venue'))
+  const fake = fakeBackend()
+  const z = new OrganizerOnly({ dataDir: dir, backend: fake.backend })
+  await z.start()
+  const adapter = adapters['claude-code']!
+  const read = adapter.read
+  const g = gate()
+  g.hold()
+  let reads = 0
+  adapter.read = async (...args) => {
+    reads++
+    await g.pass()
+    return read(...args)
+  }
+  try {
+    const registered = z.registerSession('claude-code', 's1', transcript)
+    await eventually(() => reads === 1)
+    z.stop()
+    g.release()
+    await registered
+    await z.idle()
+    expect([z.listEntries().length, z.listRuns().length, fake.calls.length]).toEqual([0, 0, 0])
+  } finally {
+    adapter.read = read
+  }
 })
 
 test('a registered transcript is backfilled, tailed, and never duplicated across restarts', async () => {
