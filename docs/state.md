@@ -93,6 +93,8 @@ From the 2026-10-20 ideas for finding things as notes pile up; the first slice (
 - A topic graph from related links and shared notes.
 - A search box in the viewer.
 
+Real-time collaboration as a future extension is explored in [explore-collaboration.md](explore-collaboration.md): a hub server per shared space is the recommended direction, with open decisions listed there.
+
 Code that appears exactly twice and is left duplicated on purpose is listed in [deferred-abstractions.md](deferred-abstractions.md).
 
 ## Where the plan lives
