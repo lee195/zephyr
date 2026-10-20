@@ -1,5 +1,6 @@
-import type { Adjustment, Entry, EntryId, Pins, Task, View, ViewWrite } from './domain'
+import type { Adjustment, Area, Entry, EntryId, Pins, SpacePins, Task, View, ViewWrite } from './domain'
 import { sanitizeSlug } from './kinds/common'
+import { areasOf, mapIn, mapWrite, placeIn } from './kinds/map'
 import { appendSection, MAX_REWRITE_CHARS, rewriteChars, topicsIn, usableTitle } from './kinds/organizer'
 import { currentTasks, MAX_DUE_LENGTH, tasksWrite } from './kinds/tasks'
 
@@ -93,6 +94,16 @@ export const OPS: { [Op in Adjustment['op']]: OpSpec<Extract<Adjustment, { op: O
     owner: 'organizer',
     describe: 'Take the related link between two topics off both.',
     fields: { a: { kind: 'text', describe: 'slug of one topic' }, b: { kind: 'text', describe: 'slug of the other topic' } },
+  },
+  moveTopicToSpace: {
+    owner: 'map',
+    describe: 'Put a topic in a space of the map, an existing one by its slug or a new one by its title, and pin it there against later map runs.',
+    fields: { slug: { kind: 'text', describe: 'topic slug' }, space: { kind: 'text', describe: 'slug of an existing space, or the title of a new one' } },
+  },
+  renameSpace: {
+    owner: 'map',
+    describe: 'Set the title of a space of the map and pin it against later map runs.',
+    fields: { space: { kind: 'text', describe: 'space slug' }, title: { kind: 'text', describe: 'new title' } },
   },
   purgeNote: {
     describe:
@@ -209,6 +220,7 @@ function tidy(p: Pins): Pins | undefined {
     ...(p.title && { title: true as const }),
     ...(p.excluded?.length && { excluded: p.excluded }),
     ...(p.aliases?.length && { aliases: p.aliases }),
+    ...(p.spaces && (Object.keys(p.spaces.titles ?? {}).length > 0 || Object.keys(p.spaces.placed ?? {}).length > 0) && { spaces: p.spaces }),
   }
   return Object.keys(out).length ? out : undefined
 }
@@ -403,6 +415,39 @@ export function relatedFixes(views: readonly View[]): RelatedChange[] {
   })
 }
 
+/** The map with these areas and space pins, as the person's write. */
+function mapChange(map: View, areas: Area[], spaces: SpacePins): Outcome {
+  return { ok: true, writes: [{ kind: 'map', write: mapWrite(areas), own: { pins: tidy({ ...map.pins, spaces }) } }], deletes: [], warnings: [] }
+}
+
+function moveTopicToSpace(a: Extract<Adjustment, { op: 'moveTopicToSpace' }>, s: AdjustState): Outcome {
+  const map = mapIn(s.views)
+  if (!map) return fail('the map has not been drawn yet')
+  const topics = new Topics(s)
+  const topic = topics.get(a.slug)
+  if (!topic) return topics.missing(a.slug)
+  const areas = areasOf(map)
+  const existing = areas.find((x) => x.slug === sanitizeSlug(a.space))
+  const title = usableTitle(a.space)
+  if (!existing && !title) return fail(`no space ${a.space}, and it is not usable as a new space's title`)
+  const pins = map.pins?.spaces ?? {}
+  const space = existing?.slug ?? (sanitizeSlug(title!) || 'space')
+  const next = placeIn(areas, { slug: topic.slug, title: topic.title }, space, existing?.title ?? title!)
+  const titles = existing ? pins.titles : { ...pins.titles, [space]: title! }
+  return mapChange(map, next, { ...(titles && { titles }), placed: { ...pins.placed, [topic.slug]: space } })
+}
+
+function renameSpace(a: Extract<Adjustment, { op: 'renameSpace' }>, s: AdjustState): Outcome {
+  const map = mapIn(s.views)
+  const areas = areasOf(map)
+  const space = areas.find((x) => x.slug === sanitizeSlug(a.space))
+  if (!map || !space) return fail(`no space ${a.space}`)
+  const title = usableTitle(a.title)
+  if (!title) return fail('title is not usable')
+  const pins = map.pins?.spaces ?? {}
+  return mapChange(map, areas.map((x) => (x === space ? { ...x, title } : x)), { ...pins, titles: { ...pins.titles, [space.slug]: title } })
+}
+
 function changeTask(s: AdjustState, taskId: string, change: (task: Task) => Task | null): Outcome {
   const tasks = currentTasks(s.views)
   const task = tasks.find((x) => x.id === taskId)
@@ -442,6 +487,10 @@ export function planAdjustment(a: Adjustment, s: AdjustState): Outcome {
     case 'linkTopics':
     case 'unlinkTopics':
       return link(a, s)
+    case 'moveTopicToSpace':
+      return moveTopicToSpace(a, s)
+    case 'renameSpace':
+      return renameSpace(a, s)
     case 'purgeNote':
       return fail('purgeNote rewrites files, so the server applies it, not a plan')
   }

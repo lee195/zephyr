@@ -5,8 +5,8 @@ import { goToTopic, hrefOf, route, spaces, taskList, unplaced, type Route } from
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ navigate: [] }>()
 
-const expanded = reactive(new Set<number>())
-const toggle = (n: number) => (expanded.has(n) ? expanded.delete(n) : expanded.add(n))
+const expanded = reactive(new Set<string>())
+const toggle = (slug: string) => (expanded.has(slug) ? expanded.delete(slug) : expanded.add(slug))
 const isCurrent = (r: Route) => hrefOf(r) === hrefOf(route.value)
 const openTasks = computed(() => (taskList.value?.tasks ?? []).filter((t) => !t.done).length)
 
@@ -21,17 +21,17 @@ function topic(id: string) {
     <h2>Spaces</h2>
     <p v-if="spaces.length === 0" class="muted small">No map yet</p>
     <ul class="spaces">
-      <li v-for="s in spaces" :key="s.n">
+      <li v-for="s in spaces" :key="s.slug">
         <div class="space-row">
-          <button class="caret" :aria-expanded="expanded.has(s.n)" :aria-label="`${expanded.has(s.n) ? 'Hide' : 'Show'} topics of ${s.title}`" @click="toggle(s.n)">
-            {{ expanded.has(s.n) ? '▾' : '▸' }}
+          <button class="caret" :aria-expanded="expanded.has(s.slug)" :aria-label="`${expanded.has(s.slug) ? 'Hide' : 'Show'} topics of ${s.title}`" @click="toggle(s.slug)">
+            {{ expanded.has(s.slug) ? '▾' : '▸' }}
           </button>
-          <a :href="hrefOf({ page: 'space', n: s.n })" :aria-current="isCurrent({ page: 'space', n: s.n }) ? 'page' : undefined" @click="emit('navigate')">
+          <a :href="hrefOf({ page: 'space', slug: s.slug })" :aria-current="isCurrent({ page: 'space', slug: s.slug }) ? 'page' : undefined" @click="emit('navigate')">
             {{ s.title }}
           </a>
           <span class="count muted">{{ s.topics.length }}</span>
         </div>
-        <ul v-if="expanded.has(s.n)" class="space-topics">
+        <ul v-if="expanded.has(s.slug)" class="space-topics">
           <li v-for="t in s.topics" :key="t.id">
             <a :href="`#${t.id}`" @click.prevent="topic(t.id)">{{ t.title }}</a>
           </li>

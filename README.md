@@ -71,14 +71,14 @@ Each kind writes only `views/<kind>/`, through its own serial queue.
 | `organizer` | each new entry; a topic the sweep finds has become an append log | topic pages `organizer/<slug>.md` |
 | `tasks` | each new entry | `tasks/tasks.json` holds the tasks as data (`{ id, text, due?, done, sources }`), `tasks/tasks.md` renders them |
 | `visualizer` | an organizer topic with 4 or more sources, not stale, whose diagram is missing or older than the topic | `visualizer/<slug>.svg` or `.txt`, with `derivedFrom` naming the topic version it drew; deleted when its topic is gone or under 4 sources |
-| `map` | an organizer topic written under a slug or title the map does not list; a sweep that finds the map's topics differ from the current ones (a merge or delete) | `map/contents.json` holds the topics grouped into at most 9 areas (`areas: [{ title, topics: [{ slug, title }] }]`), `map/contents.md` renders them with links to the topic pages. The model is shown the current areas and keeps them where they fit; topics it leaves out go under Other. The viewer turns each area into a space |
+| `map` | an organizer topic written under a slug or title the map does not list; a sweep that finds the map's topics differ from the current ones (a merge or delete) | `map/contents.json` holds the topics grouped into at most 9 areas (`areas: [{ slug, title, topics: [{ slug, title }], createdAt? }]`), `map/contents.md` renders them with links to the topic pages. An area is a space: its slug stays while the model names it in its reply, whatever the title becomes. The model is shown the current areas and keeps them where they fit; topics it leaves out go under Other. The person's space pins (`pins.spaces`) win over the reply: a pinned title stays, and a pinned topic goes back to its space, with each overruled change in `run.dropped`. The viewer turns each area into a space |
 
 A kind derived from views starts once every write of the run that triggered it has landed, so the map sees all the topics one run created and costs one call for them.
 
 ## Viewer
 
 - **Sidebar.** A sticky left column lists the spaces, one per map area, each with its topic count and expandable to its topics. Below them are All topics, Tasks and Activity. Under 760 px wide it folds behind a "☰ Spaces" button and opens as a drawer.
-- **Pages.** The URL hash names the page: `#/space/<n>` shows that space's topic cards, newest first, and narrows the notes column to the notes they cite. `#/all` shows every topic, including ones the map does not list yet. `#/tasks` and `#/activity` are the task list and the run history. Without a hash, the first space opens.
+- **Pages.** The URL hash names the page: `#/space/<slug>` shows that space's topic cards, newest first, and narrows the notes column to the notes they cite. `#/all` shows every topic, including ones the map does not list yet. `#/tasks` and `#/activity` are the task list and the run history. Without a hash, the first space opens.
 - **Activity.** The header shows runs in flight, the 3 newest done runs that called the model, and one chip per failing kind. The activity page pages through `runs.jsonl` with filters for kind and status. Runs that finished without a model call (`noCall`), such as map runs another run already did the work for, are hidden unless asked for.
 
 The viewer shows SVG only as `<img src="blob:…">`, so scripts in a diagram never run, and HTML responses carry a Content-Security-Policy that allows only the viewer's own scripts.
@@ -99,6 +99,8 @@ Corrections the person makes after the fact. Each op is applied by a step on the
 | `editTask` | `taskId, text?, due?` | `due: null` clears the due date. |
 | `completeTask`, `deleteTask` | `taskId` | |
 | `linkTopics`, `unlinkTopics` | `a, b` | Marks two topics related but separate, or takes the mark off. The link is on both topics' `related`; see Related topics. |
+| `moveTopicToSpace` | `slug, space` | Puts a topic in a space of the map: an existing one by its slug, or a new one by its title, whose title is then pinned. The placement is pinned in `pins.spaces.placed`. Applied on the map's queue; refused before any map exists. |
+| `renameSpace` | `space, title` | Sets a space's title and pins it in `pins.spaces.titles`. |
 | `purgeNote` | `noteId, confirm` | Removes the note and its words from the data dir; see Purge. `confirm` must be exactly `purge <noteId>`. |
 
 `move`, `detach` and `split` refuse to leave a topic with no notes, so a note is never on no topic while it counts as filed.
@@ -155,7 +157,7 @@ The reply is checked like its ops: a question about a note not in the run, a slu
 | `GET /hints?q=<draft>&limit=1..10` | `{ hints, backend, partial }`: stored entries related to the draft, each with `topics`, every topic that cites it. Never waits on embedding entries; `partial` is true when some were not embedded yet and so were left out. |
 | `GET /api/views`, `/api/entries`, `/api/runs` | Current state; `/api/runs` holds the 50 newest runs |
 | `GET /api/runs/history?before=<endedAt>&limit=1..200` | `{ runs, more }`: finished runs from `runs.jsonl`, newest first, ended before `before`; `limit` defaults to 50 |
-| `GET /api/review` | The digest since the last review, computed on each request: `{ since, until, notes: { count, ids }, newTopics, topics, sharedNotes, renames, tasks, unfiled, rewrites, questions }`. `questions` holds every open question, whatever window it was asked in. Every list is about the notes the server received after `since` and up to `until`, or about writes in that window. It leaves out the person's own changes, renames and topics an adjustment made; a rewrite their change forced is listed with `yours: true`, since its new body is model text they have not seen. `since` is `null` before the first review. |
+| `GET /api/review` | The digest since the last review, computed on each request: `{ since, until, notes: { count, ids }, newTopics, newSpaces, topics, sharedNotes, renames, tasks, unfiled, rewrites, questions }`. `questions` holds every open question, whatever window it was asked in. Every list is about the notes the server received after `since` and up to `until`, or about writes in that window. It leaves out the person's own changes, renames and topics an adjustment made; a rewrite their change forced is listed with `yours: true`, since its new body is model text they have not seen. `since` is `null` before the first review. |
 | `POST /api/review/done` `{ until }` | Ends a review: the next digest starts after `until`, the value the digest that was reviewed returned. A note received after that digest was read stays in the next one. Refuses an `until` in the future or before the last review. |
 | `POST /api/adjustments` `{ op, ... }` | Apply one adjustment (below). 200 with `{ id, ok: true, written, deleted, rewrites, warnings }`; 400 for a malformed op; 409 with `{ id, ok: false, error }` when the data refuses it, such as an unknown topic. |
 | `GET /api/purge/<noteId>` | `{ noteId, done, scrubbing, pending }` for a purged note: `scrubbing` until the purge's result is logged, then `pending` lists the topics whose rewrite is still queued. 404 for a note never purged. |
@@ -174,7 +176,7 @@ Every request other than `GET` must send `content-type: application/json` (else 
 | --- | --- |
 | `get_review` | The digest, as `GET /api/review` returns it |
 | `finish_review` `{ until }` | As `POST /api/review/done` |
-| `list_topics` | Every topic: slug, title, note ids |
+| `list_topics` | Every topic: slug, title, note ids, and its space `{ slug, title }` (null until the map lists it) |
 | `get_topic` `{ slug }` | The page body and the cited notes with their text |
 | `search_notes` `{ query, limit? }` | As `GET /hints`, including which backend ranked |
 | `get_purge` `{ noteId }` | As `GET /api/purge/<noteId>` |

@@ -1,13 +1,10 @@
-import type { Entry, EntryId, Run, Task, TaskId, View } from './domain'
+import type { Entry, EntryId, Run, Task, TaskId, TopicRef, View } from './domain'
+import { areasOf, mapIn } from './kinds/map'
 import type { QuestionView } from './questions'
 
 const TOPIC_KIND = 'organizer'
 const TASKS_ID = 'tasks/tasks'
 
-export interface TopicRef {
-  slug: string
-  title: string
-}
 
 /**
  * What happened between two reviews, computed from the data dir on request and never stored. Every list is about
@@ -21,6 +18,8 @@ export interface Digest {
   notes: { count: number; ids: EntryId[] }
   /** Topics whose first write fell in the window, except those the person made, such as by a split. */
   newTopics: TopicRef[]
+  /** Spaces a map run made in the window, with the slugs of their topics; spaces the person made are left out. */
+  newSpaces: { slug: string; title: string; topics: string[] }[]
   /** Each topic that cites a note of the window, with those notes. */
   topics: (TopicRef & { noteIds: EntryId[] })[]
   /** Notes of the window that two or more topics cite. */
@@ -121,6 +120,9 @@ export function buildDigest(entries: readonly Entry[], views: readonly View[], r
     until,
     notes: { count: notes.length, ids: notes },
     newTopics: topicViews.filter((v) => !v.createdByPerson && inWindow(v.createdAt, since, until)).map(ref),
+    newSpaces: areasOf(mapIn(views))
+      .filter((a) => a.createdAt && inWindow(a.createdAt, since, until))
+      .map((a) => ({ slug: a.slug, title: a.title, topics: a.topics.map((t) => t.slug) })),
     topics,
     sharedNotes,
     renames,
@@ -156,6 +158,7 @@ export function reviewBrief(digest: Digest): string {
     `When the person says the review is done, call finish_review with until "${digest.until}".`,
     'Rewrites marked yours carried out a change the person made; their new text is still worth a look.',
     "Questions are doubts the agents filed a best guess for. Put each to the person with its answers and record their pick with answer_question; don't pick for them.",
+    'Topics sit in spaces of the map; list_topics names each topic\'s space. move_topic_to_space puts a topic in another space, or in a new one by its title, and rename_space retitles a space; both stick against later map runs.',
     'Deeper processing, when the person asks for it: summarize_review writes a summary of these notes, rewrite_touched_topics rewrites every topic they touched, and suggest_links proposes related topics. Apply a suggested link with link_topics only after the person says yes to it.',
     'Start with a short summary of the digest and ask what to change.',
     '',

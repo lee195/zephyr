@@ -67,6 +67,21 @@ const VIEWS: View[] = [
       { id: 't2', text: 'Water the lawn', done: true, sources: ['old1'] },
     ],
   },
+  {
+    id: 'map/contents',
+    kind: 'map',
+    slug: 'contents',
+    title: 'Map',
+    sources: [],
+    format: 'md',
+    body: '',
+    updatedAt: at('11:20'),
+    areas: [
+      { slug: 'home', title: 'Home', topics: [{ slug: 'garden', title: 'Garden' }], createdAt: at('09:00') },
+      { slug: 'travel', title: 'Travel', topics: [{ slug: 'trip', title: 'Trip' }], createdAt: at('10:40') },
+      { slug: 'mine', title: 'Mine', topics: [{ slug: 'legacy', title: 'Legacy' }] },
+    ],
+  },
 ]
 
 const run = (id: string, kind: string, fields: Partial<Run>): Run => ({ id, kind, entryIds: [], status: 'done', attempt: 1, ...fields })
@@ -93,6 +108,7 @@ test('the digest covers exactly the notes received in the window and what was wr
     until: UNTIL,
     notes: { count: 4, ids: ['n1', 'n2', 'n3', 'n4'] },
     newTopics: [{ slug: 'trip', title: 'Trip' }],
+    newSpaces: [{ slug: 'travel', title: 'Travel', topics: ['trip'] }],
     topics: [
       { slug: 'garden', title: 'Garden', noteIds: ['n1', 'n2'] },
       { slug: 'trip', title: 'Trip', noteIds: ['n2'] },
@@ -170,6 +186,7 @@ test('done advances the cursor, the next digest is empty, and a restart keeps th
       until: null,
       notes: { count: 0, ids: [] },
       newTopics: [],
+      newSpaces: [],
       topics: [],
       sharedNotes: [],
       renames: [],

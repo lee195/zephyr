@@ -15,7 +15,10 @@ const newestFirst = (views: View[]) => [...views].sort((a, b) => b.updatedAt.loc
 const failedDetail = (g: FailedGroup) =>
   [`${g.count} failed, latest at ${time(g.latest.endedAt)}`, g.recoveredAt && `done since ${time(g.recoveredAt)}`, runDetail(g.latest)].filter(Boolean).join('\n')
 
-const space = computed(() => (route.value.page === 'space' ? spaces.value[route.value.n] : undefined))
+const space = computed(() => {
+  const r = route.value
+  return r.page === 'space' ? spaces.value.find((s) => s.slug === r.slug) : undefined
+})
 const topics = computed(() => (space.value ? newestFirst(space.value.topics) : route.value.page === 'all' ? allTopics.value : []))
 
 /** On a space page, the notes its topics cite; elsewhere the newest notes. */

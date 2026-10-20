@@ -72,8 +72,17 @@ export interface View {
 /** A topic as other views name it: by slug, with its title at the time. */
 export type TopicRef = { slug: string; title: string }
 
-/** One group of the map: topics that belong together, under a title the map kind chose. */
-export type Area = { title: string; topics: TopicRef[] }
+/**
+ * One group of the map, shown as a space: topics that belong together. The slug is the space's id, kept for as long
+ * as the space exists, whatever its title becomes. createdAt is when a run first drew it; a space the person made has none.
+ */
+export type Area = { slug: string; title: string; topics: TopicRef[]; createdAt?: string }
+
+/** What the person fixed on the map: space titles they chose, and the space they put a topic in, by topic slug. */
+export interface SpacePins {
+  titles?: Record<string, string>
+  placed?: Record<string, string>
+}
 
 export interface Pins {
   /** The person chose the title; no run may change it. */
@@ -82,6 +91,8 @@ export interface Pins {
   excluded?: EntryId[]
   /** Slugs of topics merged into this one; a run's op on one of them lands here. */
   aliases?: string[]
+  /** On the map only: what no map run may undo. */
+  spaces?: SpacePins
 }
 
 export interface PastTitle {
@@ -253,6 +264,8 @@ export interface AgentKind {
  * - splitTopic: `noteIds`, some but not all of the topic's notes, become the new topic `into`.
  * - editNote and tombstoneNote are overlays on entries.jsonl.
  * - linkTopics marks two topics related but separate, on both; unlinkTopics takes the link off both.
+ * - moveTopicToSpace puts a topic in a space of the map, by the space's slug or, for a new space, its title; the
+ *   placement is pinned. renameSpace sets a space's title and pins it.
  * - purgeNote is the one op that rewrites entries.jsonl: it removes the note and its words from the data dir.
  *   `confirm` must be exactly `purge <noteId>`.
  */
@@ -263,6 +276,8 @@ export type Adjustment =
   | { op: 'moveNote'; noteId: EntryId; from: string; to: string }
   | { op: 'detachNote'; noteId: EntryId; from: string; to: string }
   | { op: 'editNote'; noteId: EntryId; text: string }
+  | { op: 'moveTopicToSpace'; slug: string; space: string }
+  | { op: 'renameSpace'; space: string; title: string }
   | { op: 'tombstoneNote'; noteId: EntryId }
   | { op: 'editTask'; taskId: TaskId; text?: string; due?: string | null }
   | { op: 'completeTask'; taskId: TaskId }

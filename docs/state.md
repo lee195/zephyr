@@ -26,8 +26,9 @@ What is built, how it was checked, and what is open, as of 2026-10-19 at commit 
 | Deeper processing | `summarize_review`, `rewrite_touched_topics`, `suggest_links`, related-topic links | `ec1b60d`..`9f67b48` |
 | Finding things | Every topic per note in hints and `search_notes` (up to 10); `lastNote` in `/status`; the band's and opencode's "last note →" line; `/zephyr where`; the `map` kind | `1a24cfc`, `4ef6bbe`, `b8430d2` (jlee-mods) |
 | Spaces, phase 1 | Sticky sidebar with spaces from the map's areas, hash pages for spaces, all topics, tasks and activity; 3 done runs in the header; `GET /api/runs/history`; `noCall` on runs that made no model call | not committed yet |
+| Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | not committed yet |
 
-Tests: 224 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
+Tests: 231 pass under `bun test`; `bunx tsc -p tsconfig.json` is clean. The mod's 41 tests pass under `claude plugin test`.
 
 ## Running on this machine
 

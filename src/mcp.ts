@@ -3,6 +3,7 @@ import { MAX_LINK_TOPICS, MAX_LINKS, MAX_SUMMARY_CHARS } from './deeper'
 import type { Adjustment } from './domain'
 import { MAX_HINT_LIMIT } from './hints'
 import { sanitizeSlug } from './kinds'
+import { areasOf, mapIn } from './kinds/map'
 import { MAX_REWRITE_CHARS, topicsIn } from './kinds/organizer'
 import type { Zephyr } from './zephyr'
 
@@ -37,14 +38,17 @@ function tools(z: Zephyr): Tool[] {
     },
     {
       name: 'list_topics',
-      description: 'Every topic by slug: slug, title and the ids of the notes it cites.',
+      description: 'Every topic by slug: slug, title, the ids of the notes it cites, and the space of the map it is in (null until the map lists it).',
       inputSchema: noArgs,
-      call: async () =>
-        result(
-          topicsIn(z.listViews())
-            .map((v) => ({ slug: v.slug, title: v.title, noteIds: v.sources }))
+      call: async () => {
+        const views = z.listViews()
+        const spaceOf = new Map(areasOf(mapIn(views)).flatMap((a) => a.topics.map((t) => [t.slug, { slug: a.slug, title: a.title }] as const)))
+        return result(
+          topicsIn(views)
+            .map((v) => ({ slug: v.slug, title: v.title, noteIds: v.sources, space: spaceOf.get(v.slug) ?? null }))
             .sort((a, b) => a.slug.localeCompare(b.slug)),
-        ),
+        )
+      },
     },
     {
       name: 'get_topic',

@@ -55,11 +55,12 @@ test('tools/list offers the review tools and one tool per op, each schema requir
       [
         'get_review', 'finish_review', 'list_topics', 'get_topic', 'search_notes', 'get_purge', 'list_questions', 'answer_question',
         'rewrite_touched_topics', 'summarize_review', 'suggest_links',
-        'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task', 'link_topics', 'unlink_topics', 'purge_note',
+        'rename_topic', 'merge_topics', 'split_topic', 'move_note', 'detach_note', 'edit_note', 'tombstone_note', 'edit_task', 'complete_task', 'delete_task', 'link_topics', 'unlink_topics', 'move_topic_to_space', 'rename_space', 'purge_note',
       ].sort(),
     )
     for (const t of byName.values()) expect(t.description.length).toBeGreaterThan(0)
     expect(byName.get('move_note').inputSchema.required).toEqual(['noteId', 'from', 'to'])
+    expect(byName.get('move_topic_to_space').inputSchema.required).toEqual(['slug', 'space'])
     expect(byName.get('split_topic').inputSchema.properties.into.required).toEqual(['slug', 'title'])
     expect(byName.get('edit_task').inputSchema.required).toEqual(['taskId'])
     expect(byName.get('edit_task').inputSchema.properties.due.type).toEqual(['string', 'null'])
@@ -99,8 +100,8 @@ test('the review tools read the digest, topics and related notes, and finish_rev
     expect({ ...digest, until: 'T' }).toEqual({ ...(await (await fetch(`${s.base}/api/review`)).json()), until: 'T' })
     expect(digest.notes.ids).toEqual(['e1', 'e2', 'e3'])
     expect(await text('list_topics')).toEqual([
-      { slug: 'garden', title: 'GARDEN', noteIds: ['e3'] },
-      { slug: 'party', title: 'PARTY', noteIds: ['e1', 'e2'] },
+      { slug: 'garden', title: 'GARDEN', noteIds: ['e3'], space: null },
+      { slug: 'party', title: 'PARTY', noteIds: ['e1', 'e2'], space: null },
     ])
     expect(await text('get_topic', { slug: 'party' })).toMatchObject({ slug: 'party', body: 'venue in the barn\n\ncake', notes: [{ id: 'e1', text: 'party: venue in the barn' }, { id: 'e2', text: 'party: cake' }] })
     expect(await s.call('get_topic', { slug: 'nowhere' })).toMatchObject({ isError: true })

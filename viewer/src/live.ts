@@ -1,5 +1,6 @@
 import { computed, nextTick, reactive, ref } from 'vue'
 import type { Entry, Run, View, ZephyrEvent } from '../../src/domain'
+import { areasOf } from '../../src/kinds/areas'
 
 export const state = reactive({
   views: new Map<string, View>(),
@@ -30,15 +31,15 @@ export const taskList = computed(() => [...state.views.values()].find((v) => v.t
 
 export const topicMap = computed(() => [...state.views.values()].find((v) => v.areas))
 
-/** A space is one area of the map, as a page of its own; numbered by its place on the map until spaces get stable ids. */
+/** A space is one area of the map, as a page of its own, named by the area's slug. */
 export interface Space {
-  n: number
+  slug: string
   title: string
   topics: View[]
 }
 
 export const spaces = computed<Space[]>(() =>
-  (topicMap.value?.areas ?? []).map((a, n) => ({ n, title: a.title, topics: a.topics.flatMap((t) => state.views.get(`organizer/${t.slug}`) ?? []) })),
+  areasOf(topicMap.value).map((a) => ({ slug: a.slug, title: a.title, topics: a.topics.flatMap((t) => state.views.get(`organizer/${t.slug}`) ?? []) })),
 )
 
 export const allTopics = computed(() => [...state.views.values()].filter((v) => v.kind === 'organizer').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
@@ -49,18 +50,18 @@ export const unplaced = computed(() => {
   return allTopics.value.filter((t) => !placed.has(t.id))
 })
 
-export type Route = { page: 'space'; n: number } | { page: 'tasks' } | { page: 'activity' } | { page: 'all' }
+export type Route = { page: 'space'; slug: string } | { page: 'tasks' } | { page: 'activity' } | { page: 'all' }
 
 export function parseRoute(hash: string): Route | null {
-  const space = /^#\/space\/(\d+)$/.exec(hash)
-  if (space) return { page: 'space', n: Number(space[1]) }
+  const space = /^#\/space\/([a-z0-9-]+)$/.exec(hash)
+  if (space) return { page: 'space', slug: space[1]! }
   if (hash === '#/tasks') return { page: 'tasks' }
   if (hash === '#/activity') return { page: 'activity' }
   if (hash === '#/all') return { page: 'all' }
   return null
 }
 
-export const hrefOf = (r: Route) => (r.page === 'space' ? `#/space/${r.n}` : `#/${r.page}`)
+export const hrefOf = (r: Route) => (r.page === 'space' ? `#/space/${r.slug}` : `#/${r.page}`)
 
 // Set by connect(), so importing this module touches no browser global; the strip's tests import it under Bun.
 const hashRoute = ref<Route | null>(null)
@@ -68,8 +69,8 @@ const hashRoute = ref<Route | null>(null)
 /** The page shown: the one the hash names while it exists, else the first space, else all topics. */
 export const route = computed<Route>(() => {
   const r = hashRoute.value
-  if (r && (r.page !== 'space' || r.n < spaces.value.length)) return r
-  return spaces.value.length > 0 ? { page: 'space', n: 0 } : { page: 'all' }
+  if (r && (r.page !== 'space' || spaces.value.some((s) => s.slug === r.slug))) return r
+  return spaces.value.length > 0 ? { page: 'space', slug: spaces.value[0]!.slug } : { page: 'all' }
 })
 
 /** The space a topic is in, by its view id; undefined while the map does not list it. */
@@ -82,7 +83,7 @@ export const openSource = ref<string | null>(null)
 export async function goToTopic(topicId: string, entryId?: string) {
   if (entryId) openSource.value = `${topicId}:${entryId}`
   const space = spaceOf(topicId)
-  const target = space ? hrefOf({ page: 'space', n: space.n }) : '#/all'
+  const target = space ? hrefOf({ page: 'space', slug: space.slug }) : '#/all'
   if (location.hash !== target) location.hash = target
   await nextTick()
   document.getElementById(topicId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
