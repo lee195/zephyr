@@ -1,6 +1,7 @@
 import { inputSchema, OPS, parseAdjustment } from './adjust'
 import { MAX_LINK_TOPICS, MAX_LINKS, MAX_SUMMARY_CHARS } from './deeper'
 import type { Adjustment } from './domain'
+import { MAX_HINT_LIMIT } from './hints'
 import { sanitizeSlug } from './kinds'
 import { MAX_REWRITE_CHARS, topicsIn } from './kinds/organizer'
 import type { Zephyr } from './zephyr'
@@ -59,17 +60,17 @@ function tools(z: Zephyr): Tool[] {
     },
     {
       name: 'search_notes',
-      description: 'Notes related to a query, best first, with the topic each is on and the backend that ranked them.',
+      description: 'Notes related to a query, best first, with every topic each is on and the backend that ranked them. Use it to find where something was noted.',
       inputSchema: {
         type: 'object',
-        properties: { query: { type: 'string', minLength: 1 }, limit: { type: 'integer', minimum: 1, maximum: 5, default: 3 } },
+        properties: { query: { type: 'string', minLength: 1 }, limit: { type: 'integer', minimum: 1, maximum: MAX_HINT_LIMIT, default: 3 } },
         required: ['query'],
         additionalProperties: false,
       },
       async call(args) {
         const limit = args.limit ?? 3
         if (typeof args.query !== 'string') return toolError('query is required')
-        if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > 5) return toolError('limit must be an integer from 1 to 5')
+        if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > MAX_HINT_LIMIT) return toolError(`limit must be an integer from 1 to ${MAX_HINT_LIMIT}`)
         return result(await z.hints(args.query, limit as number))
       },
     },

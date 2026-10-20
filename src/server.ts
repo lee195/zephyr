@@ -1,5 +1,6 @@
 import { isAbsolute, join, normalize, resolve } from 'node:path'
 import { parseAdjustment } from './adjust'
+import { MAX_HINT_LIMIT } from './hints'
 import { mcp } from './mcp'
 import { reviewBrief } from './review'
 import type { Zephyr } from './zephyr'
@@ -118,8 +119,9 @@ async function hints(zephyr: Zephyr, params: URLSearchParams) {
   const q = params.get('q')
   if (q === null) return fail('q is required')
   const limit = params.get('limit') ?? '3'
-  if (!/^[1-5]$/.test(limit)) return fail('limit must be an integer from 1 to 5')
-  return json(await zephyr.hints(q, Number(limit)))
+  const n = Number(limit)
+  if (!/^\d+$/.test(limit) || n < 1 || n > MAX_HINT_LIMIT) return fail(`limit must be an integer from 1 to ${MAX_HINT_LIMIT}`)
+  return json(await zephyr.hints(q, n))
 }
 
 /** Defense in depth behind the viewer's own rendering rules: no inline or foreign script can run in the page. */

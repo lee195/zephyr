@@ -7,11 +7,23 @@ export interface Hint {
   text: string
   at: string
   score: number
-  topic: { slug: string; title: string } | null
+  /** Every topic that cites the note, in view order; empty when none does. */
+  topics: TopicRef[]
+}
+
+export type TopicRef = { slug: string; title: string }
+
+/** Each note's topics: every organizer view that cites it, in view order. */
+export function topicsByNote(views: readonly View[]): Map<EntryId, TopicRef[]> {
+  const byNote = new Map<EntryId, TopicRef[]>()
+  for (const v of topicsIn(views)) for (const id of v.sources) byNote.set(id, [...(byNote.get(id) ?? []), { slug: v.slug, title: v.title }])
+  return byNote
 }
 
 /** A longer draft is ranked on its first this-many characters. */
 export const MAX_DRAFT_CHARS = 2000
+/** The most hints one request may ask for: the band shows 3, a lookup lists up to this many. */
+export const MAX_HINT_LIMIT = 10
 const MIN_DRAFT_TOKENS = 2
 
 export interface HintReply {
@@ -31,16 +43,14 @@ export async function hintsFor(draft: string, limit: number, entries: readonly E
   if (tokenize(query).length < MIN_DRAFT_TOKENS) return { hints: [], backend: null, partial: false }
   const same = draft.trim()
   const byId = new Map(entries.filter((e) => e.text.trim() !== same).map((e) => [e.id, e]))
-  const topics = new Map<EntryId, View>()
-  for (const v of topicsIn(views)) for (const id of v.sources) if (!topics.has(id)) topics.set(id, v)
+  const topics = topicsByNote(views)
   const { backend, scored, partial, minRelatedScore } = await relevance.rank(query, [...byId.values()])
   const hints = scored
     .filter((s) => s.score >= minRelatedScore)
     .slice(0, limit)
     .map(({ id, score }) => {
       const e = byId.get(id)!
-      const topic = topics.get(id)
-      return { entryId: id, text: e.text, at: e.at, score, topic: topic ? { slug: topic.slug, title: topic.title } : null }
+      return { entryId: id, text: e.text, at: e.at, score, topics: topics.get(id) ?? [] }
     })
   return { hints, backend, partial: partial === true }
 }

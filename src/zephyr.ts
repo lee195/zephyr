@@ -2,7 +2,7 @@ import { adapters } from './adapters'
 import { effectiveEntries, OPS, planAdjustment, planRewrites, relatedFixes, withoutTombstoned, type AdjustState, type NoteChange, type Outcome, type Overlay } from './adjust'
 import { questionView, resolveAnswer, type Asked, type QuestionView } from './questions'
 import { purgeView, scrubberFor, scrubDeep, type Scrubber } from './purge'
-import { hintsFor, type HintReply } from './hints'
+import { hintsFor, topicsByNote, type HintReply, type TopicRef } from './hints'
 import { linkIndex, linkMessages, parseSummary, summaryInput, summaryMessages, validateLinks, type Link } from './deeper'
 import {
   isNote,
@@ -390,6 +390,7 @@ export class Zephyr {
       runsInFlight: this.runs.filter((r) => r.status === 'queued' || r.status === 'running').length + this.retries.size,
       lastViewAt,
       sessions: this.sessions.size,
+      lastNote: this.lastNote(),
       overCap: [...this.overCap],
       relevance: {
         warmup: this.warmup,
@@ -397,6 +398,12 @@ export class Zephyr {
         compaction: this.compactions.last && { count: this.compactions.count, bytesBefore: this.compactions.last.before.bytes, bytesAfter: this.compactions.last.after.bytes },
       },
     }
+  }
+
+  /** The newest note and every topic it is filed under so far; topics stay empty until the organizer files it. */
+  private lastNote(): { id: EntryId; at: string; topics: TopicRef[] } | null {
+    const note = this.entries.at(-1)
+    return note ? { id: note.id, at: note.at, topics: topicsByNote(this.listViews()).get(note.id) ?? [] } : null
   }
 
   /** Idempotent: a known session keeps its offset unless its transcript path changed. */

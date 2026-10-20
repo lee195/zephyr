@@ -16,6 +16,7 @@ const entries = [
 
 const views = [
   { kind: 'organizer', slug: 'sourdough-baking', title: 'Sourdough Baking', sources: ['starter', 'scoring', 'hydration'], format: 'md' as const, body: '- notes', updatedAt: '2026-10-05T09:00:00Z' },
+  { kind: 'organizer', slug: 'kitchen-log', title: 'Kitchen Log', sources: ['starter'], format: 'md' as const, body: '- notes', updatedAt: '2026-10-05T09:00:00Z' },
 ]
 
 const throwing: ModelBackend = {
@@ -42,10 +43,10 @@ async function hintsServer(backend: ModelBackend = throwing) {
 const ask = async (get: (q: string) => Promise<Response>, draft: string, extra = '') => {
   const res = await get(`q=${encodeURIComponent(draft)}${extra}`)
   expect(res.status).toBe(200)
-  return ((await res.json()) as { hints: { entryId: string; text: string; at: string; score: number; topic: unknown }[] }).hints
+  return ((await res.json()) as { hints: { entryId: string; text: string; at: string; score: number; topics: unknown }[] }).hints
 }
 
-test('the related entry comes first, with its text, time, score and organizer topic', async () => {
+test('the related entry comes first, with its text, time, score and every topic that cites it', async () => {
   const get = await hintsServer()
   const hints = await ask(get, 'The rye starter is sluggish; the next sourdough bake needs a longer bulk ferment.')
   expect(hints[0]).toEqual({
@@ -53,15 +54,18 @@ test('the related entry comes first, with its text, time, score and organizer to
     text: entries[0]!.text,
     at: '2026-10-01T08:00:00Z',
     score: expect.any(Number),
-    topic: { slug: 'sourdough-baking', title: 'Sourdough Baking' },
+    topics: [
+      { slug: 'sourdough-baking', title: 'Sourdough Baking' },
+      { slug: 'kitchen-log', title: 'Kitchen Log' },
+    ],
   })
   expect(hints.map((h) => h.entryId)).not.toContain('running')
 })
 
-test('an entry no organizer view cites has a null topic', async () => {
+test('an entry no organizer view cites has no topics', async () => {
   const get = await hintsServer()
   const hints = await ask(get, 'coolify deploy keeps failing on the port')
-  expect(hints).toEqual([expect.objectContaining({ entryId: 'deploy', topic: null })])
+  expect(hints).toEqual([expect.objectContaining({ entryId: 'deploy', topics: [] })])
 })
 
 test('limit caps the number of hints', async () => {
@@ -91,9 +95,9 @@ test('an entry whose text is the draft itself is not offered back', async () => 
   expect(ids).not.toContain('hydration')
 })
 
-test('missing q or a limit outside 1..5 is a 400 with a JSON error', async () => {
+test('missing q or a limit outside 1..10 is a 400 with a JSON error', async () => {
   const get = await hintsServer()
-  for (const query of ['limit=3', 'q=sourdough+loaf&limit=0', 'q=sourdough+loaf&limit=6', 'q=sourdough+loaf&limit=two', 'q=sourdough+loaf&limit=']) {
+  for (const query of ['limit=3', 'q=sourdough+loaf&limit=0', 'q=sourdough+loaf&limit=11', 'q=sourdough+loaf&limit=1.5', 'q=sourdough+loaf&limit=two', 'q=sourdough+loaf&limit=']) {
     const res = await get(query)
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ ok: false, error: expect.any(String) })

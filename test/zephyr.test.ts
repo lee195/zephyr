@@ -257,6 +257,22 @@ test('a view sidecar that fails to parse is skipped with one warning, and start 
   }
 })
 
+test('status names the newest note, with no topics until the organizer files it', async () => {
+  const fake = fakeBackend()
+  const z = new OrganizerOnly({ dataDir: await tempDir(), backend: fake.backend })
+  await z.start()
+  expect(z.status().lastNote).toBeNull()
+
+  fake.holdCalls()
+  await z.ingest([entry('e1', 'first', '2026-10-20T09:00:00Z')])
+  await eventually(() => fake.calls.length === 1)
+  expect(z.status().lastNote).toEqual({ id: 'e1', at: '2026-10-20T09:00:00Z', topics: [] })
+
+  fake.release()
+  await z.idle()
+  expect(z.status().lastNote).toEqual({ id: 'e1', at: '2026-10-20T09:00:00Z', topics: [{ slug: 'all', title: 'All' }] })
+})
+
 test('a registered transcript is backfilled, tailed, and never duplicated across restarts', async () => {
   const dir = await tempDir()
   const transcript = join(await tempDir(), 'session.jsonl')

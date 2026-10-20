@@ -105,8 +105,8 @@ test('the review tools read the digest, topics and related notes, and finish_rev
     expect(await text('get_topic', { slug: 'party' })).toMatchObject({ slug: 'party', body: 'venue in the barn\n\ncake', notes: [{ id: 'e1', text: 'party: venue in the barn' }, { id: 'e2', text: 'party: cake' }] })
     expect(await s.call('get_topic', { slug: 'nowhere' })).toMatchObject({ isError: true })
     const found = await text('search_notes', { query: 'barn venue', limit: 2 })
-    expect([found.backend, found.hints[0].entryId, found.hints[0].topic.slug]).toEqual(['tfidf', 'e1', 'party'])
-    expect(await s.call('search_notes', { query: 'barn venue', limit: 9 })).toMatchObject({ isError: true })
+    expect([found.backend, found.hints[0].entryId, found.hints[0].topics[0].slug]).toEqual(['tfidf', 'e1', 'party'])
+    expect(await s.call('search_notes', { query: 'barn venue', limit: 11 })).toMatchObject({ isError: true })
 
     expect(await s.call('finish_review', { until: 'yesterday' })).toMatchObject({ isError: true, content: [{ text: 'until must be an ISO timestamp as GET /api/review returns it' }] })
     expect(await text('finish_review', { until: digest.until })).toEqual({ ok: true, lastReviewedAt: digest.until })
