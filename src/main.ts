@@ -6,7 +6,8 @@ import { serve } from './server'
 import { Zephyr } from './zephyr'
 
 const config = parseConfig(process.env)
-if (!config.apiKey) console.warn('[zephyr] DEEPSEEK_API_KEY is not set; runs will fail until it is')
+if (config.chat && !config.chat.apiKey) console.warn(`[zephyr] ${config.chat.keyVar} is not set; runs will fail until it is`)
+if (config.chat) console.log(`[zephyr] model: ${config.chat.model} at ${config.chat.url}`)
 
 /**
  * tfidf answers whenever the chosen backend cannot be built (no key), fails, or is slow. With tfidf chosen it

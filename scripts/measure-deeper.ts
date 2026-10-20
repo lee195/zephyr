@@ -28,7 +28,7 @@ import { loadCorpus } from './corpus'
 const { values: args } = parseArgs({ options: { item: { type: 'string' }, reps: { type: 'string', default: '5' }, out: { type: 'string' }, label: { type: 'string', default: '' } } })
 const reps = Number(args.reps)
 const config = parseConfig(process.env)
-const model = backends.vllm(config)
+const model = backends[config.modelBackend](config)
 
 const corpus = await loadCorpus()
 const subject = (slug: string) => corpus.find((s) => s.slug === slug)!
@@ -345,6 +345,6 @@ const items: Record<string, () => Promise<void>> = { retitle, rewrite, merge, li
 const run = items[args.item ?? '']
 if (!run) throw new Error(`--item must be one of ${Object.keys(items).join(', ')}`)
 await run()
-const report = { item: args.item, label: args.label, reps, model: config.chatModel, summary }
+const report = { item: args.item, label: args.label, reps, model: config.chat?.model, summary }
 console.log(JSON.stringify(report))
 if (args.out) await Bun.write(args.out, JSON.stringify({ ...report, results }, null, 2))

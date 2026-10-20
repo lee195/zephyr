@@ -110,7 +110,7 @@ const corpus = await loadCorpus()
 if (topicCount > corpus.length) throw new Error(`corpus has only ${corpus.length} subjects`)
 const fixture = await buildFixture(corpus.slice(0, topicCount))
 const config = parseConfig(process.env)
-const model = backends.vllm(config)
+const model = backends[config.modelBackend](config)
 
 const results = []
 let firstMessages: ChatMessage[] | undefined

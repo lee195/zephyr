@@ -4,34 +4,60 @@ import { relevanceBackends, type RelevanceName } from './relevance'
 
 export type Env = Readonly<Record<string, string | undefined>>
 
-export interface Config {
-  /** OpenAI-compatible base URL that serves both the chat and the embedding model. */
-  vllmUrl: string
-  /** Absent: model runs fail until it is set, and relevance cannot use the endpoint. */
+/** An OpenAI-compatible endpoint and the model it serves. */
+export interface Endpoint {
+  url: string
+  model: string
+  /** The variable that holds the key, such as DEEPSEEK_API_KEY; named in errors, never the key itself. */
+  keyVar: string
+  /** Absent when that variable is unset or empty: calls fail until it is set. */
   apiKey?: string
+}
+
+export interface Config {
   modelBackend: ModelBackendName
-  chatModel: string
-  embedModel: string
+  /** The chat endpoint, for the `vllm` backend. */
+  chat?: Endpoint
   relevance: RelevanceName
+  /** The embedding endpoint, for `embedding` relevance only. */
+  embed?: Endpoint
   dataDir: string
   port: number
   /** Minutes between cleanup sweeps; fractional values are allowed. */
   sweepMinutes: number
 }
 
-/** The only place that reads the environment; everything else takes the Config it returns. */
+/** Variables renamed when chat and embeddings got their own endpoints; a leftover one would be silently ignored. */
+const RENAMED: Record<string, string> = { ZEPHYR_VLLM_URL: 'ZEPHYR_CHAT_URL and ZEPHYR_EMBED_URL', ZEPHYR_MODEL: 'ZEPHYR_CHAT_MODEL' }
+
+/**
+ * The only place that reads the environment; everything else takes the Config it returns. The LLM settings have no
+ * defaults here: they come from `.env`, which Bun loads from the working directory, and `.env.example` lists them.
+ */
 export function parseConfig(env: Env): Config {
+  for (const [old, now] of Object.entries(RENAMED)) if (env[old] !== undefined) throw new Error(`${old} was renamed; set ${now} instead (see .env.example)`)
+  const modelBackend = registered('ZEPHYR_BACKEND', env.ZEPHYR_BACKEND ?? 'vllm', backends)
+  const relevance = registered('ZEPHYR_RELEVANCE', env.ZEPHYR_RELEVANCE ?? 'embedding', relevanceBackends)
   return {
-    vllmUrl: env.ZEPHYR_VLLM_URL ?? 'https://llm.example.com/v1',
-    apiKey: env.DEEPSEEK_API_KEY || undefined,
-    modelBackend: registered('ZEPHYR_BACKEND', env.ZEPHYR_BACKEND ?? 'vllm', backends),
-    chatModel: env.ZEPHYR_MODEL ?? 'deepseek-v4-flash-fast',
-    embedModel: env.ZEPHYR_EMBED_MODEL ?? 'embeddinggemma2',
-    relevance: registered('ZEPHYR_RELEVANCE', env.ZEPHYR_RELEVANCE ?? 'embedding', relevanceBackends),
+    modelBackend,
+    ...(modelBackend === 'vllm' && { chat: endpoint(env, 'CHAT') }),
+    relevance,
+    ...(relevance === 'embedding' && { embed: endpoint(env, 'EMBED') }),
     dataDir: resolve(env.ZEPHYR_DATA ?? './data'),
     port: Number(env.ZEPHYR_PORT ?? 7317),
     sweepMinutes: positive('ZEPHYR_SWEEP_MINUTES', env.ZEPHYR_SWEEP_MINUTES ?? '30'),
   }
+}
+
+function endpoint(env: Env, which: 'CHAT' | 'EMBED'): Endpoint {
+  const keyVar = required(env, `ZEPHYR_${which}_KEY_VAR`)
+  return { url: required(env, `ZEPHYR_${which}_URL`), model: required(env, `ZEPHYR_${which}_MODEL`), keyVar, ...(env[keyVar] && { apiKey: env[keyVar] }) }
+}
+
+function required(env: Env, variable: string): string {
+  const value = env[variable]
+  if (value) return value
+  throw new Error(`${variable} is not set; copy .env.example to .env in the folder you start from`)
 }
 
 function registered<K extends string>(variable: string, value: string, registry: Readonly<Record<K, unknown>>): K {

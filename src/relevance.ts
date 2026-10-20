@@ -146,8 +146,10 @@ export interface RelevanceDeps {
 export const relevanceBackends = {
   tfidf,
   embedding(config, deps) {
-    if (!config.apiKey) throw new Error('DEEPSEEK_API_KEY is not set; embedding relevance needs it (run under `wick exec --only vllm --`)')
-    return embeddingBackend({ baseUrl: config.vllmUrl, model: config.embedModel, apiKey: config.apiKey, ...deps })
+    const embed = config.embed
+    if (!embed) throw new Error('embedding relevance needs ZEPHYR_EMBED_URL, ZEPHYR_EMBED_MODEL and ZEPHYR_EMBED_KEY_VAR')
+    if (!embed.apiKey) throw new Error(`${embed.keyVar} is not set; embedding relevance needs it (for the shared endpoint, run under \`wick exec --only vllm --\`)`)
+    return embeddingBackend({ baseUrl: embed.url, model: embed.model, apiKey: embed.apiKey, ...deps })
   },
 } satisfies Record<string, (config: Config, deps: RelevanceDeps) => RelevanceBackend>
 
