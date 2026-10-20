@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { parseConfig } from '../src/config'
 import { relevanceBackends, tokenize, type RelevanceName } from '../src/relevance'
+import { CORPUS_PATH, loadCorpus } from './corpus'
 
 interface Note {
   id: string
@@ -30,7 +31,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: { backend: { type: 'string', default: 'tfidf' }, cache: { type: 'string' } },
 })
-const corpusPath = positionals[0] ?? new URL('./fixtures/organizer-corpus.json', import.meta.url).pathname
+const corpusPath = positionals[0] ?? CORPUS_PATH
 const cost = { requests: 0, inputs: 0, tokens: 0 }
 
 const counting = (async (url: string, init: RequestInit) => {
@@ -47,8 +48,8 @@ const backend = relevanceBackends[config.relevance](config, {
 })
 const thresholds = THRESHOLDS[config.relevance]
 
-const corpus = (await Bun.file(corpusPath).json()) as { subjects: { slug: string; notes: string[] }[] }
-const notes: Note[] = corpus.subjects.flatMap((s) => s.notes.map((text, i) => ({ id: `${s.slug}#${i}`, subject: s.slug, text })))
+const subjects = await loadCorpus(corpusPath)
+const notes: Note[] = subjects.flatMap((s) => s.notes.map((text, i) => ({ id: `${s.slug}#${i}`, subject: s.slug, text })))
 const subjectOf = new Map(notes.map((n) => [n.id, n.subject]))
 const tokensOf = new Map(notes.map((n) => [n.id, new Set(tokenize(n.text))]))
 /** Notes that share no content word with any other note of their subject: lexical matching cannot find their subject. */
@@ -88,7 +89,7 @@ console.log(
       corpus: corpusPath,
       backend: values.backend,
       notes: notes.length,
-      subjects: corpus.subjects.length,
+      subjects: subjects.length,
       top1: { hits: top1, rate: round(top1 / notes.length) },
       recallAt3: round(at3 / notes.length),
       recallAt5: round(at5 / notes.length),

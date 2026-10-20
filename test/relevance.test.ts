@@ -38,7 +38,7 @@ const fixed = (backend: string, minRelatedScore = 0.5): RelevanceBackend & { cal
     calls: 0,
     async rank(_query: string, ds: RelevanceDoc[]) {
       b.calls++
-      return { backend, scored: ds.map((d) => ({ id: d.id, score: 1 })), minRelatedScore }
+      return { backend, scored: ds.map((d) => ({ id: d.id, score: 1 })), minRelatedScore, minLinkScore: Infinity }
     },
   }
   return b

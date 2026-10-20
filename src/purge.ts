@@ -1,4 +1,5 @@
 import type { Adjustment, Entry, EntryId, Task, TaskId, View } from './domain'
+import { staleMarker } from './domain'
 import { MAX_REWRITE_CHARS, rewriteChars } from './kinds/organizer'
 import { tasksWrite } from './kinds/tasks'
 import { sanitizeSlug } from './kinds/common'
@@ -144,7 +145,7 @@ export function purgeView(v: View, noteId: EntryId, s: Scrubber, entries: readon
       body,
       ...(pastTitles && { pastTitles: pastTitles.map((p) => ({ ...p, title: s.scrub(p.title) })) }),
       ...(Object.keys(nextPins).length > 0 && { pins: nextPins }),
-      ...((rewrite || bodyStale) && { bodyStale: true as const, ...(mergedTitles && { mergedTitles: mergedTitles.map(s.scrub) }) }),
+      ...staleMarker(rewrite || bodyStale, mergedTitles?.map(s.scrub)),
     }
     return { op: 'write', view, rewrite, tasksDeleted: [] }
   }

@@ -25,6 +25,14 @@ const REQUEST_TIMEOUT_MS = 60_000
  */
 const MIN_RELATED_SCORE = new Map([['embeddinggemma2', 0.8]])
 
+/**
+ * The pair score below which two topic pages are too unlike to link, per model. Lower than MIN_RELATED_SCORE, since
+ * one whole page against another scores lower than a note against its own topic. Measured with
+ * scripts/measure-deeper.ts --item links on the 40-topic corpus: embeddinggemma2 0.73 kept all 5 related pairs (the
+ * lowest at 0.738) and dropped 15 of the 21 unrelated ones the model proposed.
+ */
+const MIN_LINK_SCORE = new Map([['embeddinggemma2', 0.73]])
+
 type Vector = Float32Array
 
 const sha256 = (text: string) => new Bun.CryptoHasher('sha256').update(text).digest('hex')
@@ -59,6 +67,7 @@ function cosine(a: Vector, b: Vector): number {
 export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
   const id = `embedding-${opts.model.replace(/[^\w.-]+/g, '_')}`
   const minRelatedScore = MIN_RELATED_SCORE.get(opts.model) ?? Infinity
+  const minLinkScore = MIN_LINK_SCORE.get(opts.model) ?? Infinity
   if (minRelatedScore === Infinity) {
     console.warn(`[zephyr] relevance: embedding model ${opts.model} has no measured threshold; hints are off until one is measured with scripts/measure-relevance.ts`)
   }
@@ -172,7 +181,7 @@ export function embeddingBackend(opts: EmbeddingOptions): RelevanceBackend {
         const v = vectors.get(keys[i]!)
         if (v) scored.push({ id: d.id, score: cosine(q!, v) })
       })
-      return { backend: id, scored: scored.sort((a, b) => b.score - a.score), minRelatedScore, ...(scored.length < docs.length && { partial: true as const }) }
+      return { backend: id, scored: scored.sort((a, b) => b.score - a.score), minRelatedScore, minLinkScore, ...(scored.length < docs.length && { partial: true as const }) }
     },
   }
 }

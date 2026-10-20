@@ -20,6 +20,11 @@ export interface Ranking {
   partial?: true
   /** A doc scored below this is not related to the query; Infinity when the backend has no measured threshold. */
   minRelatedScore: number
+  /**
+   * Two topic pages scoring below this, one ranked with the other's page as the query, are too unlike to link;
+   * Infinity when the backend has no measured threshold, which gates no link.
+   */
+  minLinkScore: number
 }
 
 export interface RelevanceBackend {
@@ -125,7 +130,8 @@ function tfidf(): RelevanceBackend {
         const denom = q.norm * doc.norm
         return { id: d.id, score: denom === 0 ? 0 : dot / denom }
       })
-      return { backend: 'tfidf', scored: scored.sort((a, b) => b.score - a.score), minRelatedScore: TFIDF_MIN_RELATED_SCORE }
+      // Not measured for links: pair scores on the corpus put a clearly related pair at rank 112 of 780.
+      return { backend: 'tfidf', scored: scored.sort((a, b) => b.score - a.score), minRelatedScore: TFIDF_MIN_RELATED_SCORE, minLinkScore: Infinity }
     },
   }
 }

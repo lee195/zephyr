@@ -1,4 +1,5 @@
 import type { Adjustment, Area, Entry, EntryId, Pins, SpacePins, Task, View, ViewWrite } from './domain'
+import { staleMarker } from './domain'
 import { sanitizeSlug } from './kinds/common'
 import { areasOf, mapIn, mapWrite, placeIn } from './kinds/map'
 import { appendSection, MAX_REWRITE_CHARS, rewriteChars, topicsIn, usableTitle } from './kinds/organizer'
@@ -257,8 +258,7 @@ class Topics {
     if (!fits) this.warnings.push(`topic ${write.slug} is over the ${MAX_REWRITE_CHARS}-character rewrite cap, so its body was not rewritten and may still say what its notes no longer do`)
     const pins = tidy(next.pins ?? prior.pins ?? {})
     // Titles merged in since the last rewrite stay for the rewrite this one queues; with no rewrite, none is told them.
-    const mergedTitles = next.mergedTitles ?? prior.mergedTitles
-    return { kind: 'organizer', write, own: { ...(pins && { pins }), ...(fits && { bodyStale: true as const, ...(mergedTitles?.length && { mergedTitles }) }) } }
+    return { kind: 'organizer', write, own: { ...(pins && { pins }), ...staleMarker(fits, next.mergedTitles ?? prior.mergedTitles) } }
   }
 }
 
@@ -272,7 +272,7 @@ function renameTopic(a: Extract<Adjustment, { op: 'renameTopic' }>, s: AdjustSta
   if (!title) return fail('title must be a non-empty string of at most 80 characters')
   if (topic.title === title && topic.pins?.title) return unchanged
   const write = { ...writeOf(topic), title }
-  return { ok: true, writes: [{ kind: 'organizer', write, own: { pins: { ...topic.pins, title: true }, ...(topic.bodyStale && { bodyStale: true, ...(topic.mergedTitles && { mergedTitles: topic.mergedTitles }) }) } }], deletes: [], warnings: [] }
+  return { ok: true, writes: [{ kind: 'organizer', write, own: { pins: { ...topic.pins, title: true }, ...staleMarker(topic.bodyStale, topic.mergedTitles) } }], deletes: [], warnings: [] }
 }
 
 /** The old body goes onto the target as a section under the old title, and a rewrite then makes one page of it. */

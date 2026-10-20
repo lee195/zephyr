@@ -44,7 +44,7 @@ The endpoint adds a fixed 1,290 or so tokens to every request, even a bare "hi".
 
 ## Relevance: embeddings with a fallback
 
-Picking the 3 open topics and showing hints both rank text by relevance. `embeddinggemma2` on the vLLM endpoint ranks the right note first for 65% of notes on the test corpus, against 30% for TF-IDF. Embeddings are the default; TF-IDF answers when the endpoint fails, and the embedding backend is skipped for 30 s afterwards so a down VPN doesn't cost a timeout per keystroke. Every ranking names the backend that answered and carries that backend's threshold, because the two score on different scales.
+Picking the 3 open topics and showing hints both rank text by relevance. `embeddinggemma2` on the vLLM endpoint ranks the right note first for 65% of notes on the test corpus, against 30% for TF-IDF. Embeddings are the default; TF-IDF answers when the endpoint fails, and the embedding backend is skipped for 30 s afterwards so a down VPN doesn't cost a timeout per keystroke. Every ranking names the backend that answered and carries that backend's thresholds, because the two score on different scales: `minRelatedScore` for a note against a page, and `minLinkScore` for one topic page against another.
 
 Vectors are cached per model in `data/embeddings/<backend>.jsonl`, warmed in the background at start, and compacted by the sweep. A hint never waits for note embedding; during warm-up it ranks what is cached and says `partial`.
 

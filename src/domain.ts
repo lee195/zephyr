@@ -74,6 +74,13 @@ export interface View {
   related?: string[]
 }
 
+/**
+ * A topic's stale marker: bodyStale, with the titles merged in since its last rewrite. The titles exist only with
+ * bodyStale, since the rewrite that clears it is the one reader of them. Empty when the page is not stale.
+ */
+export const staleMarker = (stale: boolean | undefined, mergedTitles?: readonly string[]): Pick<View, 'bodyStale' | 'mergedTitles'> =>
+  stale ? { bodyStale: true, ...(mergedTitles?.length && { mergedTitles: [...mergedTitles] }) } : {}
+
 /** A topic as other views name it: by slug, with its title at the time. */
 export type TopicRef = { slug: string; title: string }
 

@@ -63,7 +63,7 @@ test('a retitle of a pinned page, by append or by write, keeps the pinned title 
 
   const write = { op: 'write', slug: 'trip', title: 'Holidays', sources: ['n1'], body: '# TRIP\n\nall of it' }
   const dir = await pinnedDir()
-  const relevance = { rank: async (_q: string, docs: { id: string }[]) => ({ backend: 'fixed', scored: docs.map((d) => ({ id: d.id, score: 1 })), minRelatedScore: 0 }) }
+  const relevance = { rank: async (_q: string, docs: { id: string }[]) => ({ backend: 'fixed', scored: docs.map((d) => ({ id: d.id, score: 1 })), minRelatedScore: 0, minLinkScore: Infinity }) }
   const z = new Zephyr({ dataDir: dir, backend: scripted({ ops: [write] }).backend, kinds: { organizer: kinds.organizer! }, relevance, retryDelaysMs: [] })
   await z.start()
   await z.idle()

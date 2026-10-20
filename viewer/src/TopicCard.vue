@@ -19,7 +19,10 @@ function toggleSource(entryId: string) {
 /** The other topics citing an entry this topic cites; a note may belong to several, and showing them makes a wrong one easy to spot. */
 const otherTopics = (entryId: string) => (topicsByEntry.value.get(entryId) ?? []).filter((t) => t.id !== props.view.id)
 
-/** The page as it was before each rewrite, newest first, read from `.history` only while the list is open. */
+/**
+ * The page as it was before each rewrite, newest first, read from `.history` only while the list is open. A page
+ * never rewritten has none, since only a rewrite or a deleting adjustment archives a page.
+ */
 const versionsOpen = ref(false)
 const versions = ref<{ at: string; format: ViewFormat }[]>([])
 const shown = ref<{ at: string; view: View } | null>(null)
@@ -74,7 +77,7 @@ const related = () => (props.view.related ?? []).flatMap((slug) => state.views.g
     <ViewBody v-for="d in derivedBySource.get(view.id) ?? []" :key="d.id" :view="d" class="derived" />
     <details class="versions" @toggle="toggleVersions">
       <summary class="muted">Earlier versions</summary>
-      <p v-if="versions.length === 0" class="muted small">None saved; a rewrite saves the page it replaces.</p>
+      <p v-if="versions.length === 0" class="muted small">None saved</p>
       <ol v-else class="version-list">
         <li v-for="v in versions" :key="v.at">
           <button class="chip" :aria-pressed="shown?.at === v.at" @click="showVersion(v.at)">{{ when(v.at) }}</button>

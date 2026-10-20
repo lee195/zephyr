@@ -22,6 +22,7 @@ import type { ChatMessage, Entry, ModelBackend, Usage } from '../src/domain'
 import { Store } from '../src/store'
 import { kinds } from '../src/kinds'
 import { Zephyr } from '../src/zephyr'
+import { loadCorpus, type Subject } from './corpus'
 
 interface Probe {
   name: string
@@ -48,12 +49,6 @@ const uuid = (seed: string) => {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
 }
 const at = (hour: number) => new Date(Date.UTC(2026, 8, 1) + hour * 3_600_000).toISOString()
-
-interface Subject {
-  slug: string
-  title: string
-  notes: string[]
-}
 
 async function buildFixture(subjects: Subject[]): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'zephyr-measure-fixture-'))
@@ -111,9 +106,9 @@ function measuring(inner: ModelBackend, calls: Call[]): ModelBackend {
   }
 }
 
-const corpus = (await Bun.file(join(import.meta.dir, 'fixtures/organizer-corpus.json')).json()) as { subjects: Subject[] }
-if (topicCount > corpus.subjects.length) throw new Error(`corpus has only ${corpus.subjects.length} subjects`)
-const fixture = await buildFixture(corpus.subjects.slice(0, topicCount))
+const corpus = await loadCorpus()
+if (topicCount > corpus.length) throw new Error(`corpus has only ${corpus.length} subjects`)
+const fixture = await buildFixture(corpus.slice(0, topicCount))
 const config = parseConfig(process.env)
 const model = backends.vllm(config)
 

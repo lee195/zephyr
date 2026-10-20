@@ -11,7 +11,7 @@ interface Saved {
 }
 
 const list = ref<Saved[] | null>(null)
-/** Bodies of the summaries opened so far, by until, as sanitized HTML. */
+/** Bodies of the summaries opened so far, by until, as sanitized HTML; empty for one deleted since the list loaded, as a purge does. */
 const bodies = reactive(new Map<string, string>())
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -39,7 +39,7 @@ onMounted(async () => (list.value = (await fetchJson<Saved[]>('/api/summaries'))
             {{ windowOf(s) }} <span class="muted">· {{ s.noteCount }} {{ s.noteCount === 1 ? 'note' : 'notes' }}</span>
           </summary>
           <p v-if="!bodies.has(s.until)" class="muted small">Loading…</p>
-          <p v-else-if="!bodies.get(s.until)" class="muted small">This summary is gone; a purge may have deleted it.</p>
+          <p v-else-if="!bodies.get(s.until)" class="muted small">No longer saved</p>
           <div v-else class="md" v-html="bodies.get(s.until)" />
         </details>
       </li>

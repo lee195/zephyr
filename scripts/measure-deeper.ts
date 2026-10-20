@@ -14,7 +14,6 @@
  * - svg: the visualizer on 10 topics. Counts replies that fail the SVG check, and how a repair retry does.
  * - ambiguity: relevance scores of the filed topic and the runner-up, for the server-raised question (no model call).
  */
-import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { backends } from '../src/backends'
 import { parseConfig } from '../src/config'
@@ -24,18 +23,14 @@ import { appendSection, organizerMessages, rewriteMessages, topicDocs } from '..
 import { parseDiagram, visualizerMessages, visualizerRepairMessages } from '../src/kinds/visualizer'
 import { rankAll, relevanceBackends } from '../src/relevance'
 import { tmpdir } from 'node:os'
+import { loadCorpus } from './corpus'
 
 const { values: args } = parseArgs({ options: { item: { type: 'string' }, reps: { type: 'string', default: '5' }, out: { type: 'string' }, label: { type: 'string', default: '' } } })
 const reps = Number(args.reps)
 const config = parseConfig(process.env)
 const model = backends.vllm(config)
 
-interface Subject {
-  slug: string
-  title: string
-  notes: string[]
-}
-const corpus = ((await Bun.file(join(import.meta.dir, 'fixtures/organizer-corpus.json')).json()) as { subjects: Subject[] }).subjects
+const corpus = await loadCorpus()
 const subject = (slug: string) => corpus.find((s) => s.slug === slug)!
 
 const at = (i: number) => new Date(Date.UTC(2026, 8, 1) + i * 60_000).toISOString()

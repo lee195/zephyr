@@ -27,7 +27,7 @@ test('a ranking never waits on doc embedding: it scores the cached docs, is part
   await b.prepare!([docs[0]!])
   end.hold((input) => input.includes('bbb'))
   const ranking = await b.rank('aab', docs)
-  expect(ranking).toEqual({ backend: 'embedding-gemma', scored: [{ id: 'A', score: expect.any(Number) }], partial: true, minRelatedScore: Infinity })
+  expect(ranking).toEqual({ backend: 'embedding-gemma', scored: [{ id: 'A', score: expect.any(Number) }], partial: true, minRelatedScore: Infinity, minLinkScore: Infinity })
   expect(b.pending!()).toBe(2)
   end.release()
   await eventually(() => b.pending!() === 0)

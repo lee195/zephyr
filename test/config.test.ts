@@ -8,9 +8,9 @@ const docs = [
   { id: 'deploy', text: 'coolify deploy failed on the port' },
 ]
 
-const expected: Record<RelevanceName, { backend: string; minRelatedScore: number }> = {
-  tfidf: { backend: 'tfidf', minRelatedScore: 0.14 },
-  embedding: { backend: 'embedding-embeddinggemma2', minRelatedScore: 0.8 },
+const expected: Record<RelevanceName, { backend: string; minRelatedScore: number; minLinkScore: number }> = {
+  tfidf: { backend: 'tfidf', minRelatedScore: 0.14, minLinkScore: Infinity },
+  embedding: { backend: 'embedding-embeddinggemma2', minRelatedScore: 0.8, minLinkScore: 0.73 },
 }
 
 test('the registry builds every registered backend from config', async () => {

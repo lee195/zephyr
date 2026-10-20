@@ -175,11 +175,11 @@ test('a link the model calls weak, or between topics that score too unlike, is d
       { a: 'taxes', b: 'boats', reason: 'boat taxes' },
     ],
   }
-  const scores = (backend: string): LinkScores => ({ backend, scores: new Map([[pairKey('bread', 'pizza'), 0.82], [pairKey('pizza', 'boats'), 0.69], [pairKey('taxes', 'boats'), 0.75]]) })
-  const gated = validateLinks(reply, shown, scores('embedding-embeddinggemma2'))
+  const scores = (backend: string, minLinkScore: number): LinkScores => ({ backend, minLinkScore, scores: new Map([[pairKey('bread', 'pizza'), 0.82], [pairKey('pizza', 'boats'), 0.69], [pairKey('taxes', 'boats'), 0.75]]) })
+  const gated = validateLinks(reply, shown, scores('embedding-embeddinggemma2', 0.73))
   expect(gated.ok && gated.links.map((l) => `${l.a.slug}-${l.b.slug}`)).toEqual(['bread-pizza', 'taxes-boats'])
   expect(gated.ok && gated.dropped).toEqual(['link 1: the model called it weak', 'link 2: topics too dissimilar (0.69 < 0.73)'])
-  const ungated = validateLinks(reply, shown, scores('tfidf'))
+  const ungated = validateLinks(reply, shown, scores('tfidf', Infinity))
   expect(ungated.ok && ungated.links.map((l) => l.b.slug)).toEqual(['pizza', 'boats', 'boats'])
   expect(proposedPairs(reply, shown).map(([a, b]) => pairKey(a.slug, b.slug))).toEqual(['bread pizza', 'bread taxes', 'boats pizza', 'boats taxes'])
 })
@@ -191,11 +191,12 @@ test('pair scores rank each first topic once against its partners, and give up o
   const backend = (partial: boolean): RelevanceBackend => ({
     async rank(query, docs) {
       queries.push(query)
-      return { backend: 'fake', scored: docs.slice(partial ? 1 : 0).map((d, i) => ({ id: d.id, score: 0.9 - i / 10 })), minRelatedScore: 0.8 }
+      return { backend: 'fake', scored: docs.slice(partial ? 1 : 0).map((d, i) => ({ id: d.id, score: 0.9 - i / 10 })), minRelatedScore: 0.8, minLinkScore: 0.7 }
     },
   })
   const scores = await linkPairScores(backend(false), [[bread, pizza], [bread, taxes], [pizza, taxes]])
   expect(queries).toHaveLength(2)
   expect(Object.fromEntries(scores!.scores)).toEqual({ 'bread pizza': 0.9, 'bread taxes': 0.8, 'pizza taxes': 0.9 })
+  expect(scores).toMatchObject({ backend: 'fake', minLinkScore: 0.7 })
   expect(await linkPairScores(backend(true), [[bread, pizza], [bread, taxes]])).toBeNull()
 })

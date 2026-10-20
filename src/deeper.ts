@@ -77,6 +77,8 @@ export function linkMessages(index: LinkIndex): ChatMessage[] {
 /** How alike two topics' pages are, by the relevance backend, keyed by their slugs in sorted order. */
 export interface LinkScores {
   backend: string
+  /** The backend's minLinkScore: a pair below it is too unlike to link. */
+  minLinkScore: number
   scores: Map<string, number>
 }
 
@@ -95,18 +97,20 @@ export async function linkPairScores(relevance: RelevanceBackend, pairs: readonl
   }
   const scores = new Map<string, number>()
   let backend = ''
+  let minLinkScore = Infinity
   for (const { a, bs } of byFirst.values()) {
     const docs = topicDocs(bs)
     const ranking = await rankAll(relevance, topicDocs([a])[0]!.text, docs)
     if (ranking.partial || ranking.scored.length < docs.length || (backend && ranking.backend !== backend)) return null
     backend = ranking.backend
+    minLinkScore = ranking.minLinkScore
     const slugOf = new Map(bs.map((b) => [b.id, b.slug]))
     for (const { id, score } of ranking.scored) {
       const key = pairKey(a.slug, slugOf.get(id)!)
       scores.set(key, Math.max(score, scores.get(key) ?? -Infinity))
     }
   }
-  return { backend, scores }
+  return { backend, minLinkScore, scores }
 }
 
 /** The pairs a links reply names among the shown topics, before any check: the ones worth scoring. */
@@ -128,17 +132,10 @@ export interface Link {
 
 /**
  * Parses `{ links: [...] }`. A malformed reply fails as a whole. A link to a topic not shown, a topic linked to
- * itself, a pair already linked or already suggested, one the model called weak, one whose topics score below
- * MIN_LINK_SCORE in `scores`, a link with no usable reason and every link past the cap are dropped with a reason.
+ * itself, a pair already linked or already suggested, one the model called weak, one whose topics score below the
+ * backend's minLinkScore in `scores`, a link with no usable reason and every link past the cap are dropped with a reason.
  */
-/**
- * Per relevance backend, the pair score below which two topics are too unlike to link. Measured on the corpus by
- * scripts/measure-deeper.ts --item links; a backend without one gates nothing.
- */
-export const MIN_LINK_SCORE = new Map([['embedding-embeddinggemma2', 0.73]])
-
 export function validateLinks(json: unknown, shown: readonly View[], scores?: LinkScores | null): { ok: true; links: Link[]; dropped: string[] } | { ok: false; error: string } {
-  const min = scores ? MIN_LINK_SCORE.get(scores.backend) : undefined
   const raw = (json as any)?.links
   if (!Array.isArray(raw)) return { ok: false, error: 'reply has no links array' }
   const bySlug = new Map(shown.map((v) => [v.slug, v]))
@@ -157,7 +154,7 @@ export function validateLinks(json: unknown, shown: readonly View[], scores?: Li
       if (seen.has(pair(a, b))) return 'suggested twice'
       if (l?.strength === 'weak') return 'the model called it weak'
       const score = scores?.scores.get(pairKey(a.slug, b.slug))
-      if (min !== undefined && score !== undefined && score < min) return `topics too dissimilar (${score.toFixed(2)} < ${min})`
+      if (scores && Number.isFinite(scores.minLinkScore) && score !== undefined && score < scores.minLinkScore) return `topics too dissimilar (${score.toFixed(2)} < ${scores.minLinkScore})`
       if (!reason || reason.length > MAX_REASON_CHARS) return `reason is not one line of at most ${MAX_REASON_CHARS} characters`
       if (links.length >= MAX_LINKS) return `over the cap of ${MAX_LINKS} links`
       return null

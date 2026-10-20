@@ -7,6 +7,7 @@ import { linkIndex, linkMessages, linkPairScores, parseSummary, proposedPairs, s
 import {
   isNote,
   noteEntry,
+  staleMarker,
   type Adjustment,
   type AdjustmentLine,
   type AdjustmentResult,
@@ -1037,8 +1038,7 @@ export class Zephyr {
       ...(pastTitles && { pastTitles }),
       ...(appendsSinceWrite > 0 && { appendsSinceWrite }),
       ...(pins && { pins }),
-      ...(bodyStale && { bodyStale }),
-      ...(bodyStale && mergedTitles?.length && { mergedTitles }),
+      ...staleMarker(bodyStale, mergedTitles),
       ...(prior?.related && { related: prior.related }),
     }
     await this.store.writeView(view)

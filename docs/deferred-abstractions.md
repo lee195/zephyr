@@ -2,7 +2,7 @@
 
 Code that appears exactly twice stays duplicated until a third copy shows up, unless sharing it costs a reader nothing. This page lists each known pair, so the next person to add a third copy knows to extract it. Code repeated three or more times is already shared.
 
-Reviewed on 2026-10-19 at commit `d5b510f`.
+Reviewed on 2026-10-19 at commit `d5b510f`, and again on 2026-10-20 for the open-issues work.
 
 ## Extract when a third copy appears
 
@@ -19,6 +19,11 @@ Reviewed on 2026-10-19 at commit `d5b510f`.
 | Fake relevance that gives every doc one score | `test/hints.test.ts` `scoring`, `test/relevance.test.ts` `fixed` | A helper with a call counter in `test/helpers.ts` |
 | Hint limit check, an integer from 1 to 5 | `src/server.ts` `hints` (query string), `src/mcp.ts` `search_notes` (JSON) | `parseHintLimit(raw)` in `src/hints.ts` taking the raw value |
 | `afterEach` cleanup arrays | `test/hints.test.ts`, `test/warm.test.ts` | `useCleanup()` in `test/helpers.ts` |
+| Short date-and-time formatter `when` | `viewer/src/TopicCard.vue`, `viewer/src/SummariesPage.vue` | `when(iso)` in a small `viewer/src/format.ts` |
+| List a folder of ISO-named files and parse each name or file | `src/store.ts` `listHistory`, `listSummaries` | `listNamed(dir, parse)` in `store.ts`, sorting newest first |
+| Read one file by an ISO name checked against `ISO_AT` | `src/store.ts` `readHistory`, `readSummary` | `readNamed(dir, at, ext)` in `store.ts` |
+| Split a route's rest into decoded segments, then answer a list or one item | `src/server.ts` `history`, `summaries` | `listOrOne(rest, depth, list, one)` in `server.ts` |
+| An archived version's and a saved summary's shape, written again in the viewer | `ArchivedVersion` and `SavedSummary` in `src/store.ts`; inline types in `viewer/src/TopicCard.vue` and `Saved` in `viewer/src/SummariesPage.vue` | A type-only import from `src/store.ts`, as the viewer already does from `src/domain.ts` |
 
 ## Leave as two copies
 
@@ -28,8 +33,12 @@ Reviewed on 2026-10-19 at commit `d5b510f`.
 | Cosine similarity | `src/relevance.ts` (sparse maps), `src/embedding.ts` (dense float arrays) | Same math on different data. Sharing forces one vector representation on both. |
 | Grouping views into a map of arrays | `viewer/src/live.ts` `derivedBySource`, `viewsByKind` | Different keys and filters. They only look alike. |
 | Done-task filter and task-list lookup | `src/kinds/tasks.ts`, `viewer/src/App.vue`, `viewer/src/live.ts` | The viewer imports only types from `src/`. Importing `kinds/tasks` would pull `node:fs` into the browser bundle through relevance and embedding. |
-| Organizer corpus load | `scripts/measure-relevance.ts`, `scripts/measure-organizer-prompt.ts` | Each reads its own typed view of the fixture. A shared loader saves one line. |
 | The explicit seed in the last warm test | `test/warm.test.ts` `seeded()` and the organizer-wait test | Spelling out the seed shows the extra entry `e4` that the test depends on. |
+
+## Shared once a third copy appeared
+
+- The organizer corpus load and its `Subject` type. `scripts/measure-deeper.ts` was the third reader, so all three scripts now use `loadCorpus` from `scripts/corpus.ts`.
+- A topic's stale marker, `bodyStale` with the titles merged in since the last rewrite. It is built in four places, so `staleMarker` in `src/domain.ts` holds the rule that the titles travel only with `bodyStale`.
 
 ## Repeated three times or more, but deliberately not shared
 

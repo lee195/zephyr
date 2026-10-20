@@ -120,7 +120,7 @@ test('hints never call the model', async () => {
 /** Gives every entry the same score and says it came from `backend`, which counts minRelatedScore and up as related. */
 const scoring = (backend: string, score: number, minRelatedScore: number): RelevanceBackend => ({
   async rank(_q, docs) {
-    return { backend, scored: docs.map((d) => ({ id: d.id, score })), minRelatedScore }
+    return { backend, scored: docs.map((d) => ({ id: d.id, score })), minRelatedScore, minLinkScore: Infinity }
   },
 })
 
