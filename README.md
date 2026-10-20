@@ -216,3 +216,7 @@ The review commands (`/zephyr review` in Claude Code, `/zephyr-review` in openco
 ## Duplication
 
 Code that appears exactly twice stays duplicated until a third copy appears. [docs/deferred-abstractions.md](docs/deferred-abstractions.md) lists each pair and the shared form to extract once there are three.
+
+## License
+
+No license yet: all rights reserved. You may read the code here, but not copy, change or redistribute it.

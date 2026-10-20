@@ -29,7 +29,7 @@ Three scenarios, told apart by who types, who sees and who corrects:
 
 One hosted Zephyr per shared notebook. Instead of handing over a transcript path, the mod and the opencode plugin push each note row over HTTP, say `POST /notes`. The message id stays the entry id, so a push is idempotent and a retry costs nothing.
 
-What it keeps: one writer per kind still holds, because there is still one process, and the viewer already streams updates over SSE (`GET /events`). One organizer run serves everyone, on the shared vLLM endpoint.
+What it keeps: one writer per kind still holds, because there is still one process, and the viewer already streams updates over SSE (`GET /events`). One organizer run serves everyone, on the shared model endpoint.
 
 What it needs: a token per person, kept in a password manager and never put on a command line; TLS; and an author on each entry. This is the server-authoritative model that multiplayer design tools such as Figma use: clients send changes, and one server puts them in order.
 
@@ -67,7 +67,7 @@ The hub, scoped to shared spaces, is the only direction worth an implementation 
 ## Open decisions
 
 - Which scenario matters first.
-- Hosting: a Coolify deployment in-house, so the data never leaves the team.
+- Hosting: where the hub runs, and whose infrastructure holds the notes.
 - Purge across people: only the author, a moderator, or anyone in the space.
 - Whether presence is wanted at all.
 

@@ -3,3 +3,5 @@ node_modules/
 data/
 viewer/dist/
 !.env.example
+.logs/
+.claude/settings.local.json
