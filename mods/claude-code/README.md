@@ -5,6 +5,8 @@ Notes mode for Claude Code: what you type is kept in the transcript as a `[zephy
 | Command | What it does |
 | --- | --- |
 | `/zephyr` | Toggles notes mode |
+| `/zephyr new topic` | Turns notes mode on and files the next note in a new topic of its own |
+| `/zephyr new space` | Turns notes mode on and files the next note in a new topic, in a new space titled after it |
 | `/zephyr review` | Reviews the notes since the last review |
 | `/zephyr where <words>` | Lists matching notes with their topics |
 

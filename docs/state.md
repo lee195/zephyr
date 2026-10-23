@@ -29,8 +29,9 @@ What is built, how it was checked, and what is open, as of 2026-10-20. The confi
 | Open-issues work | Viewer: `.history` versions in each topic card, a Summaries page, `vue-tsc` in `bun run typecheck`, a fixed `aria-controls`. Purge: plain words scrubbed only where the note was. Model: retitling rewrites and merges, a weak and similarity gate on link suggestions, no added framing in summaries, a repair retry for refused diagrams. Measured with `scripts/measure-deeper.ts` (below) | `421c85e`..`a0b3915` |
 | Configurable LLM | Chat and embeddings each get their own endpoint, model and key variable; the LLM settings live in a gitignored `.env`, with `.env.example` committed. Two harness backends: `claude-code` (`claude -p`) and `opencode` (`opencode run`) | `a8fcc5c`, `3303b36`, `383263b` |
 | Spaces, phase 2 | Space slugs on map areas; `pins.spaces` enforced on map replies; `moveTopicToSpace` and `renameSpace` (MCP `move_topic_to_space`, `rename_space`); spaces in `list_topics`; `newSpaces` in the digest; viewer pages by space slug | `432e2cc` |
+| Placed notes | `/zephyr new topic` and `/zephyr new space` mark the next note `[zephyr new topic] ` or `[zephyr new space] `. The organizer files such a note in a run of its own, with the unchanged prompt and no topic shown, under a slug no topic has; for a space, a `moveTopicToSpace` with `fresh` puts the topic in a new space titled after it. A move before the map exists now starts the map. Other runs neither see nor cite a placed note, which the first live check caught | not committed |
 
-Tests: 259 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 42 tests pass under `claude plugin test`.
+Tests: 266 pass under `bun test`; `bun run typecheck` (`tsc` and `vue-tsc`) is clean. The mod's 47 tests pass under `claude plugin test`.
 
 ## Running it
 
@@ -57,6 +58,7 @@ Not checked yet:
 - An `isTask` question raised by the real model; only scripted tests cover it.
 - Purge removing the text from a task and a diagram live; unit tests cover both.
 - The band's "last note →" line and `/zephyr where` in a real Claude Code session, and the opencode "✎ →" toast; mod tests cover the band and the command, nothing covers the toast.
+- `/zephyr new topic` and `/zephyr new space` typed in a real Claude Code session; the server side was checked against the real endpoint on 2026-10-23 with transcript rows as the mod writes them.
 - The visualizer's repair retry against the real model: no reply failed the SVG check in 50 measured calls, so no repair ran. A test covers that a retry names the fault.
 
 ## Measured on 2026-10-20

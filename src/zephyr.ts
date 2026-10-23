@@ -524,10 +524,20 @@ export class Zephyr {
     return q
   }
 
-  /** Coalesces into the waiting run of the same attempt that covers the same thing. */
+  /** Coalesces into the waiting run of the same attempt that covers the same thing; an entry the kind files alone gets its own. */
   private enqueue(kind: string, work: Work, attempt = 1, retryOf?: string) {
+    const alone = this.kinds[kind]?.alone
+    if (!alone || !('entryIds' in work)) return this.enqueueKeyed(kind, '', work, attempt, retryOf)
+    const byId = new Map(this.entries.map((e) => [e.id, e]))
+    const own = work.entryIds.filter((id) => byId.has(id) && alone(byId.get(id)!))
+    const rest = work.entryIds.filter((id) => !own.includes(id))
+    if (rest.length > 0) this.enqueueKeyed(kind, '', { entryIds: rest }, attempt, retryOf)
+    for (const id of own) this.enqueueKeyed(kind, `entry:${id}`, { entryIds: [id] }, attempt, retryOf)
+  }
+
+  private enqueueKeyed(kind: string, alone: string, work: Work, attempt: number, retryOf?: string) {
     const q = this.queue(kind)
-    const key = `${attempt}:${'viewId' in work ? work.viewId : ''}`
+    const key = `${attempt}:${'viewId' in work ? work.viewId : alone}`
     const ids = 'entryIds' in work ? work.entryIds : []
     const prior = retryOf ? this.runs.find((r) => r.id === retryOf) : undefined
     const refused = prior?.error?.startsWith(INVALID_REPLY) ? prior.error.slice(INVALID_REPLY.length) : undefined
@@ -596,6 +606,10 @@ export class Zephyr {
         for (const v of written) this.deriveFrom(v)
         if (result.dropped.length > 0) run.dropped = result.dropped
         if (result.questions?.length) await this.ask(run, result.questions)
+        for (const a of result.adjustments ?? []) {
+          const applied = await this.adjust(a)
+          if (!applied.ok) run.dropped = [...(run.dropped ?? []), `${a.op} ${'slug' in a ? a.slug : ''}: ${applied.error}`]
+        }
         const covered = new Set(result.covered)
         const uncovered = run.entryIds.filter((id) => !covered.has(id) && !gone(id))
         if (uncovered.length > 0) run.uncovered = uncovered

@@ -13,6 +13,11 @@ test('in notes mode a typed prompt becomes a prefixed note', () => {
   })
 })
 
+test('a note with a placement is marked for the server and says where it goes', () => {
+  expect(decide(typed('roses'), true, 'topic')).toEqual({ kind: 'note', text: '[zephyr new topic] roses', echo: '✎ new topic · roses' })
+  expect(decide(typed('roses'), true, 'space')).toEqual({ kind: 'note', text: '[zephyr new space] roses', echo: '✎ new space · roses' })
+})
+
 test('commands, meta prompts, other origins, empty text and off mode pass through', () => {
   const pass = { kind: 'pass' }
   expect(decide(typed('buy milk'), false)).toEqual(pass)

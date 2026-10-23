@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, HttpInit, Register, Timer } from 'claude-code'
 
-import type { Server } from '../types'
+import type { Placement, Server } from '../types'
 import type { Hints } from './notes'
 import {
   bandLine,
@@ -26,6 +26,7 @@ import {
 } from './notes'
 
 const notesFor = atom({ plugin: 'zephyr', key: 'notesFor' } as const, null)
+const placeNext = atom({ plugin: 'zephyr', key: 'placeNext' } as const, null)
 const server = atom({ plugin: 'zephyr', key: 'server' } as const, { kind: 'unknown' } as Server)
 
 const DEFAULT_PORT = 7317
@@ -42,6 +43,11 @@ let quiet: Timer | null = null
 
 async function isNotesOn($: EngineInterface) {
   return (await read($, notesFor)) === (await $.session.id())
+}
+
+async function placementFor($: EngineInterface): Promise<Placement | null> {
+  const next = await read($, placeNext)
+  return next && next.sessionId === (await $.session.id()) ? next.placement : null
 }
 
 /** Resolves null when the server does not answer in time; the request itself keeps going. */
@@ -148,7 +154,20 @@ async function startReview($: EngineInterface) {
   return { text: 'Zephyr review started.' }
 }
 
-const USAGE = '/zephyr toggles notes mode; /zephyr review reviews the notes since the last review; /zephyr where <words> finds where notes went.'
+const USAGE =
+  '/zephyr toggles notes mode; /zephyr new topic or /zephyr new space files the next note in a new topic or space; /zephyr review reviews the notes since the last review; /zephyr where <words> finds where notes went.'
+
+const PLACED_REPLY: Record<Placement, string> = { topic: 'The next note starts a new topic.', space: 'The next note starts a new topic in a new space.' }
+
+// Turns notes mode on when it is off; asked again, the newer placement wins.
+async function placeNextNote($: EngineInterface, placement: Placement) {
+  const sessionId = await $.session.id()
+  const was = await read($, notesFor)
+  await update($, notesFor, () => sessionId)
+  await update($, placeNext, () => ({ sessionId, placement }))
+  if (was !== sessionId) void announce($).catch(() => undefined)
+  return { text: `${was === sessionId ? 'Notes mode is on.' : 'Notes mode on.'} ${PLACED_REPLY[placement]}` }
+}
 
 // Ranked like the hints, so it never calls a model; works with notes mode off too.
 async function findNotes($: EngineInterface, query: string) {
@@ -164,8 +183,9 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'zephyr',
-      description: 'Toggle notes mode: prompts are kept as notes, with no reply. /zephyr review reviews the notes; /zephyr where <words> finds them.',
-      argumentHint: '[review | where <words>]',
+      description:
+        'Toggle notes mode: prompts are kept as notes, with no reply. /zephyr new topic|space files the next note in a new topic or space; /zephyr review reviews the notes; /zephyr where <words> finds them.',
+      argumentHint: '[new topic | new space | review | where <words>]',
     })
     if (await isNotesOn($)) void announce($).catch(() => undefined)
     return next(e)
@@ -176,10 +196,13 @@ export const register: Register = (on, options) => {
     if (args === 'review') return startReview($)
     const query = /^where\s+(.+)$/s.exec(args)?.[1]?.trim()
     if (query) return findNotes($, query)
+    const placement = /^new\s+(topic|space)$/.exec(args)?.[1] as Placement | undefined
+    if (placement) return placeNextNote($, placement)
     if (args) return { text: USAGE }
     const sessionId = await $.session.id()
     const now = await update($, notesFor, was => (was === sessionId ? null : sessionId))
     if (now === null) {
+      await update($, placeNext, () => null)
       void noticeUnreviewed($).catch(() => undefined)
       return { text: 'Notes mode off.' }
     }
@@ -188,7 +211,8 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const decision = decide(e, await isNotesOn($))
+    const placement = await placementFor($)
+    const decision = decide(e, await isNotesOn($), placement)
     if (decision.kind === 'pass') return next(e)
     if (decision.kind === 'refuse') return { drop: decision.reason }
 
@@ -197,6 +221,10 @@ export const register: Register = (on, options) => {
     if (r.deny !== undefined) return { drop: `not noted: ${r.deny}` }
     // The note row is meta, which the transcript never draws; this notice is what the person sees, and the model never reads it.
     await $.session.append({ message: { type: 'system', content: [{ type: 'text', text: decision.echo }] } })
+    if (placement) {
+      await update($, placeNext, () => null)
+      $.ui.invalidate('ui.render')
+    }
     clearHints($)
     // A drop hands the draft back after this hook returns, so clear it on the next tick.
     $.clock.after(0, () => void $.prompt.fill({ text: '' }))
@@ -226,7 +254,7 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey) return next(e)
     const isOn = await isNotesOn($)
     const status = await read($, server)
-    const line = bandLine(isOn, status, await $.clock.now())
+    const line = bandLine(isOn, status, await $.clock.now(), await placementFor($))
     if (!line) return next(e)
     const shown = isOn ? shownHints(hints) : []
     const filed = isOn ? filedLine(status) : null

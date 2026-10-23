@@ -1,8 +1,11 @@
 import type { PromptSubmitInput } from 'claude-code'
 
-import type { LastNote, Server } from '../types'
+import type { LastNote, Placement, Server } from '../types'
 
 export const NOTE_PREFIX = '[zephyr] '
+
+/** The server reads these as a note that asks for its placement. */
+const PLACED_PREFIX: Record<Placement, string> = { topic: '[zephyr new topic] ', space: '[zephyr new space] ' }
 
 /** Origins where a person typed the text; everything else reaches the model untouched. */
 const TYPED: ReadonlySet<PromptSubmitInput['origin']['kind']> = new Set(['composer', 'bridge'])
@@ -12,11 +15,13 @@ export type SubmitDecision = { kind: 'pass' } | { kind: 'note'; text: string; ec
 export function decide(
   e: Pick<PromptSubmitInput, 'text' | 'command' | 'isMeta' | 'origin' | 'attachments'>,
   isNotesOn: boolean,
+  placement: Placement | null = null,
 ): SubmitDecision {
   const text = e.text.trim()
   if (!isNotesOn || e.command || e.isMeta || !TYPED.has(e.origin.kind) || !text) return { kind: 'pass' }
   // The transcript row takes text blocks only, and passing through would send the note to the model.
   if (e.attachments?.length) return { kind: 'refuse', reason: 'not noted: attachments are not supported' }
+  if (placement) return { kind: 'note', text: `${PLACED_PREFIX[placement]}${text}`, echo: `✎ new ${placement} · ${text}` }
   return { kind: 'note', text: `${NOTE_PREFIX}${text}`, echo: `✎ ${text}` }
 }
 
@@ -80,9 +85,10 @@ export function isBandShown(isNotesOn: boolean, server: Server): boolean {
 }
 
 /** The band's one line, or null while it stays hidden. */
-export function bandLine(isNotesOn: boolean, server: Server, now: number): string | null {
+export function bandLine(isNotesOn: boolean, server: Server, now: number, placement: Placement | null = null): string | null {
   if (!isBandShown(isNotesOn, server)) return null
   const parts = ['zephyr', isNotesOn ? 'notes on' : 'notes off']
+  if (isNotesOn && placement) parts.push(`next note → new ${placement}`)
   if (server.kind === 'unknown') parts.push('server …')
   else if (server.kind === 'down') parts.push('server down')
   else {

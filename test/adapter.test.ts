@@ -32,6 +32,14 @@ test('a typed (non-meta) note row with string content is accepted', () => {
   expect(notes(JSON.stringify(row)).map((e) => e.text)).toEqual(['typed'])
 })
 
+test('a note row asking for a new topic or space carries its placement, and an unknown ask is no note', () => {
+  const row = (text: string) => JSON.stringify({ type: 'user', uuid: 'u1', timestamp: 't', sessionId: 's', message: { content: text } })
+  expect(notes(row('[zephyr new topic] roses'))).toMatchObject([{ text: 'roses', placement: 'topic' }])
+  expect(notes(row('[zephyr new space] roses'))).toMatchObject([{ text: 'roses', placement: 'space' }])
+  expect(notes(row('[zephyr] roses'))[0]).not.toHaveProperty('placement')
+  expect(notes(row('[zephyr new area] roses'))).toEqual([])
+})
+
 test('ordinary chat, assistant rows, and garbage are ignored', () => {
   const chat = { type: 'user', uuid: 'u2', message: { content: [{ type: 'text', text: 'hello model' }] } }
   const assistant = { type: 'assistant', uuid: 'u3', message: { content: [{ type: 'text', text: '[zephyr] echo' }] } }

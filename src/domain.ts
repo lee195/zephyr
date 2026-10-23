@@ -14,7 +14,11 @@ export interface Entry {
    * this says whether it arrived after a review. Absent on entries stored before it was recorded.
    */
   receivedAt?: string
+  /** The person asked, with the note, for it to start a new topic, or a new topic in a new space of its own. */
+  placement?: Placement
 }
+
+export type Placement = 'topic' | 'space'
 
 export type ViewFormat = 'md' | 'svg' | 'ascii'
 
@@ -176,15 +180,22 @@ export interface TranscriptAdapter {
   locate(transcriptPath: string, sessionId: string, rowId: string): string
 }
 
-export const isNote = (row: Row) => row.role === 'user' && row.text.startsWith(NOTE_MARKER)
+/** `[zephyr] `, or `[zephyr new topic] ` and `[zephyr new space] ` for a note that asks for its placement. */
+const MARKER = /^\[zephyr(?: new (topic|space))?\] /
 
-export const noteEntry = (harness: Harness, row: Row): Entry => ({
-  id: row.id,
-  harness,
-  sessionId: row.sessionId,
-  at: row.at,
-  text: row.text.slice(NOTE_MARKER.length),
-})
+export const isNote = (row: Row) => row.role === 'user' && MARKER.test(row.text)
+
+export const noteEntry = (harness: Harness, row: Row): Entry => {
+  const m = MARKER.exec(row.text)!
+  return {
+    id: row.id,
+    harness,
+    sessionId: row.sessionId,
+    at: row.at,
+    text: row.text.slice(m[0].length),
+    ...(m[1] && { placement: m[1] as Placement }),
+  }
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -226,8 +237,11 @@ export type ViewWrite = Omit<View, 'id' | 'kind' | 'updatedAt' | 'createdAt' | '
 /**
  * covered: the run's entries the reply dealt with, which is the kind's call; the run's other entries are retried.
  * questions: doubts the reply raised about notes it filed, already checked against what the run wrote.
+ * adjustments: what a note asked of the views beyond its filing, applied as the person's once the writes land.
  */
-export type Settled = { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[]; questions?: Question[] } | { ok: false; error: string }
+export type Settled =
+  | { ok: true; writes: ViewWrite[]; dropped: string[]; covered: EntryId[]; questions?: Question[]; adjustments?: Adjustment[] }
+  | { ok: false; error: string }
 
 /**
  * A doubt a run raised about a note it filed by its best guess, for the person to settle at review. Every kind of
@@ -270,6 +284,8 @@ export interface AgentKind {
   sweep?(world: World): string[]
   /** Ids of the kind's own views that should no longer exist; deleted after an adjustment and on start. */
   prune?(world: World): string[]
+  /** Entries this kind files in a run of their own, never coalesced with others. */
+  alone?(entry: Entry): boolean
 }
 
 /**
@@ -281,7 +297,8 @@ export interface AgentKind {
  * - editNote and tombstoneNote are overlays on entries.jsonl.
  * - linkTopics marks two topics related but separate, on both; unlinkTopics takes the link off both.
  * - moveTopicToSpace puts a topic in a space of the map, by the space's slug or, for a new space, its title; the
- *   placement is pinned. renameSpace sets a space's title and pins it.
+ *   placement is pinned. With `fresh`, `space` is always a new space's title, even when a space has its slug. A map
+ *   not drawn yet is started with that one space; the next map run places the other topics. renameSpace sets a space's title and pins it.
  * - purgeNote is the one op that rewrites entries.jsonl: it removes the note and its words from the data dir.
  *   `confirm` must be exactly `purge <noteId>`.
  */
@@ -292,7 +309,7 @@ export type Adjustment =
   | { op: 'moveNote'; noteId: EntryId; from: string; to: string }
   | { op: 'detachNote'; noteId: EntryId; from: string; to: string }
   | { op: 'editNote'; noteId: EntryId; text: string }
-  | { op: 'moveTopicToSpace'; slug: string; space: string }
+  | { op: 'moveTopicToSpace'; slug: string; space: string; fresh?: true }
   | { op: 'renameSpace'; space: string; title: string }
   | { op: 'tombstoneNote'; noteId: EntryId }
   | { op: 'editTask'; taskId: TaskId; text?: string; due?: string | null }

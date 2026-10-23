@@ -1,15 +1,26 @@
 import type { Adjustment, Area, Entry, EntryId, Pins, SpacePins, Task, View, ViewWrite } from './domain'
 import { staleMarker } from './domain'
 import { sanitizeSlug } from './kinds/common'
+import { freeSlug } from './kinds/areas'
 import { areasOf, mapIn, mapWrite, placeIn } from './kinds/map'
 import { appendSection, MAX_REWRITE_CHARS, rewriteChars, topicsIn, usableTitle } from './kinds/organizer'
 import { currentTasks, MAX_DUE_LENGTH, tasksWrite } from './kinds/tasks'
 
-/** How a field is checked and stated: a non-empty string, optional or required; a due date; note ids; a new topic. */
-type FieldKind = 'text' | 'optionalText' | 'due' | 'ids' | 'ref'
+/** How a field is checked and stated: a non-empty string, optional or required; a due date; note ids; a new topic; an optional flag. */
+type FieldKind = 'text' | 'optionalText' | 'due' | 'ids' | 'ref' | 'flag'
 
 /** The kind a field's type in Adjustment must have, so the spec below cannot drift from the type. */
-type KindOf<T> = [T] extends [string[]] ? 'ids' : [T] extends [{ slug: string; title: string }] ? 'ref' : null extends T ? 'due' : undefined extends T ? 'optionalText' : 'text'
+type KindOf<T> = [T] extends [string[]]
+  ? 'ids'
+  : [T] extends [{ slug: string; title: string }]
+    ? 'ref'
+    : [T] extends [true | undefined]
+      ? 'flag'
+      : null extends T
+        ? 'due'
+        : undefined extends T
+          ? 'optionalText'
+          : 'text'
 
 type OpSpec<A> = {
   /** The kind whose queue applies the op: the one that owns the views it writes. Absent: every kind's, in turn. */
@@ -99,7 +110,11 @@ export const OPS: { [Op in Adjustment['op']]: OpSpec<Extract<Adjustment, { op: O
   moveTopicToSpace: {
     owner: 'map',
     describe: 'Put a topic in a space of the map, an existing one by its slug or a new one by its title, and pin it there against later map runs.',
-    fields: { slug: { kind: 'text', describe: 'topic slug' }, space: { kind: 'text', describe: 'slug of an existing space, or the title of a new one' } },
+    fields: {
+      slug: { kind: 'text', describe: 'topic slug' },
+      space: { kind: 'text', describe: 'slug of an existing space, or the title of a new one' },
+      fresh: { kind: 'flag', describe: 'true to make a new space titled `space` even when a space has that slug' },
+    },
   },
   renameSpace: {
     owner: 'map',
@@ -134,7 +149,9 @@ export function parseAdjustment(json: unknown): Parsed {
   const out: Record<string, unknown> = { op }
   for (const [key, { kind }] of fields) {
     const v = o[key]
-    if (v === undefined && (kind === 'optionalText' || kind === 'due')) continue
+    if (v === undefined && (kind === 'optionalText' || kind === 'due' || kind === 'flag')) continue
+    if (kind === 'flag' && typeof v !== 'boolean') return refuse(`${op} ${key} must be true or false`)
+    if (kind === 'flag' && !v) continue
     if (kind === 'optionalText' && !isText(v)) return refuse(`${op} ${key} must be a non-empty string`)
     if (kind === 'due' && v !== null && (!isText(v) || v.trim().length > MAX_DUE_LENGTH))
       return refuse(`${op} ${key} must be null or a non-empty string of at most ${MAX_DUE_LENGTH} characters`)
@@ -156,6 +173,7 @@ const SCHEMA: Record<FieldKind, object> = {
   due: { type: ['string', 'null'], maxLength: MAX_DUE_LENGTH },
   ids: { type: 'array', items: { type: 'string' }, minItems: 1 },
   ref: { type: 'object', properties: { slug: text, title: text }, required: ['slug', 'title'], additionalProperties: false },
+  flag: { type: 'boolean' },
 }
 
 /** The JSON Schema of an op's fields, as parseAdjustment checks them. */
@@ -418,23 +436,22 @@ export function relatedFixes(views: readonly View[]): RelatedChange[] {
   })
 }
 
-/** The map with these areas and space pins, as the person's write. */
-function mapChange(map: View, areas: Area[], spaces: SpacePins): Outcome {
-  return { ok: true, writes: [{ kind: 'map', write: mapWrite(areas), own: { pins: tidy({ ...map.pins, spaces }) } }], deletes: [], warnings: [] }
+/** The map with these areas and space pins, as the person's write; with no map yet, it is the map's first write. */
+function mapChange(map: View | undefined, areas: Area[], spaces: SpacePins): Outcome {
+  return { ok: true, writes: [{ kind: 'map', write: mapWrite(areas), own: { pins: tidy({ ...map?.pins, spaces }) } }], deletes: [], warnings: [] }
 }
 
 function moveTopicToSpace(a: Extract<Adjustment, { op: 'moveTopicToSpace' }>, s: AdjustState): Outcome {
   const map = mapIn(s.views)
-  if (!map) return fail('the map has not been drawn yet')
   const topics = new Topics(s)
   const topic = topics.get(a.slug)
   if (!topic) return topics.missing(a.slug)
   const areas = areasOf(map)
-  const existing = areas.find((x) => x.slug === sanitizeSlug(a.space))
+  const existing = a.fresh ? undefined : areas.find((x) => x.slug === sanitizeSlug(a.space))
   const title = usableTitle(a.space)
   if (!existing && !title) return fail(`no space ${a.space}, and it is not usable as a new space's title`)
-  const pins = map.pins?.spaces ?? {}
-  const space = existing?.slug ?? (sanitizeSlug(title!) || 'space')
+  const pins = map?.pins?.spaces ?? {}
+  const space = existing?.slug ?? freeSlug(title!, new Set(a.fresh ? areas.map((x) => x.slug) : []))
   const next = placeIn(areas, { slug: topic.slug, title: topic.title }, space, existing?.title ?? title!)
   const titles = existing ? pins.titles : { ...pins.titles, [space]: title! }
   return mapChange(map, next, { ...(titles && { titles }), placed: { ...pins.placed, [topic.slug]: space } })

@@ -1,5 +1,6 @@
-import type { AgentKind, ChatMessage, Entry, EntryId, Plan, Question, Run, View, ViewWrite, World } from '../domain'
+import type { Adjustment, AgentKind, ChatMessage, Entry, EntryId, Plan, Question, Run, View, ViewWrite, World } from '../domain'
 import { rankAll, type RelevanceDoc } from '../relevance'
+import { freeSlug } from './areas'
 import { inEntryOrder, jsonPrompt, knownSources, parseQuestions, promptEntry, sanitizeSlug } from './common'
 
 const RECENT_CONTEXT = 30
@@ -318,14 +319,44 @@ function whichTopic(runIds: ReadonlySet<EntryId>, sources: ReadonlyMap<string, r
   }
 }
 
+/**
+ * A note the person asked to start a new topic is filed with the unchanged prompt, shown no topic and no other note,
+ * so the only way to file it is a topic of its own; the prompt is left as it is because any change to it cost filing
+ * accuracy. The first write citing it is kept, under a slug no topic has. For a new space, that topic is then put in
+ * a new space titled after it. The run's other entries are left uncovered and retried.
+ */
+function placedPlan(note: Entry, world: World): Plan {
+  const own = topicsIn(world.views)
+  const ctx: ReplyContext = { knownIds: new Set([note.id]), topics: new Map(), openSlugs: new Set() }
+  return {
+    messages: organizerMessages([note], { open: [], indexed: [] }, []),
+    settle(json) {
+      const result = validateOps(json, ctx)
+      if (!result.ok) return result
+      const write = result.ops.find((o) => o.op === 'write')
+      if (!write) return { ok: false, error: 'reply has no write op for the new topic' }
+      const slug = freeSlug(write.slug, new Set(own.map((v) => v.slug)))
+      const writes = applyOps(world, own, [{ ...write, slug }])
+      const extra = result.ops.length - 1
+      const dropped = [...result.dropped, ...(extra > 0 ? [`${extra} more ops dropped: the note asked for one new topic`] : [])]
+      const adjustments: Adjustment[] = note.placement === 'space' ? [{ op: 'moveTopicToSpace', slug, space: writes[0]!.title, fresh: true }] : []
+      return { ok: true, writes, dropped, covered: [note.id], adjustments }
+    },
+  }
+}
+
 async function organizePlan(run: Run, world: World): Promise<Plan> {
   const runIds = new Set(run.entryIds)
   const newEntries = world.entries.filter((e) => runIds.has(e.id))
-  const recent = world.entries.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
+  const placed = newEntries.find((e) => e.placement)
+  if (placed) return placedPlan(placed, world)
+  // A placed note shown as context would be cited here too, on a topic the person asked it to stay off.
+  const citable = world.entries.filter((e) => runIds.has(e.id) || !e.placement)
+  const recent = citable.filter((e) => !runIds.has(e.id)).slice(-RECENT_CONTEXT)
   const own = topicsIn(world.views)
   const views = await viewContext(world, own, newEntries)
   const ctx: ReplyContext = {
-    knownIds: new Set(world.entries.map((e) => e.id)),
+    knownIds: new Set(citable.map((e) => e.id)),
     topics: new Map(own.map((v) => [v.slug, v])),
     openSlugs: new Set(views.open.map((v) => v.slug)),
   }
@@ -350,6 +381,7 @@ export const organizer: AgentKind = {
   trigger: { on: 'entry' },
   relevanceDocs: topicDocs,
   sweep: (world) => topicsIn(world.views).filter((t) => rewriteInput(t, world.entries)).map((t) => t.id),
+  alone: (e) => e.placement !== undefined,
   /** Work keyed by one of its topics is a rewrite of that topic; any other work files new entries. */
   async plan(run: Run, world: World) {
     return run.viewIds ? rewritePlan(run.viewIds[0]!, world) : organizePlan(run, world)

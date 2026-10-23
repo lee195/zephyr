@@ -442,3 +442,43 @@ test('the band shows where the newest note went, below the status line', async (
   await clock.advance(5000)
   expect(await bandTexts($)).toEqual(['zephyr · notes on · server up', '✎ last note → Groceries, Budget', 'beneath'])
 })
+
+test('/zephyr new topic turns notes mode on and marks only the next note', async ($, on) => {
+  const { clock, seen, notes, notices } = engine(on)
+  expect(await $.command.run({ ...TOGGLE, args: 'new topic' })).toEqual({ text: 'Notes mode on. The next note starts a new topic.' })
+  await clock.settle()
+  expect(seen.fetched.some(f => f.url.endsWith('/sessions'))).toBe(true)
+  expect(await bandTexts($)).toEqual(['zephyr · notes on · next note → new topic · server up', 'beneath'])
+  expect(await $.prompt.submit(typed('roses'))).toEqual({ drop: 'noted' })
+  expect(await $.prompt.submit(typed('tulips'))).toEqual({ drop: 'noted' })
+  expect(notes()).toEqual(['[zephyr new topic] roses', '[zephyr] tulips'])
+  expect(notices()).toEqual(['✎ new topic · roses', '✎ tulips'])
+  expect(await bandTexts($)).toEqual(['zephyr · notes on · server up', 'beneath'])
+})
+
+test('/zephyr new space in notes mode keeps it on, and the newer placement wins', async ($, on) => {
+  const { notes } = engine(on)
+  await $.command.run(TOGGLE)
+  await $.command.run({ ...TOGGLE, args: 'new topic' })
+  expect(await $.command.run({ ...TOGGLE, args: 'new  space' })).toEqual({ text: 'Notes mode is on. The next note starts a new topic in a new space.' })
+  await $.prompt.submit(typed('roses'))
+  expect(notes()).toEqual(['[zephyr new space] roses'])
+})
+
+test('turning notes mode off forgets a placement no note took, and an unknown placement is usage', async ($, on) => {
+  const { notes } = engine(on)
+  await $.command.run({ ...TOGGLE, args: 'new topic' })
+  await $.command.run(TOGGLE)
+  await $.command.run(TOGGLE)
+  await $.prompt.submit(typed('roses'))
+  expect(notes()).toEqual(['[zephyr] roses'])
+  expect((await $.command.run({ ...TOGGLE, args: 'new area' })).text).toContain('/zephyr new topic')
+})
+
+test('a refused append keeps the placement for the next try', async ($, on) => {
+  const { notes } = engine(on, { deny: 'quota' })
+  await $.command.run({ ...TOGGLE, args: 'new topic' })
+  expect(await $.prompt.submit(typed('roses'))).toEqual({ drop: 'not noted: quota' })
+  expect(notes()).toEqual([])
+  expect(await bandTexts($)).toContain('zephyr · notes on · next note → new topic · server up')
+})

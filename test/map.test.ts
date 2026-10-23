@@ -54,7 +54,11 @@ async function started() {
     await z.ingest(texts.map((t) => entry(`e${++n}`, t)))
     await z.idle()
   }
-  return { z, dir, book, note }
+  const placed = async (placement: 'topic' | 'space', text: string) => {
+    await z.ingest([{ ...entry(`e${++n}`, text), placement }])
+    await z.idle()
+  }
+  return { z, dir, book, note, placed }
 }
 
 const mapOf = (z: Zephyr) => z.listViews().find((v) => v.id === 'map/contents')
@@ -212,11 +216,82 @@ test('a renamed space keeps the person\'s title when a later map run proposes an
   expect(areasIn(z)).toEqual([{ slug: 'area-g', title: 'Backyard', topics: expect.arrayContaining([{ slug: 'garden', title: 'GARDEN' }, { slug: 'gazebo', title: 'GAZEBO' }]) }])
 })
 
-test('space ops refuse an unknown topic or space, and a move before any map exists', async () => {
-  const empty = await started()
-  expect(await empty.z.adjust({ op: 'moveTopicToSpace', slug: 'garden', space: 'x' })).toMatchObject({ ok: false, error: 'the map has not been drawn yet' })
+test('space ops refuse an unknown topic or space', async () => {
   const { z, note } = await started()
   await note('garden: tomatoes')
   expect(await z.adjust({ op: 'moveTopicToSpace', slug: 'nope', space: 'area-g' })).toMatchObject({ ok: false, error: 'no topic nope' })
   expect(await z.adjust({ op: 'renameSpace', space: 'nope', title: 'X' })).toMatchObject({ ok: false, error: 'no space nope' })
+})
+
+const topicSources = (z: Zephyr) => Object.fromEntries(z.listViews().filter((v) => v.kind === 'organizer').map((v) => [v.slug, v.sources]))
+
+test('a note asking for a new topic gets one of its own, even when a topic on its subject exists', async () => {
+  const { z, note, placed } = await started()
+  await note('garden: tomatoes')
+  await placed('topic', 'garden: roses')
+  expect(topicSources(z)).toEqual({ garden: ['e1'], 'garden-2': ['e2'] })
+})
+
+test('a note asking for a new topic is filed in a run of its own, apart from the notes that arrive with it', async () => {
+  const { z } = await started()
+  await z.ingest([entry('e1', 'garden: tomatoes'), { ...entry('e2', 'garden: roses'), placement: 'topic' }, entry('e3', 'garden: beans')])
+  await z.idle()
+  expect(topicSources(z)).toEqual({ garden: ['e1', 'e3'], 'garden-2': ['e2'] })
+})
+
+test('a placed note is neither shown nor citable as context in the runs that file other notes', async () => {
+  const dir = await tempDir()
+  const seen: string[][] = []
+  const backend: ModelBackend = {
+    async complete(messages: ChatMessage[]) {
+      const p = payloadOf(messages)
+      if ('currentAreas' in p) return { json: { areas: [] } }
+      seen.push(p.recentEntries.map((e: any) => e.id))
+      const ids: string[] = p.newEntries.map((e: any) => e.id)
+      // Files the placed note on herbs, and every other run's notes on garden, citing the placed note there as well.
+      const [slug, sources] = ids[0] === 'e2' ? ['herbs', ids] : ['garden', [...ids, 'e2']]
+      return { json: { ops: [{ op: 'write', slug, title: slug, sources, body: slug }] } }
+    },
+  }
+  const z = new Zephyr({ dataDir: dir, backend, kinds: { organizer: kinds.organizer!, map: kinds.map! }, retryDelaysMs: [] })
+  await z.start()
+  await z.ingest([entry('e1', 'tomatoes'), { ...entry('e2', 'herb spiral'), placement: 'topic' }])
+  await z.idle()
+  await z.ingest([entry('e3', 'beans')])
+  await z.idle()
+  expect(topicSources(z)).toEqual({ garden: ['e1', 'e3'], herbs: ['e2'] })
+  expect(seen.flat()).not.toContain('e2')
+})
+
+test('a note asking for a new space gets a new topic in a new space titled after it, pinned there', async () => {
+  const { z, note, placed } = await started()
+  await note('garden: tomatoes')
+  await placed('space', 'garden: roses')
+  expect(areasIn(z)).toEqual([
+    { slug: 'area-g', title: 'Area g', topics: [{ slug: 'garden', title: 'GARDEN' }] },
+    { slug: 'garden', title: 'GARDEN', topics: [{ slug: 'garden-2', title: 'GARDEN' }] },
+  ])
+  expect(mapOf(z)?.pins?.spaces).toEqual({ titles: { garden: 'GARDEN' }, placed: { 'garden-2': 'garden' } })
+})
+
+test('a new space asked for before any map exists starts the map, and the next map run places the other topics', async () => {
+  const { z, note, placed } = await started()
+  await placed('space', 'party: balloons')
+  expect(areasIn(z)).toEqual([{ slug: 'party', title: 'PARTY', topics: [{ slug: 'party', title: 'PARTY' }] }])
+  await note('garden: tomatoes')
+  expect(areasIn(z)).toEqual([
+    { slug: 'area-g', title: 'Area g', topics: [{ slug: 'garden', title: 'GARDEN' }] },
+    { slug: 'party', title: 'PARTY', topics: [{ slug: 'party', title: 'PARTY' }] },
+  ])
+})
+
+test('a fresh move makes a new space even when one has the title\'s slug', async () => {
+  const { z, note } = await started()
+  await note('garden: tomatoes', 'grill: charcoal')
+  await z.adjust({ op: 'moveTopicToSpace', slug: 'grill', space: 'Area g', fresh: true })
+  await z.idle()
+  expect(areasIn(z)).toEqual([
+    { slug: 'area-g', title: 'Area g', topics: [{ slug: 'garden', title: 'GARDEN' }] },
+    { slug: 'area-g-2', title: 'Area g', topics: [{ slug: 'grill', title: 'GRILL' }] },
+  ])
 })
