@@ -319,11 +319,20 @@ function whichTopic(runIds: ReadonlySet<EntryId>, sources: ReadonlyMap<string, r
   }
 }
 
+/** The title, or the title numbered from 2 when a topic has it already, ignoring case; never over MAX_TITLE_CHARS. */
+export function freeTitle(title: string, taken: readonly string[]): string {
+  const have = new Set(taken.map((t) => t.trim().toLowerCase()))
+  let next = title
+  for (let n = 2; have.has(next.trim().toLowerCase()); n++) next = `${title.slice(0, MAX_TITLE_CHARS - ` ${n}`.length).trimEnd()} ${n}`
+  return next
+}
+
 /**
  * A note the person asked to start a new topic is filed with the unchanged prompt, shown no topic and no other note,
  * so the only way to file it is a topic of its own; the prompt is left as it is because any change to it cost filing
- * accuracy. The first write citing it is kept, under a slug no topic has. For a new space, that topic is then put in
- * a new space titled after it. The run's other entries are left uncovered and retried.
+ * accuracy. The first write citing it is kept, under a slug and a title no topic has: the model saw no titles, so a
+ * clash is numbered. For a new space, that topic is then put in a new space titled after it. The run's other entries
+ * are left uncovered and retried.
  */
 function placedPlan(note: Entry, world: World): Plan {
   const own = topicsIn(world.views)
@@ -336,9 +345,14 @@ function placedPlan(note: Entry, world: World): Plan {
       const write = result.ops.find((o) => o.op === 'write')
       if (!write) return { ok: false, error: 'reply has no write op for the new topic' }
       const slug = freeSlug(write.slug, new Set(own.map((v) => v.slug)))
-      const writes = applyOps(world, own, [{ ...write, slug }])
+      const title = freeTitle(write.title, own.map((v) => v.title))
+      const writes = applyOps(world, own, [{ ...write, slug, title }])
       const extra = result.ops.length - 1
-      const dropped = [...result.dropped, ...(extra > 0 ? [`${extra} more ops dropped: the note asked for one new topic`] : [])]
+      const dropped = [
+        ...result.dropped,
+        ...(extra > 0 ? [`${extra} more ops dropped: the note asked for one new topic`] : []),
+        ...(title !== write.title ? [`write ${slug}: a topic is titled ${JSON.stringify(write.title)} already, so titled ${JSON.stringify(title)}`] : []),
+      ]
       const adjustments: Adjustment[] = note.placement === 'space' ? [{ op: 'moveTopicToSpace', slug, space: writes[0]!.title, fresh: true }] : []
       return { ok: true, writes, dropped, covered: [note.id], adjustments }
     },

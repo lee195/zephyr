@@ -4,6 +4,7 @@ import { expect, test } from 'bun:test'
 import type { ChatMessage, ModelBackend, View } from '../src/domain'
 import { kinds } from '../src/kinds'
 import { areasOf, MAX_AREAS, parseAreas, renderMap } from '../src/kinds/map'
+import { freeTitle } from '../src/kinds/organizer'
 import { Zephyr } from '../src/zephyr'
 import { entry, payloadOf, tempDir } from './helpers'
 
@@ -230,6 +231,14 @@ test('a note asking for a new topic gets one of its own, even when a topic on it
   await note('garden: tomatoes')
   await placed('topic', 'garden: roses')
   expect(topicSources(z)).toEqual({ garden: ['e1'], 'garden-2': ['e2'] })
+  expect(z.listViews().find((v) => v.id === 'organizer/garden-2')?.title).toBe('GARDEN 2')
+  expect(z.listRuns().find((r) => r.kind === 'organizer' && r.entryIds[0] === 'e2')?.dropped).toEqual(['write garden-2: a topic is titled "GARDEN" already, so titled "GARDEN 2"'])
+})
+
+test('a new topic whose title a topic has already is numbered, ignoring case, within the title cap', () => {
+  expect(freeTitle('Garden', ['Sourdough'])).toBe('Garden')
+  expect(freeTitle('Garden', ['garden', 'GARDEN 2'])).toBe('Garden 3')
+  expect(freeTitle('x'.repeat(80), ['x'.repeat(80)])).toBe(`${'x'.repeat(78)} 2`)
 })
 
 test('a note asking for a new topic is filed in a run of its own, apart from the notes that arrive with it', async () => {
@@ -269,9 +278,9 @@ test('a note asking for a new space gets a new topic in a new space titled after
   await placed('space', 'garden: roses')
   expect(areasIn(z)).toEqual([
     { slug: 'area-g', title: 'Area g', topics: [{ slug: 'garden', title: 'GARDEN' }] },
-    { slug: 'garden', title: 'GARDEN', topics: [{ slug: 'garden-2', title: 'GARDEN' }] },
+    { slug: 'garden-2', title: 'GARDEN 2', topics: [{ slug: 'garden-2', title: 'GARDEN 2' }] },
   ])
-  expect(mapOf(z)?.pins?.spaces).toEqual({ titles: { garden: 'GARDEN' }, placed: { 'garden-2': 'garden' } })
+  expect(mapOf(z)?.pins?.spaces).toEqual({ titles: { 'garden-2': 'GARDEN 2' }, placed: { 'garden-2': 'garden-2' } })
 })
 
 test('a new space asked for before any map exists starts the map, and the next map run places the other topics', async () => {
