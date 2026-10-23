@@ -1,6 +1,6 @@
 # Zephyr state
 
-What is built, how it was checked, and what is open, as of 2026-10-20. The configurable-LLM work is not committed yet. Why it is built this way is in [design.md](design.md). How to run it is in the [README](../README.md).
+What is built, how it was checked, and what is open, as of 2026-10-23. Why it is built this way is in [design.md](design.md). How to run it is in the [README](../README.md).
 
 ## Built
 
